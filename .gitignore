@@ -1,0 +1,11 @@
+/target
+/.env
+
+# Web UI (arrives with the web milestone)
+frontend/node_modules/
+frontend/dist/
+
+# Docs site (Astro Starlight)
+docs/node_modules/
+docs/dist/
+docs/.astro/

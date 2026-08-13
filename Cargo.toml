@@ -1,0 +1,16 @@
+[package]
+name = "kasl-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Team server for kasl: collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages"
+license = "MIT"
+repository = "https://github.com/lacodda/kasl-server"
+homepage = "https://github.com/lacodda/kasl-server"
+readme = "README.md"
+keywords = ["time-tracking", "server", "team", "dashboard", "kasl"]
+categories = ["web-programming::http-server"]
+authors = ["Kirill Lakhtachev <lahtachev@gmail.com>"]
+exclude = ["docs/", ".github/", "frontend/", "cliff.toml", "rustfmt.toml"]
+
+[dependencies]
