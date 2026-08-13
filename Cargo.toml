@@ -2,7 +2,7 @@
 name = "kasl-server"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 description = "Team server for kasl: collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages"
 license = "MIT"
 repository = "https://github.com/lacodda/kasl-server"
@@ -14,3 +14,16 @@ authors = ["Kirill Lakhtachev <lahtachev@gmail.com>"]
 exclude = ["docs/", ".github/", "frontend/", "cliff.toml", "rustfmt.toml"]
 
 [dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "migrate"] }
+tokio = { version = "1.53.1", features = ["full"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5.3", features = ["util"] }
