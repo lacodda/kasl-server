@@ -33,7 +33,8 @@ not the employee's date, and "my Tuesday" is what every screen is about.
 across employees by construction. The agent's ids are still stored, as
 `tasks.agent_task_id` (the row) and `tasks.agent_group_id` (the agent's
 `task_id`, tying the same work across days), because a re-upload has to find
-the row it already sent — see ADR 0004 on idempotency when ingest lands.
+the row it already sent. How a repeated upload is resolved is a decision for
+the ingest milestone and gets its own record then.
 
 **Ownership is expressed as foreign keys, with cascade deletes.** Every table
 carries `user_id`, or reaches it through one (`pauses` → `workdays`,
