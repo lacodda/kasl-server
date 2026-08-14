@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-08-14
+
+### Documentation
+- Explain how to run a stand
+- Refresh the transcript for 0.3.1
+
+### Features
+- Containerize the server and stage what a stand needs
+
 ## [0.3.0] - 2026-08-14
+
+### CI
+- Run the ingest tests against PostgreSQL too
 
 ### Documentation
 - Match the published 0.2.0 release notes
