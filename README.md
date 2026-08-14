@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** v0.2.0 adds the core schema — people, agents, workdays, pauses, tasks, tags and reports — on top of the v0.1.0 foundation (axum on PostgreSQL, `/health`, structured logs, embedded migrations, release pipeline). The ingest API that fills those tables is the next milestone; nothing to deploy for real use yet.
+> **Status: pre-alpha.** v0.3.0 opens the door for kasl agents: `POST /api/v1/days` accepts a day at a time, authenticated by a bearer token. The tables are filled; nothing reads them back yet — dashboards and the personal page are the milestones after next, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -13,16 +13,55 @@ Requires Rust and Docker.
 ```console
 $ git clone https://github.com/lacodda/kasl-server && cd kasl-server
 $ docker compose up -d db
-$ DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl cargo run
-2026-08-14T17:19:24.126177Z  INFO kasl_server: database schema is up to date version=20260814000001
-2026-08-14T17:19:24.126604Z  INFO kasl_server: kasl-server listening version="0.2.0" addr=0.0.0.0:8080
+$ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
+$ export KASL_AGENTS=employee@example.com:agent-token
+$ cargo run
+2026-08-14T19:09:10.817403Z  INFO kasl_server: database schema is up to date version=20260814000001
+2026-08-14T19:09:10.883175Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-14T19:09:10.883628Z  INFO kasl_server: kasl-server listening version="0.3.0" addr=0.0.0.0:8080
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.2.0"}
+{"database":"ok","status":"ok","version":"0.3.0"}
+
+$ curl -X POST http://127.0.0.1:8080/api/v1/days \
+    -H "Authorization: Bearer agent-token" -H "Content-Type: application/json" \
+    -d '{"date":"2026-08-14",
+         "started_at":"2026-08-14T09:12:00-03:00",
+         "ended_at":"2026-08-14T18:31:00-03:00",
+         "pauses":[{"started_at":"2026-08-14T13:02:00-03:00","ended_at":"2026-08-14T14:05:00-03:00","duration_seconds":3780,"manual":true,"reason":"lunch"}],
+         "tasks":[{"agent_task_id":1,"recorded_at":"2026-08-14T18:28:00-03:00","name":"Ingest API v1","completeness":100}]}'
+{"workday_id":"b629eb55-aac3-4484-9611-a470c83c7c9f","date":"2026-08-14","pauses":1,"tasks":1}
 ```
 
 The dev database listens on 5433, leaving a PostgreSQL you may already run on
 5432 alone; override with `KASL_DB_PORT`.
+
+## The API
+
+`/api/v1` from the first endpoint: agents update on their own schedule, so a
+path keeps meaning what it meant when the agent calling it shipped.
+
+**`POST /api/v1/days`** — upload one day. Requires `Authorization: Bearer
+<token>`. The body is the workday with its pauses and tasks; `ended_at` is
+absent while the day is still running, and so is a pause's, and `tasks` may be
+empty.
+
+Two properties are worth knowing before writing a client:
+
+- **Every instant needs a UTC offset**, and the day carries its own `date`.
+  `2026-08-14T09:12:00` without an offset is refused (422): one team's hours
+  have to stay comparable across time zones, and which calendar day work
+  belongs to is the agent's call, not a value derived on the server.
+- **The last upload wins.** Re-sending a day replaces what is stored, so a
+  correction made in kasl lands and a retry after a lost connection is safe -
+  the same payload twice leaves the same rows. Pauses are replaced as a set;
+  tasks are matched on `agent_task_id`, so a task carried into the next day
+  moves rather than multiplying.
+
+A malformed day is refused with `400` and a reason naming the field
+(`{"error":"tasks[0]: completeness must be between 0 and 100"}`); an
+unrecognized, revoked or deactivated token gets `401`. The reasoning behind all
+of this is in [ADR 0004](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0004-the-ingest-contract.md).
 
 ## The data model
 
@@ -51,13 +90,21 @@ Everything comes from the environment:
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string | required |
 | `KASL_SERVER_ADDR` | Address the HTTP server binds to | `0.0.0.0:8080` |
+| `KASL_AGENTS` | Agents to provision on startup, as `email:token` pairs separated by commas | none |
 | `RUST_LOG` | Log filter (tracing syntax) | `kasl_server=info,tower_http=info` |
 
 Database migrations are embedded in the binary and applied on startup.
 
+`KASL_AGENTS` is how the first agents get in while the admin UI does not exist
+yet: each entry becomes an employee and an agent holding that token's hash.
+Re-running with a changed token rotates it and revokes the old one. Tokens are
+secrets — pass them through your deployment's secret store, not a committed
+file — and the variable stops being the way in once tokens are issued from the
+UI.
+
 ## What it will do
 
-- Ingest work-time data from kasl agents: workdays, pauses, tasks, reports
+- Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days: done)*
 - Manager dashboards: who is working right now, hours per person, trends over time
 - Personal pages: every employee sees their own history
 - Roles: admin, manager, employee
