@@ -82,6 +82,29 @@ with a time zone (the agent stores bare wall-clock text, which does not survive
 a team spread across zones), and rows are tied together by foreign keys rather
 than by comparing dates. Both are recorded in [ADR 0003](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0003-time-and-identity-in-the-schema.md).
 
+## Running it somewhere real
+
+`docker-compose.prod.yml` builds the server and starts it next to PostgreSQL.
+The image is built on the machine that will run it, so a stand on a Raspberry
+Pi gets an aarch64 binary without cross-compiling anything:
+
+```console
+$ cat > .env <<'ENV'
+POSTGRES_PASSWORD=<a long random string>
+KASL_AGENTS=employee@example.com:<the agent's token>
+ENV
+$ chmod 600 .env
+$ docker compose -f docker-compose.prod.yml up -d --build
+```
+
+The database publishes no port — only the server reaches it, over the compose
+network — and the server runs as an unprivileged user. The first build takes a
+while on a small machine (about fifteen minutes on a Pi 4); later ones reuse
+the cached layers.
+
+This is a stand, not a supported deployment: backups, restore and an install
+guide come with the deployment milestone.
+
 ## Configuration
 
 Everything comes from the environment:
