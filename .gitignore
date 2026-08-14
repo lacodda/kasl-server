@@ -9,3 +9,6 @@ frontend/dist/
 docs/node_modules/
 docs/dist/
 docs/.astro/
+
+# Staging directory for `turnout deploy` (tools/stage-deploy.sh)
+/deploy

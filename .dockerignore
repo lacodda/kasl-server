@@ -1,0 +1,14 @@
+# The build context travels to the machine doing the build, so it carries only
+# what the build needs. `target/` alone is gigabytes of host-architecture
+# artifacts that the container could not use anyway.
+target/
+.git/
+.github/
+docs/
+assets/
+frontend/node_modules/
+frontend/dist/
+
+# Never ship secrets into an image layer.
+.env
+*.env
