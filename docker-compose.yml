@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: kasl
       POSTGRES_DB: kasl
     ports:
-      - "5432:5432"
+      # Overridable: another PostgreSQL (another project, or a system install)
+      # may already hold 5432 on a developer machine.
+      - "${KASL_DB_PORT:-5433}:5432"
     volumes:
       # postgres:18+ images keep data in a version-specific subdirectory;
       # the mount must sit one level up or the entrypoint refuses to start.

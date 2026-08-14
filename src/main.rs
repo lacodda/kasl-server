@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod model;
 
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPoolOptions;
@@ -19,7 +20,12 @@ async fn main() -> Result<()> {
         .connect(&config.database_url)
         .await
         .context("failed to connect to PostgreSQL")?;
-    sqlx::migrate!().run(&pool).await.context("failed to apply database migrations")?;
+    let migrator = sqlx::migrate!();
+    // Worth a line: on a fresh install this is where the schema appears, and
+    // on an upgrade it is the first thing to check when something looks off.
+    let target = migrator.migrations.last().map(|m| m.version).unwrap_or_default();
+    migrator.run(&pool).await.context("failed to apply database migrations")?;
+    tracing::info!(version = target, "database schema is up to date");
 
     let listener = TcpListener::bind(config.addr)
         .await
