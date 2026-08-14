@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-14T19:09:10.817403Z  INFO kasl_server: database schema is up to date version=20260814000001
-2026-08-14T19:09:10.883175Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-14T19:09:10.883628Z  INFO kasl_server: kasl-server listening version="0.3.0" addr=0.0.0.0:8080
+2026-08-14T21:28:05.552455Z  INFO kasl_server: database schema is up to date version=20260814000001
+2026-08-14T21:28:05.627689Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-14T21:28:05.628303Z  INFO kasl_server: kasl-server listening version="0.3.1" addr=0.0.0.0:8080
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.3.0"}
+{"database":"ok","status":"ok","version":"0.3.1"}
 
 $ curl -X POST http://127.0.0.1:8080/api/v1/days \
     -H "Authorization: Bearer agent-token" -H "Content-Type: application/json" \
@@ -30,7 +30,7 @@ $ curl -X POST http://127.0.0.1:8080/api/v1/days \
          "ended_at":"2026-08-14T18:31:00-03:00",
          "pauses":[{"started_at":"2026-08-14T13:02:00-03:00","ended_at":"2026-08-14T14:05:00-03:00","duration_seconds":3780,"manual":true,"reason":"lunch"}],
          "tasks":[{"agent_task_id":1,"recorded_at":"2026-08-14T18:28:00-03:00","name":"Ingest API v1","completeness":100}]}'
-{"workday_id":"b629eb55-aac3-4484-9611-a470c83c7c9f","date":"2026-08-14","pauses":1,"tasks":1}
+{"workday_id":"6d593db2-dce9-47f5-95aa-6ef28cdbda96","date":"2026-08-14","pauses":1,"tasks":1}
 ```
 
 The dev database listens on 5433, leaving a PostgreSQL you may already run on
