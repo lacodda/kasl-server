@@ -3,11 +3,13 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
+
+use crate::ingest;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -15,8 +17,14 @@ pub struct AppState {
 }
 
 pub fn router(pool: PgPool) -> Router {
+    // `/api/v1` from the very first endpoint: kasl agents update on their own
+    // schedule, so the path a working agent calls must keep meaning what it
+    // meant when that agent shipped (ADR 0001).
+    let api_v1 = Router::new().route("/days", post(ingest::upload_day));
+
     Router::new()
         .route("/health", get(health))
+        .nest("/api/v1", api_v1)
         .with_state(AppState { pool })
         .layer(TraceLayer::new_for_http())
 }
