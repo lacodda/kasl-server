@@ -33,11 +33,12 @@ jobs:
       - name: Build
         run: cargo build --release
 
-  # The schema tests skip themselves without a database, so a green matrix
-  # above proves nothing about the migrations. This job is where they actually
-  # run: a real PostgreSQL, migrated from empty on every push.
-  schema:
-    name: schema
+  # The database-backed tests skip themselves without a database, so a green
+  # matrix above proves nothing about the migrations or the ingest endpoint.
+  # This job is where they actually run: a real PostgreSQL, migrated from empty
+  # on every push.
+  database:
+    name: database
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -61,12 +62,12 @@ jobs:
       # A skipped test also reports "ok", so the run is inspected rather than
       # trusted: if the database never reached the tests, this job must fail
       # instead of quietly passing on nothing.
-      - name: Test the schema against PostgreSQL
+      - name: Test against PostgreSQL
         run: |
           set -o pipefail
-          cargo test --test schema -- --nocapture 2>&1 | tee output.txt
+          cargo test --test schema --test ingest -- --nocapture 2>&1 | tee output.txt
           if grep -q 'skipped: DATABASE_URL is not set' output.txt; then
-            echo "::error::the schema tests skipped themselves; DATABASE_URL did not reach them"
+            echo "::error::the database tests skipped themselves; DATABASE_URL did not reach them"
             exit 1
           fi
 

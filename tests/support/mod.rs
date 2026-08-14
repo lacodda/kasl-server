@@ -99,8 +99,15 @@ pub struct TestServer {
 
 impl TestServer {
     /// Starts a server with one agent, or returns `None` without a database.
+    ///
+    /// The skip is announced rather than silent: a test that quietly does
+    /// nothing still reports "ok", and CI greps for this line to tell the two
+    /// apart.
     pub async fn start() -> Option<Self> {
-        let db = TestDb::create().await?;
+        let Some(db) = TestDb::create().await else {
+            eprintln!("skipped: DATABASE_URL is not set");
+            return None;
+        };
         let pool = db.pool.clone();
 
         let server = Self {

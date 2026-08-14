@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-08-14
+
+### Documentation
+- Match the published 0.2.0 release notes
+- Document the ingest endpoint and the rules behind it
+
+### Features
+- Authenticate agents by bearer token
+- Accept days from agents on POST /api/v1/days
+
+### Refactoring
+- Expose the server as a library
+
 ## [0.2.0] - 2026-08-14
 
 ### CI
