@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Documentation
 - Explain how to run a stand
 - Refresh the transcript for 0.3.1
+- Cut 0.3.1
 
 ### Features
 - Containerize the server and stage what a stand needs
