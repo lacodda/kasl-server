@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
 ### Documentation
 - Record the schema and how it differs from the agent
 - Cut 0.2.0
+- Separate releases in the generated file
+- Drop the forward reference to an unwritten record
 
 ### Features
 - Add the core schema for people, days, tasks and reports
