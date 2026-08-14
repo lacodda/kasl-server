@@ -33,6 +33,43 @@ jobs:
       - name: Build
         run: cargo build --release
 
+  # The schema tests skip themselves without a database, so a green matrix
+  # above proves nothing about the migrations. This job is where they actually
+  # run: a real PostgreSQL, migrated from empty on every push.
+  schema:
+    name: schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: kasl
+          POSTGRES_PASSWORD: kasl
+          POSTGRES_DB: kasl
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kasl -d kasl"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://kasl:kasl@localhost:5432/kasl
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # A skipped test also reports "ok", so the run is inspected rather than
+      # trusted: if the database never reached the tests, this job must fail
+      # instead of quietly passing on nothing.
+      - name: Test the schema against PostgreSQL
+        run: |
+          set -o pipefail
+          cargo test --test schema -- --nocapture 2>&1 | tee output.txt
+          if grep -q 'skipped: DATABASE_URL is not set' output.txt; then
+            echo "::error::the schema tests skipped themselves; DATABASE_URL did not reach them"
+            exit 1
+          fi
+
   # rust-version is a promise to anyone running `cargo install`. Without a job
   # that actually builds on it, the number silently rots the first time a new
   # API is used — so read it from the manifest and hold it to it.
