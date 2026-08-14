@@ -16,6 +16,28 @@ fn read(path: impl AsRef<Path>) -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }
 
+/// Reads a top-level `key = "value"` from the `[package]` block of Cargo.toml.
+///
+/// Deliberately naive: it stops at the next section, which is all these checks
+/// need, and avoids a TOML parser as a dev-dependency.
+fn cargo_field(key: &str) -> String {
+    let manifest = read("Cargo.toml");
+    for line in manifest.lines() {
+        let line = line.trim();
+        // `version` also appears under [dependencies] and in every dependency.
+        if line.starts_with('[') && line != "[package]" {
+            break;
+        }
+        let Some((name, value)) = line.split_once('=') else { continue };
+        // Exact match, so `rust-version` cannot answer a lookup for `version`.
+        if name.trim() != key {
+            continue;
+        }
+        return value.trim().trim_matches('"').to_string();
+    }
+    panic!("`{key}` not found in the [package] block of Cargo.toml");
+}
+
 #[test]
 fn readme_links_resolve_off_github() {
     // The same file is rendered on crates.io, where a relative path has no
@@ -42,6 +64,35 @@ fn readme_links_resolve_off_github() {
             }
         }
     }
+}
+
+#[test]
+fn the_changelog_covers_the_version_being_shipped() {
+    // The tag drives an irreversible publish, and the release notes are cut
+    // from the changelog. A manifest bumped without a changelog entry ships a
+    // version nobody can read the changes of.
+    let version = cargo_field("version");
+    let changelog = read("CHANGELOG.md");
+    let heading = format!("## [{version}]");
+
+    assert!(
+        changelog.contains(&heading),
+        "CHANGELOG.md has no `{heading}` section; run `git-cliff --tag v{version}` before tagging"
+    );
+}
+
+#[test]
+fn the_readme_shows_the_version_being_shipped() {
+    // The README carries a transcript of a live run. When the manifest moves
+    // and the transcript does not, the storefront advertises the previous
+    // release's output as if it were this one.
+    let version = cargo_field("version");
+    let readme = read("README.md");
+
+    assert!(
+        readme.contains(&format!("\"version\":\"{version}\"")),
+        "README.md does not show version {version} in its transcript; re-run the server and paste the current output"
+    );
 }
 
 #[test]
