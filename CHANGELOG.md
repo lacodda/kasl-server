@@ -10,10 +10,12 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Record the schema and how it differs from the agent
+- Cut 0.2.0
 
 ### Features
 - Add the core schema for people, days, tasks and reports
 - Log the schema version on startup and free port 5432
+
 ## [0.1.0] - 2026-08-13
 
 ### CI
@@ -30,3 +32,4 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 - Guard README consistency before release
+

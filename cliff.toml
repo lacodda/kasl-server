@@ -5,7 +5,6 @@ header = """
 # Changelog
 
 All notable changes to this project are documented in this file.
-
 """
 body = """
 {% if version %}\
@@ -18,9 +17,11 @@ body = """
 {% for commit in commits %}\
 - {{ commit.message | upper_first }}
 {% endfor %}\
-{% endfor %}\
+{% endfor %}
 """
-trim = true
+# Trimming would eat the blank line each version ends with, stacking releases
+# against each other once a second one is cut.
+trim = false
 
 [git]
 conventional_commits = true
