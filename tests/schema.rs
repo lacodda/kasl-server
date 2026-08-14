@@ -9,82 +9,11 @@
 //! Skipped unless `DATABASE_URL` is set, so `cargo test` stays green on a
 //! machine without a database; CI runs them with a Postgres service.
 
-use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection, PgPool, postgres::PgPoolOptions};
+mod support;
+
+use sqlx::PgPool;
+use support::with_db;
 use uuid::Uuid;
-
-/// Connection string of a throwaway database, or `None` when the environment
-/// offers no server to create one on.
-struct TestDb {
-    admin_url: String,
-    name: String,
-    pool: PgPool,
-}
-
-impl TestDb {
-    /// Creates a database of its own and migrates it.
-    ///
-    /// A shared database would make these tests order-dependent: they assert on
-    /// uniqueness and on cascade deletes, which leftover rows from a neighbour
-    /// would break.
-    async fn create() -> Option<Self> {
-        let admin_url = std::env::var("DATABASE_URL").ok()?;
-        let name = format!("kasl_test_{}", Uuid::new_v4().simple());
-
-        let mut admin = PgConnection::connect(&admin_url).await.expect("DATABASE_URL is set but not reachable");
-        // `CREATE DATABASE` takes no bind parameters, so the name is
-        // interpolated. It is a literal prefix plus a generated UUID, never
-        // anything from outside this test.
-        admin
-            .execute(AssertSqlSafe(format!(r#"CREATE DATABASE "{name}""#)))
-            .await
-            .expect("failed to create the test database");
-        admin.close().await.ok();
-
-        let pool = PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&replace_database(&admin_url, &name))
-            .await
-            .expect("failed to connect to the test database");
-        sqlx::migrate!().run(&pool).await.expect("migrations failed");
-
-        Some(Self { admin_url, name, pool })
-    }
-
-    async fn drop(self) {
-        let Self { admin_url, name, pool } = self;
-        pool.close().await;
-        if let Ok(mut admin) = PgConnection::connect(&admin_url).await {
-            // WITH (FORCE) so a lingering connection cannot leave the database
-            // behind on the developer's server.
-            let _ = admin.execute(AssertSqlSafe(format!(r#"DROP DATABASE IF EXISTS "{name}" WITH (FORCE)"#))).await;
-            admin.close().await.ok();
-        }
-    }
-}
-
-/// Swaps the database name in a connection string, keeping credentials, host
-/// and query parameters (`sslmode` and friends) intact.
-fn replace_database(url: &str, database: &str) -> String {
-    let (prefix, rest) = url.split_once("://").expect("DATABASE_URL must be a URL");
-    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
-    let query = path.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
-    format!("{prefix}://{authority}/{database}{query}")
-}
-
-/// Runs `test` against a freshly migrated database, or skips when there is none.
-async fn with_db<F, Fut>(test: F)
-where
-    F: FnOnce(PgPool) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    let Some(db) = TestDb::create().await else {
-        eprintln!("skipped: DATABASE_URL is not set");
-        return;
-    };
-    let pool = db.pool.clone();
-    test(pool).await;
-    db.drop().await;
-}
 
 /// Inserts a user and returns its id.
 async fn insert_user(pool: &PgPool, email: &str) -> Uuid {
@@ -108,7 +37,7 @@ async fn insert_workday(pool: &PgPool, user: Uuid, date: &str) -> Result<Uuid, s
 async fn migrations_apply_and_are_idempotent() {
     with_db(|pool| async move {
         // A second run must be a no-op: the server migrates on every startup.
-        sqlx::migrate!().run(&pool).await.expect("re-running migrations must be a no-op");
+        kasl_server::migrator().run(&pool).await.expect("re-running migrations must be a no-op");
 
         let tables: Vec<String> = sqlx::query_scalar("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")
             .fetch_all(&pool)
@@ -180,7 +109,7 @@ async fn an_upload_of_the_same_task_updates_one_row() {
             .fetch_all(&pool)
             .await
             .expect("failed to read tasks");
-        assert_eq!(rows, vec![(100,)], "the re-upload should have updated the single row");
+        assert_eq!(rows, [(100,)], "the re-upload should have updated the single row");
     })
     .await;
 }

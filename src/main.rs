@@ -1,8 +1,5 @@
-mod app;
-mod config;
-mod model;
-
 use anyhow::{Context, Result};
+use kasl_server::{app, config, provision};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -20,12 +17,15 @@ async fn main() -> Result<()> {
         .connect(&config.database_url)
         .await
         .context("failed to connect to PostgreSQL")?;
-    let migrator = sqlx::migrate!();
+    let migrator = kasl_server::migrator();
     // Worth a line: on a fresh install this is where the schema appears, and
     // on an upgrade it is the first thing to check when something looks off.
     let target = migrator.migrations.last().map(|m| m.version).unwrap_or_default();
     migrator.run(&pool).await.context("failed to apply database migrations")?;
     tracing::info!(version = target, "database schema is up to date");
+
+    let seeds = provision::parse_seeds(&config.agents)?;
+    provision::apply_seeds(&pool, &seeds).await?;
 
     let listener = TcpListener::bind(config.addr)
         .await
