@@ -12,6 +12,9 @@ pub struct Config {
     pub addr: SocketAddr,
     /// PostgreSQL connection string (`DATABASE_URL`).
     pub database_url: String,
+    /// Agents to provision on startup (`KASL_AGENTS`), as `email:token` pairs.
+    /// The bootstrap way in until the admin UI issues tokens.
+    pub agents: String,
 }
 
 impl Config {
@@ -26,7 +29,8 @@ impl Config {
             .parse()
             .with_context(|| format!("KASL_SERVER_ADDR is not a valid socket address: {addr}"))?;
         let database_url = lookup("DATABASE_URL").context("DATABASE_URL is not set (e.g. postgres://kasl:kasl@localhost:5432/kasl)")?;
-        Ok(Self { addr, database_url })
+        let agents = lookup("KASL_AGENTS").unwrap_or_default();
+        Ok(Self { addr, database_url, agents })
     }
 }
 
