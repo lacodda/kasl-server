@@ -2,10 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-08-17
+
+### CI
+- Run the whole suite against PostgreSQL, not a list of test files
+
+### Documentation
+- Document the import and refresh the transcript for 0.5.0
+
+### Features
+- Bring an employee's local kasl history onto the server
+- Bound an import by date, and document the whole thing
+
 ## [0.4.0] - 2026-08-17
 
 ### Documentation
 - Describe backfill, deletions and which failures to retry
+- Cut 0.4.0
 
 ### Features
 - Let an agent declare a day's task list complete
