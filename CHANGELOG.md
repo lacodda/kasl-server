@@ -2,12 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-08-17
+
+### Documentation
+- Describe backfill, deletions and which failures to retry
+
+### Features
+- Let an agent declare a day's task list complete
+- Accept a backlog of days on POST /api/v1/days/batch
+
 ## [0.3.1] - 2026-08-14
 
 ### Documentation
 - Explain how to run a stand
 - Refresh the transcript for 0.3.1
 - Cut 0.3.1
+- Render breaking changes as their own section
 
 ### Features
 - Containerize the server and stage what a stand needs
