@@ -266,3 +266,73 @@ async fn an_open_day_is_accepted() {
     let pause_end: Option<String> = server.optional_scalar("SELECT to_char(ended_at, 'HH24:MI') FROM pauses").await;
     assert!(pause_end.is_none(), "a running pause has no end yet");
 }
+
+#[tokio::test]
+async fn a_task_deleted_on_the_agent_is_deleted_here() {
+    let Some(server) = TestServer::start().await else { return };
+
+    server.post_day(&server.token, a_day()).await;
+    assert_eq!(server.count("tasks").await, 2);
+
+    // The employee deleted task 2 in kasl; the agent re-sends the day with what
+    // is left and declares the list complete.
+    let mut corrected = a_day();
+    corrected["tasks"] = json!([{"agent_task_id": 1, "recorded_at": "2026-08-14T17:50:00-03:00", "name": "Write the ingest endpoint", "completeness": 80}]);
+    corrected["tasks_are_complete"] = json!(true);
+
+    let (status, body) = server.post_day(&server.token, corrected).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted_tasks"], 1, "the server should report what it dropped");
+
+    assert_eq!(server.count("tasks").await, 1, "the deleted task must be gone");
+    let survivor: i32 = server.scalar("SELECT agent_task_id FROM tasks").await;
+    assert_eq!(survivor, 1, "and the one still sent must be the survivor");
+}
+
+#[tokio::test]
+async fn an_authoritative_day_leaves_other_days_alone() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // Two days, each with its own task.
+    server.post_day(&server.token, a_day()).await;
+    let friday = json!({
+        "date": "2026-08-15",
+        "started_at": "2026-08-15T09:00:00-03:00",
+        "tasks": [{"agent_task_id": 9, "recorded_at": "2026-08-15T17:00:00-03:00", "name": "Friday work", "completeness": 50}]
+    });
+    server.post_day(&server.token, friday).await;
+    assert_eq!(server.count("tasks").await, 3);
+
+    // The agent backfills Thursday with an authoritative, empty task list. This
+    // is the case that makes the deletion date-scoped: a blunter "replace the
+    // user's tasks" would take Friday's row with it.
+    let mut empty_thursday = a_day();
+    empty_thursday["tasks"] = json!([]);
+    empty_thursday["tasks_are_complete"] = json!(true);
+
+    let (status, body) = server.post_day(&server.token, empty_thursday).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted_tasks"], 2, "both of Thursday's tasks are gone");
+
+    assert_eq!(server.count("tasks").await, 1, "Friday must be untouched");
+    let survivor: i32 = server.scalar("SELECT agent_task_id FROM tasks").await;
+    assert_eq!(survivor, 9, "and the survivor is Friday's task");
+}
+
+#[tokio::test]
+async fn an_agent_that_does_not_claim_completeness_deletes_nothing() {
+    let Some(server) = TestServer::start().await else { return };
+
+    server.post_day(&server.token, a_day()).await;
+
+    // An agent from before the flag existed: same day, fewer tasks, no claim.
+    // Its silence must not be read as a deletion.
+    let mut partial = a_day();
+    partial["tasks"] = json!([{"agent_task_id": 1, "recorded_at": "2026-08-14T17:50:00-03:00", "name": "Write the ingest endpoint", "completeness": 90}]);
+
+    let (status, body) = server.post_day(&server.token, partial).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted_tasks"], 0);
+
+    assert_eq!(server.count("tasks").await, 2, "an older agent must not lose the employee's data");
+}

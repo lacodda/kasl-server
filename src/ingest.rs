@@ -39,6 +39,17 @@ pub struct DayUpload {
     pub pauses: Vec<PauseUpload>,
     #[serde(default)]
     pub tasks: Vec<TaskUpload>,
+    /// Whether `tasks` is everything the agent holds for this date.
+    ///
+    /// When set, a task the server stored on this date and the agent no longer
+    /// sends is one the employee deleted, and it is removed here too. Tasks on
+    /// other dates are untouched - they are matched by id and outlive a single
+    /// day, so wiping by date alone would take yesterday's copy with it.
+    ///
+    /// Defaults to false: an older agent, which cannot know about this flag,
+    /// must never have its silence read as "delete the rest".
+    #[serde(default)]
+    pub tasks_are_complete: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,35 +93,50 @@ pub struct DayAccepted {
     pub date: NaiveDate,
     pub pauses: usize,
     pub tasks: usize,
+    /// Tasks dropped because the agent declared its set authoritative. Zero on
+    /// the common upload; a non-zero count is worth noticing in a log.
+    pub deleted_tasks: u64,
 }
 
 /// Accepts one day from an authenticated agent.
 pub async fn upload_day(State(state): State<AppState>, agent: AuthenticatedAgent, Json(day): Json<DayUpload>) -> Result<impl IntoResponse, ApiError> {
-    validate(&day)?;
+    let accepted = store_day(&state.pool, agent, &day).await?;
+    Ok((StatusCode::OK, Json(accepted)))
+}
+
+/// Writes one day, whole or not at all.
+///
+/// Shared by the single-day route and the batch one so a backfilled day is
+/// stored by exactly the same code as a live one.
+async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUpload) -> Result<DayAccepted, ApiError> {
+    validate(day)?;
 
     // All of it or none: a day whose pauses landed but whose tasks did not
     // would show up on a dashboard as real, and nobody would know to re-send.
-    let mut tx = state.pool.begin().await?;
+    let mut tx = pool.begin().await?;
 
-    let workday_id = upsert_workday(&mut tx, agent.user_id, &day).await?;
+    let workday_id = upsert_workday(&mut tx, agent.user_id, day).await?;
     replace_pauses(&mut tx, workday_id, &day.pauses).await?;
     let tasks = upsert_tasks(&mut tx, agent.user_id, day.date, &day.tasks).await?;
+    let deleted_tasks = if day.tasks_are_complete {
+        delete_missing_tasks(&mut tx, agent.user_id, day.date, &day.tasks).await?
+    } else {
+        0
+    };
 
     tx.commit().await?;
 
     // The agent, not just the person: several machines report for one employee
     // and "which one sent this" is the first question when a day looks wrong.
-    tracing::info!(%workday_id, user_id = %agent.user_id, agent_id = %agent.agent_id, date = %day.date, pauses = day.pauses.len(), tasks, "accepted a day");
+    tracing::info!(%workday_id, user_id = %agent.user_id, agent_id = %agent.agent_id, date = %day.date, pauses = day.pauses.len(), tasks, deleted_tasks, "accepted a day");
 
-    Ok((
-        StatusCode::OK,
-        Json(DayAccepted {
-            workday_id,
-            date: day.date,
-            pauses: day.pauses.len(),
-            tasks,
-        }),
-    ))
+    Ok(DayAccepted {
+        workday_id,
+        date: day.date,
+        pauses: day.pauses.len(),
+        tasks,
+        deleted_tasks,
+    })
 }
 
 /// Rejects payloads the schema would refuse anyway, with a message that says
@@ -222,6 +248,25 @@ async fn upsert_tasks(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, date: N
     Ok(tasks.len())
 }
 
+/// Removes the date's tasks the agent did not send.
+///
+/// Only reached when the agent marked its list authoritative. Scoped to the
+/// one date on purpose: a task carried across several days keeps its rows on
+/// the others, and an agent backfilling Monday cannot erase Friday.
+async fn delete_missing_tasks(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, date: NaiveDate, tasks: &[TaskUpload]) -> Result<u64, ApiError> {
+    let kept: Vec<i32> = tasks.iter().map(|task| task.agent_task_id).collect();
+
+    let deleted = sqlx::query("DELETE FROM tasks WHERE user_id = $1 AND date = $2 AND agent_task_id <> ALL($3)")
+        .bind(user_id)
+        .bind(date)
+        .bind(&kept)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+
+    Ok(deleted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +351,18 @@ mod tests {
         let task = &day.tasks[0];
         assert_eq!(task.agent_group_id, None, "an absent group is absent on the wire");
         assert_eq!(task.agent_group_id.unwrap_or(task.agent_task_id), 7, "and resolves to the task itself");
+    }
+
+    #[test]
+    fn an_agent_that_says_nothing_deletes_nothing() {
+        // The compatibility hinge: agents shipped before this flag existed send
+        // whatever tasks they have, and their silence must not be read as
+        // "delete everything else on that date".
+        let day = day_json(serde_json::json!({}));
+        assert!(!day.tasks_are_complete, "the authoritative set must be opt-in");
+
+        let day = day_json(serde_json::json!({ "tasks_are_complete": true }));
+        assert!(day.tasks_are_complete, "and an agent that opts in is heard");
     }
 
     #[test]

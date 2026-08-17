@@ -57,6 +57,10 @@ Two properties are worth knowing before writing a client:
   the same payload twice leaves the same rows. Pauses are replaced as a set;
   tasks are matched on `agent_task_id`, so a task carried into the next day
   moves rather than multiplying.
+- **Deleting a task takes one word.** Send `"tasks_are_complete": true` and the
+  date's tasks the payload omits are deleted, which is how a task the employee
+  removed in kasl disappears here too. Other dates are untouched. Leave the flag
+  out - as agents written before it did - and nothing is ever deleted.
 
 A malformed day is refused with `400` and a reason naming the field
 (`{"error":"tasks[0]: completeness must be between 0 and 100"}`); an

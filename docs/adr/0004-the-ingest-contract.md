@@ -63,9 +63,9 @@ came from.
   refused with a 400 rather than silently misinterpreted.
 - A misbehaving agent can overwrite its own history, and only its own. The
   token identifies the user; nothing in the payload chooses whose day it is.
-- Deleting a pause on the agent deletes it here; deleting a *task* does not,
-  since tasks are matched rather than replaced. Removing tasks needs an
-  explicit signal, which the reliability milestone should settle.
+- Deleting a pause on the agent deletes it here; deleting a *task* needs the
+  explicit signal added in 0.4.0 (`tasks_are_complete`), since tasks are matched
+  rather than replaced. See ADR 0005.
 - Uploads are not authenticated per request beyond the token: replay of a
   captured payload writes what the agent itself would have written. Given the
   last-upload-wins rule, that is a re-run of a legitimate write, not a way to
