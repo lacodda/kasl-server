@@ -188,6 +188,34 @@ async fn importing_twice_corrects_rather_than_doubles() {
     assert_eq!(started_at, "2025-03-10 04:12", "the second import's offset must win");
 }
 
+#[test]
+fn a_date_range_splits_a_history_that_crossed_time_zones() {
+    let scratch = Scratch::new("range");
+    agent_db(&scratch.0);
+    let (days, _) = import::read_agent_db(&scratch.0).unwrap();
+
+    let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
+
+    // Both ends are inclusive: an operator splitting a year at a move date
+    // writes the same date as the end of one run and the start of the next,
+    // and neither day may fall between the two.
+    let first = import::within(import::read_agent_db(&scratch.0).unwrap().0, None, Some(day("2025-03-10")));
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].date, day("2025-03-10"), "the boundary day belongs to the earlier run");
+
+    let second = import::within(import::read_agent_db(&scratch.0).unwrap().0, Some(day("2025-03-11")), None);
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].date, day("2025-03-11"));
+
+    // No bounds is everything, which is what an import without the arguments
+    // must keep doing.
+    assert_eq!(import::within(days, None, None).len(), 2);
+
+    // A range covering nothing yields nothing rather than everything.
+    let empty = import::within(import::read_agent_db(&scratch.0).unwrap().0, Some(day("2026-01-01")), None);
+    assert!(empty.is_empty());
+}
+
 #[tokio::test]
 async fn an_import_will_not_invent_the_person() {
     let Some(server) = TestServer::start().await else { return };

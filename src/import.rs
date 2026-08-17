@@ -275,6 +275,17 @@ fn parse_time(raw: &str) -> Result<NaiveDateTime> {
         .with_context(|| format!("not a timestamp: {raw}"))
 }
 
+/// Keeps only the days within an inclusive date range.
+///
+/// The range exists for the employee who changed time zones mid-history: one
+/// run per stretch, each with the offset that stretch was recorded in. Both
+/// ends are optional, and an absent one means "no bound on that side".
+pub fn within(days: Vec<AgentDay>, since: Option<NaiveDate>, until: Option<NaiveDate>) -> Vec<AgentDay> {
+    days.into_iter()
+        .filter(|day| since.is_none_or(|since| day.date >= since) && until.is_none_or(|until| day.date <= until))
+        .collect()
+}
+
 /// Applies the operator's offset to a wall-clock time from the agent.
 ///
 /// A fixed offset, not a zone: there is nothing in the file to say which of two

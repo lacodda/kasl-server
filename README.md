@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and now survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can finally be deleted here too. The tables are filled; nothing reads them back yet — dashboards and the personal page are the milestones after next, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database. The tables are filled; nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -108,6 +108,38 @@ unrecognized, revoked or deactivated token gets `401`. The reasoning behind all
 of this is in [ADR 0004](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0004-the-ingest-contract.md)
 and [ADR 0005](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0005-deletions-and-backfill.md).
 
+## Importing history from before the server
+
+Someone can track their time with kasl for a year before their team runs a
+server. That history is an ordinary SQLite file on their machine, and it does
+not have to be lost because the server arrived second:
+
+```console
+$ kasl-server import --db kasl.db --user employee@example.com --timezone -03:00
+read 240 workdays, 312 pauses, 460 tasks from kasl.db
+skipped 17 tasks the employee had deleted
+imported 240 days as employee@example.com at -03:00
+```
+
+`--timezone` is required and has no default. kasl stores bare wall-clock text,
+so nothing in the file says which offset it was recorded in - and a wrong guess
+produces a perfectly plausible-looking year of work at the wrong hour. The
+answer comes from whoever knows, and is echoed back so it is on the record.
+
+- `--dry-run` reads and reports without writing anything.
+- `--since` / `--until` bound the import by date, both ends inclusive. This is
+  how someone who moved between time zones is imported correctly: one run per
+  stretch, each with the offset that stretch was recorded in.
+- The account must already exist - an import will not create it, so a typo in
+  the email address cannot quietly file a year of history under a stranger.
+- Re-importing replaces rather than duplicates, so a run that failed partway can
+  simply be repeated, and a wrong offset is fixed by importing again with the
+  right one.
+
+The agent's file is opened read-only and never written to. Details and the
+trade-offs behind the fixed offset are in
+[ADR 0006](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0006-importing-local-history.md).
+
 ## The data model
 
 Migrations live in `migrations/` and are applied on startup. The shape follows
@@ -172,7 +204,7 @@ UI.
 
 ## What it will do
 
-- Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days and backfill: done)*
+- Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
 - Manager dashboards: who is working right now, hours per person, trends over time
 - Personal pages: every employee sees their own history
 - Roles: admin, manager, employee

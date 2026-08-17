@@ -42,6 +42,15 @@ struct ImportArgs {
     /// is refused for typing exactly what the documentation shows.
     #[arg(long, value_name = "OFFSET", value_parser = parse_offset, allow_hyphen_values = true)]
     timezone: chrono::FixedOffset,
+    /// Import only days on or after this date (`YYYY-MM-DD`).
+    ///
+    /// With `--until`, this is how an employee who moved between time zones is
+    /// imported correctly: one run per stretch, each with its own offset.
+    #[arg(long, value_name = "DATE")]
+    since: Option<chrono::NaiveDate>,
+    /// Import only days on or before this date (`YYYY-MM-DD`).
+    #[arg(long, value_name = "DATE")]
+    until: Option<chrono::NaiveDate>,
     /// Read and report what would be imported, without writing anything.
     #[arg(long)]
     dry_run: bool,
@@ -97,6 +106,11 @@ async fn run_import(pool: &sqlx::PgPool, args: ImportArgs) -> Result<()> {
         summary.tasks,
         args.db.display()
     );
+
+    let days = import::within(days, args.since, args.until);
+    if args.since.is_some() || args.until.is_some() {
+        println!("selected {} days in range", days.len());
+    }
     if summary.skipped_deleted_tasks > 0 {
         println!("skipped {} tasks the employee had deleted", summary.skipped_deleted_tasks);
     }
