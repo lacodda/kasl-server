@@ -62,10 +62,34 @@ Two properties are worth knowing before writing a client:
   removed in kasl disappears here too. Other dates are untouched. Leave the flag
   out - as agents written before it did - and nothing is ever deleted.
 
+**`POST /api/v1/days/batch`** — upload a backlog. The body is `{"days": [...]}`
+with the same day objects, and the answer reports each one:
+
+```json
+{"accepted": 2, "rejected": 1, "results": [
+  {"status": "accepted", "date": "2026-08-10", "workday_id": "...", "pauses": 1, "tasks": 3, "deleted_tasks": 0},
+  {"status": "rejected", "date": "2026-08-11", "error": "ended_at is before started_at"},
+  {"status": "accepted", "date": "2026-08-12", "workday_id": "...", "pauses": 0, "tasks": 1, "deleted_tasks": 0}
+]}
+```
+
+Each day is written on its own, so one the server will never accept does not
+block the rest - an agent that could not deliver *any* of its backlog because of
+a single bad row would retry the same request forever. The batch carries at most
+`KASL_MAX_BATCH_DAYS` days (31) and the body at most `KASL_MAX_BODY_BYTES`
+(4 MiB); past either, `413`.
+
+**Which failures are worth retrying.** `4xx` means the payload will not be
+accepted as sent, however many times it is tried - fix it or drop it. `5xx`
+means the fault is on this side; send it again later. A batch that answers `5xx`
+stopped partway: the days already accepted are stored, and re-sending them is
+safe because the last upload wins.
+
 A malformed day is refused with `400` and a reason naming the field
 (`{"error":"tasks[0]: completeness must be between 0 and 100"}`); an
 unrecognized, revoked or deactivated token gets `401`. The reasoning behind all
-of this is in [ADR 0004](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0004-the-ingest-contract.md).
+of this is in [ADR 0004](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0004-the-ingest-contract.md)
+and [ADR 0005](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0005-deletions-and-backfill.md).
 
 ## The data model
 

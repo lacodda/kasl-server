@@ -1,7 +1,10 @@
-//! The upload endpoint: `POST /api/v1/days`.
+//! The upload endpoints: `POST /api/v1/days` and `/days/batch`.
 //!
-//! An agent sends one day at a time - the workday, its pauses, and the tasks
-//! recorded on it - and the server writes it whole or not at all.
+//! An agent sends a day (the workday, its pauses, and the tasks recorded on it)
+//! and the server writes it whole or not at all. After time offline it sends a
+//! stretch of them at once; every day in a batch travels the same path as a
+//! live one, and is written on its own so a day that cannot be accepted does
+//! not hold up the rest (ADR 0005).
 //!
 //! Two rules define the contract, both settled before a line of this was
 //! written:
@@ -98,10 +101,82 @@ pub struct DayAccepted {
     pub deleted_tasks: u64,
 }
 
+/// A stretch of days at once - what an agent sends after time offline.
+#[derive(Debug, Deserialize)]
+pub struct BatchUpload {
+    pub days: Vec<DayUpload>,
+}
+
+/// What came of a batch. Counts first: a caller that reads only the status sees
+/// `200` even when a day was refused, so the summary has to be impossible to
+/// miss in the body.
+#[derive(Debug, Serialize)]
+pub struct BatchResult {
+    pub accepted: usize,
+    pub rejected: usize,
+    pub results: Vec<DayResult>,
+}
+
+/// One day's fate, in the order the days were sent.
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum DayResult {
+    Accepted {
+        #[serde(flatten)]
+        day: DayAccepted,
+    },
+    /// The date is echoed even here: it is how the agent knows which of its
+    /// pending days to keep, and a day can be refused before anything else
+    /// about it is known to be usable.
+    Rejected { date: NaiveDate, error: String },
+}
+
 /// Accepts one day from an authenticated agent.
 pub async fn upload_day(State(state): State<AppState>, agent: AuthenticatedAgent, Json(day): Json<DayUpload>) -> Result<impl IntoResponse, ApiError> {
     let accepted = store_day(&state.pool, agent, &day).await?;
     Ok((StatusCode::OK, Json(accepted)))
+}
+
+/// Accepts a backlog of days, each written on its own.
+///
+/// One bad day does not sink the batch. An agent holding a day the server will
+/// never accept would otherwise be unable to deliver any of its backlog, and
+/// would retry the same doomed request forever (ADR 0005).
+pub async fn upload_batch(State(state): State<AppState>, agent: AuthenticatedAgent, Json(batch): Json<BatchUpload>) -> Result<impl IntoResponse, ApiError> {
+    if batch.days.len() > state.max_batch_days {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("a batch carries at most {} days; split the backlog", state.max_batch_days),
+        ));
+    }
+
+    let mut results = Vec::with_capacity(batch.days.len());
+    let mut accepted = 0;
+    let mut rejected = 0;
+
+    for day in &batch.days {
+        match store_day(&state.pool, agent, day).await {
+            Ok(stored) => {
+                accepted += 1;
+                results.push(DayResult::Accepted { day: stored });
+            }
+            // A day the server itself failed on aborts the batch: the agent
+            // must retry it, and reporting a database outage as "this day is
+            // rejected" would tell it to give up instead.
+            Err(error) if error.status().is_server_error() => return Err(error),
+            Err(error) => {
+                rejected += 1;
+                results.push(DayResult::Rejected {
+                    date: day.date,
+                    error: error.to_string(),
+                });
+            }
+        }
+    }
+
+    tracing::info!(user_id = %agent.user_id, agent_id = %agent.agent_id, accepted, rejected, "accepted a batch");
+
+    Ok((StatusCode::OK, Json(BatchResult { accepted, rejected, results })))
 }
 
 /// Writes one day, whole or not at all.

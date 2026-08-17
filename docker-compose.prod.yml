@@ -39,6 +39,10 @@ services:
       # Agent tokens, until the admin UI issues them. Empty is valid: the
       # agents already in the database keep working.
       KASL_AGENTS: ${KASL_AGENTS:-}
+      # Upload bounds. The defaults suit a team of agents backfilling a month;
+      # raise them only for a deliberately larger import.
+      KASL_MAX_BATCH_DAYS: ${KASL_MAX_BATCH_DAYS:-31}
+      KASL_MAX_BODY_BYTES: ${KASL_MAX_BODY_BYTES:-4194304}
       RUST_LOG: ${RUST_LOG:-kasl_server=info,tower_http=info}
     ports:
       # 8082 on the host: 8080 and 8081 are taken by the other services on this

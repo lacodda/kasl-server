@@ -62,6 +62,21 @@ impl TestDb {
     }
 }
 
+/// Reads a response into a status and a JSON body.
+async fn read_response(response: axum::response::Response) -> (StatusCode, Value) {
+    let status = response.status();
+    let bytes = response.into_body().collect().await.expect("the body should read").to_bytes();
+    // An empty body is a legitimate answer; represent it as JSON null so
+    // callers can index into it without branching.
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+
+    (status, body)
+}
+
 /// Swaps the database name in a connection string, keeping credentials, host
 /// and query parameters (`sslmode` and friends) intact.
 pub fn replace_database(url: &str, database: &str) -> String {
@@ -139,29 +154,45 @@ impl TestServer {
         self.post_day_with_header(Some(&format!("Bearer {token}")), day).await
     }
 
+    /// Posts a batch of days.
+    pub async fn post_batch(&self, token: &str, days: Value) -> (StatusCode, Value) {
+        self.post_to("/api/v1/days/batch", Some(&format!("Bearer {token}")), serde_json::json!({ "days": days }))
+            .await
+    }
+
+    /// Posts a batch to a server built with the operator's own limits, which is
+    /// the only way to exercise a limit without waiting for the default.
+    pub async fn post_batch_with_limits(&self, token: &str, days: Value, config: &kasl_server::config::Config) -> (StatusCode, Value) {
+        let request = Request::post("/api/v1/days/batch")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from(serde_json::json!({ "days": days }).to_string()))
+            .expect("the request should build");
+
+        let response = kasl_server::app::router_with(self.pool.clone(), config)
+            .oneshot(request)
+            .await
+            .expect("the router should answer");
+        read_response(response).await
+    }
+
     /// Posts a day with an arbitrary (or absent) Authorization header.
     pub async fn post_day_with_header(&self, authorization: Option<&str>, day: Value) -> (StatusCode, Value) {
-        let mut request = Request::post("/api/v1/days").header(header::CONTENT_TYPE, "application/json");
+        self.post_to("/api/v1/days", authorization, day).await
+    }
+
+    async fn post_to(&self, path: &str, authorization: Option<&str>, body: Value) -> (StatusCode, Value) {
+        let mut request = Request::post(path).header(header::CONTENT_TYPE, "application/json");
         if let Some(value) = authorization {
             request = request.header(header::AUTHORIZATION, value);
         }
-        let request = request.body(Body::from(day.to_string())).expect("the request should build");
+        let request = request.body(Body::from(body.to_string())).expect("the request should build");
 
         let response = kasl_server::app::router(self.pool.clone())
             .oneshot(request)
             .await
             .expect("the router should answer");
-        let status = response.status();
-        let bytes = response.into_body().collect().await.expect("the body should read").to_bytes();
-        // An empty body is a legitimate answer; represent it as JSON null so
-        // callers can index into it without branching.
-        let body = if bytes.is_empty() {
-            Value::Null
-        } else {
-            serde_json::from_slice(&bytes).unwrap_or(Value::Null)
-        };
-
-        (status, body)
+        read_response(response).await
     }
 
     pub async fn count(&self, table: &str) -> i64 {

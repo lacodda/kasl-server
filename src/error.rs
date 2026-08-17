@@ -32,6 +32,12 @@ impl ApiError {
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, message)
     }
+
+    /// Whose fault this was. A batch reads it to tell a day it should give up
+    /// on from one it should send again later.
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
 }
 
 impl std::fmt::Display for ApiError {

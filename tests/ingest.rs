@@ -336,3 +336,145 @@ async fn an_agent_that_does_not_claim_completeness_deletes_nothing() {
 
     assert_eq!(server.count("tasks").await, 2, "an older agent must not lose the employee's data");
 }
+
+/// A bare day for a date - what a backfilled day looks like at its simplest.
+fn day_on(date: &str) -> Value {
+    json!({
+        "date": date,
+        "started_at": format!("{date}T09:00:00-03:00"),
+        "ended_at": format!("{date}T18:00:00-03:00")
+    })
+}
+
+#[tokio::test]
+async fn a_week_offline_arrives_in_one_request() {
+    let Some(server) = TestServer::start().await else { return };
+
+    let week: Vec<Value> = ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14"]
+        .iter()
+        .map(|date| day_on(date))
+        .collect();
+
+    let (status, body) = server.post_batch(&server.token, json!(week)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["accepted"], 5);
+    assert_eq!(body["rejected"], 0);
+    assert_eq!(body["results"][0]["status"], "accepted");
+    assert_eq!(body["results"][0]["date"], "2026-08-10");
+
+    assert_eq!(server.count("workdays").await, 5, "every day of the backlog must land");
+}
+
+#[tokio::test]
+async fn one_bad_day_does_not_sink_the_batch() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // The middle day is impossible: it ends before it starts. The agent holding
+    // it must still be able to deliver the rest, or it retries forever.
+    let days = json!([
+        day_on("2026-08-10"),
+        {"date": "2026-08-11", "started_at": "2026-08-11T18:00:00-03:00", "ended_at": "2026-08-11T09:00:00-03:00"},
+        day_on("2026-08-12"),
+    ]);
+
+    let (status, body) = server.post_batch(&server.token, days).await;
+    assert_eq!(status, StatusCode::OK, "the request itself was processed: {body}");
+    assert_eq!(body["accepted"], 2);
+    assert_eq!(body["rejected"], 1);
+
+    assert_eq!(body["results"][1]["status"], "rejected");
+    assert_eq!(body["results"][1]["date"], "2026-08-11", "the agent must learn which day to drop");
+    assert_eq!(
+        body["results"][1]["error"], "ended_at is before started_at",
+        "and why, so it does not retry what will never be accepted"
+    );
+
+    assert_eq!(server.count("workdays").await, 2, "the good days must be stored");
+    let dates: Vec<String> = sqlx::query_scalar("SELECT to_char(date, 'YYYY-MM-DD') FROM workdays ORDER BY date")
+        .fetch_all(&server.pool)
+        .await
+        .expect("failed to read the stored dates");
+    assert_eq!(dates, vec!["2026-08-10", "2026-08-12"], "and the bad one must not be");
+}
+
+#[tokio::test]
+async fn a_server_fault_stops_the_batch_instead_of_blaming_the_day() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // A failure that is the server's, not the payload's - the same trick as the
+    // single-day transaction test. Reporting it as "this day is rejected" would
+    // tell the agent to drop a day it should have retried.
+    server
+        .execute("ALTER TABLE tasks ADD CONSTRAINT tasks_name_length CHECK (length(name) <= 40)")
+        .await;
+
+    let mut doomed = day_on("2026-08-11");
+    doomed["tasks"] = json!([{"agent_task_id": 1, "recorded_at": "2026-08-11T17:00:00-03:00", "name": "x".repeat(60), "completeness": 50}]);
+
+    let (status, body) = server
+        .post_batch(&server.token, json!([day_on("2026-08-10"), doomed, day_on("2026-08-12")]))
+        .await;
+
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "a fault on our side must be reported as ours: {body}"
+    );
+    assert_eq!(body["error"], "internal server error", "and without leaking its cause");
+
+    // The days before the fault stay written: each is its own transaction, and
+    // the agent learns they landed by re-sending them - which is safe, because
+    // the last upload wins.
+    assert_eq!(server.count("workdays").await, 1, "the day before the fault is committed");
+}
+
+#[tokio::test]
+async fn a_batch_is_bounded() {
+    let Some(server) = TestServer::start().await else { return };
+
+    let mut config = kasl_server::config::Config::defaults_for_database(String::new());
+    config.max_batch_days = 2;
+
+    let days = json!([day_on("2026-08-10"), day_on("2026-08-11"), day_on("2026-08-12")]);
+    let (status, body) = server.post_batch_with_limits(&server.token, days, &config).await;
+
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "an oversized batch must be refused: {body}");
+    assert!(
+        body["error"].as_str().unwrap_or_default().contains("at most 2 days"),
+        "the limit belongs in the message, so the agent can split to fit: {body}"
+    );
+    assert_eq!(server.count("workdays").await, 0, "nothing from a refused batch may be stored");
+
+    // Exactly at the limit is allowed - "at most" has to mean what it says, or
+    // an agent splitting its backlog to fit gets refused anyway.
+    let at_the_limit = json!([day_on("2026-08-10"), day_on("2026-08-11")]);
+    let (status, body) = server.post_batch_with_limits(&server.token, at_the_limit, &config).await;
+    assert_eq!(status, StatusCode::OK, "a batch of exactly the limit must be accepted: {body}");
+    assert_eq!(server.count("workdays").await, 2);
+}
+
+#[tokio::test]
+async fn an_oversized_body_is_refused_before_it_is_read() {
+    let Some(server) = TestServer::start().await else { return };
+
+    let mut config = kasl_server::config::Config::defaults_for_database(String::new());
+    config.max_body_bytes = 512;
+
+    // Well under the day limit, well over the byte limit: the two bounds have
+    // to hold independently, or a batch of few enormous days slips through.
+    let mut fat = day_on("2026-08-10");
+    fat["tasks"] = json!([{"agent_task_id": 1, "recorded_at": "2026-08-10T17:00:00-03:00", "name": "x".repeat(2000), "completeness": 50}]);
+
+    let (status, _) = server.post_batch_with_limits(&server.token, json!([fat]), &config).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "a body past the limit must not be buffered");
+    assert_eq!(server.count("workdays").await, 0);
+}
+
+#[tokio::test]
+async fn a_batch_needs_a_token_like_any_other_upload() {
+    let Some(server) = TestServer::start().await else { return };
+
+    let (status, _) = server.post_batch("not-a-real-token", json!([day_on("2026-08-10")])).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "the batch route must not be a way around the check");
+    assert_eq!(server.count("workdays").await, 0);
+}

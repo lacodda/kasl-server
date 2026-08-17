@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -9,24 +9,41 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::ingest;
+use crate::{config::Config, ingest};
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    /// Days one batch may carry; enforced by the batch handler.
+    pub max_batch_days: usize,
 }
 
-pub fn router(pool: PgPool) -> Router {
+/// Builds the router with the operator's limits applied.
+pub fn router_with(pool: PgPool, config: &Config) -> Router {
     // `/api/v1` from the very first endpoint: kasl agents update on their own
     // schedule, so the path a working agent calls must keep meaning what it
     // meant when that agent shipped (ADR 0001).
-    let api_v1 = Router::new().route("/days", post(ingest::upload_day));
+    let api_v1 = Router::new()
+        .route("/days", post(ingest::upload_day))
+        .route("/days/batch", post(ingest::upload_batch));
 
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1", api_v1)
-        .with_state(AppState { pool })
+        .with_state(AppState {
+            pool,
+            max_batch_days: config.max_batch_days,
+        })
+        // A body larger than this is refused before it is buffered: backfilling
+        // a year and attacking the server look identical up to the size.
+        .layer(DefaultBodyLimit::max(config.max_body_bytes))
         .layer(TraceLayer::new_for_http())
+}
+
+/// The router with default limits - what the tests and `/health` callers want
+/// when the limits are not what is under test.
+pub fn router(pool: PgPool) -> Router {
+    router_with(pool, &Config::defaults_for_database(String::new()))
 }
 
 /// Liveness + readiness in one place: the process answers, and the database

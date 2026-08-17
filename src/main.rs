@@ -30,9 +30,9 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("failed to bind {}", config.addr))?;
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %config.addr, "kasl-server listening");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %config.addr, max_batch_days = config.max_batch_days, max_body_bytes = config.max_body_bytes, "kasl-server listening");
 
-    axum::serve(listener, app::router(pool))
+    axum::serve(listener, app::router_with(pool, &config))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;
