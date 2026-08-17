@@ -62,10 +62,13 @@ jobs:
       # A skipped test also reports "ok", so the run is inspected rather than
       # trusted: if the database never reached the tests, this job must fail
       # instead of quietly passing on nothing.
+      # The whole suite, not a list of test files: a named list silently stops
+      # covering the test file added after it was written, and a job that runs
+      # fewer tests than it looks like it does is worse than no job.
       - name: Test against PostgreSQL
         run: |
           set -o pipefail
-          cargo test --test schema --test ingest -- --nocapture 2>&1 | tee output.txt
+          cargo test -- --nocapture 2>&1 | tee output.txt
           if grep -q 'skipped: DATABASE_URL is not set' output.txt; then
             echo "::error::the database tests skipped themselves; DATABASE_URL did not reach them"
             exit 1
