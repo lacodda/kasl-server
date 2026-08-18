@@ -20,6 +20,18 @@ struct Cli {
 enum Command {
     /// Import an employee's local kasl history from their SQLite database.
     Import(ImportArgs),
+    /// Create the first administrator, or reset an existing one's password.
+    Admin(AdminArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct AdminArgs {
+    /// Email the administrator signs in with.
+    #[arg(long, value_name = "EMAIL")]
+    email: String,
+    /// Their password. At least 8 characters.
+    #[arg(long, value_name = "PASSWORD")]
+    password: String,
 }
 
 #[derive(Debug, clap::Args)]
@@ -89,6 +101,11 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Command::Import(args)) => run_import(&pool, args).await,
+        Some(Command::Admin(args)) => {
+            provision::ensure_admin(&pool, &args.email, &args.password).await?;
+            println!("admin {} is ready", args.email);
+            Ok(())
+        }
         None => serve(pool, config).await,
     }
 }
@@ -135,6 +152,20 @@ async fn run_import(pool: &sqlx::PgPool, args: ImportArgs) -> Result<()> {
 async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     let seeds = provision::parse_seeds(&config.agents)?;
     provision::apply_seeds(&pool, &seeds).await?;
+
+    // The bootstrap admin, same shape as KASL_AGENTS: a container has no other
+    // way to be handed a first account.
+    if let Some((email, password)) = provision::parse_admin(&config.admin)? {
+        provision::ensure_admin(&pool, &email, &password).await?;
+        tracing::info!(%email, "administrator from KASL_ADMIN is ready");
+    }
+
+    // Sessions that expired while the server was down are of no use to anyone.
+    match kasl_server::session::sweep_expired(&pool).await {
+        Ok(0) => {}
+        Ok(swept) => tracing::info!(swept, "removed expired sessions"),
+        Err(error) => tracing::warn!(%error, "failed to sweep expired sessions"),
+    }
 
     let listener = TcpListener::bind(config.addr)
         .await

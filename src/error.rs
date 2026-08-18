@@ -60,6 +60,14 @@ impl IntoResponse for ApiError {
     }
 }
 
+impl From<anyhow::Error> for ApiError {
+    /// Anything that failed inside the server and has no better status. The
+    /// message is logged in full and answered in outline, as with any 500.
+    fn from(error: anyhow::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}"))
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())

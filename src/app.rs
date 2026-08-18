@@ -9,13 +9,15 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{config::Config, ingest};
+use crate::{config::Config, ingest, login};
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     /// Days one batch may carry; enforced by the batch handler.
     pub max_batch_days: usize,
+    /// Whether session cookies carry `Secure`.
+    pub secure_cookies: bool,
 }
 
 /// Builds the router with the operator's limits applied.
@@ -25,7 +27,13 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
     // meant when that agent shipped (ADR 0001).
     let api_v1 = Router::new()
         .route("/days", post(ingest::upload_day))
-        .route("/days/batch", post(ingest::upload_batch));
+        .route("/days/batch", post(ingest::upload_batch))
+        // People, not agents: these carry a session cookie rather than a
+        // bearer token, and the two never mix.
+        .route("/auth/login", post(login::login))
+        .route("/auth/logout", post(login::logout))
+        .route("/auth/logout-everywhere", post(login::logout_everywhere))
+        .route("/auth/me", get(login::me));
 
     Router::new()
         .route("/health", get(health))
@@ -33,6 +41,7 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .with_state(AppState {
             pool,
             max_batch_days: config.max_batch_days,
+            secure_cookies: config.secure_cookies,
         })
         // A body larger than this is refused before it is buffered: backfilling
         // a year and attacking the server look identical up to the size.

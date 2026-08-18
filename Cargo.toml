@@ -15,9 +15,14 @@ exclude = ["docs/", ".github/", "frontend/", "cliff.toml", "rustfmt.toml"]
 
 [dependencies]
 anyhow = "1.0.104"
+# Passwords, unlike the agents' random tokens, are human-chosen and worth
+# guessing at scale - so they get a memory-hard hash rather than SHA-256.
+argon2 = { version = "0.5.3", features = ["std"] }
 axum = "0.8.9"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.5.51", features = ["derive"] }
+# Session tokens come from the OS entropy source, not from a counter.
+rand = "0.10.2"
 # Reads an agent's own database during import. Bundled rather than linked
 # against a system SQLite: the file is the employee's history, and the version
 # that reads it should not depend on what the host happens to ship.

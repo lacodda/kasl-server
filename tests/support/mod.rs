@@ -62,6 +62,12 @@ impl TestDb {
     }
 }
 
+/// Keeps only `name=value` from a `Set-Cookie` value: what the browser sends
+/// back, without the attributes that are instructions to it rather than data.
+fn cookie_pair(set_cookie: &str) -> String {
+    set_cookie.split(';').next().unwrap_or(set_cookie).trim().to_string()
+}
+
 /// Reads a response into a status and a JSON body.
 async fn read_response(response: axum::response::Response) -> (StatusCode, Value) {
     let status = response.status();
@@ -195,12 +201,121 @@ impl TestServer {
         read_response(response).await
     }
 
+    /// Creates an administrator with a password.
+    pub async fn add_admin(&self, email: &str, password: &str) {
+        kasl_server::provision::ensure_admin(&self.pool, email, password)
+            .await
+            .expect("the admin fixture should be created");
+    }
+
+    /// Gives an existing user a password without changing their role.
+    pub async fn set_password(&self, email: &str, password: &str) {
+        let hash = kasl_server::session::hash_password(password).expect("hashing should succeed");
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE lower(email) = lower($2)")
+            .bind(hash)
+            .bind(email)
+            .execute(&self.pool)
+            .await
+            .expect("the password fixture should apply");
+    }
+
+    /// Signs in, returning the status, the `Set-Cookie` value, and the body.
+    pub async fn login(&self, email: &str, password: &str) -> (StatusCode, Option<String>, Value) {
+        let request = Request::post("/api/v1/auth/login")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::json!({"email": email, "password": password}).to_string()))
+            .expect("the request should build");
+
+        let response = kasl_server::app::router(self.pool.clone())
+            .oneshot(request)
+            .await
+            .expect("the router should answer");
+        let cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let (status, body) = read_response(response).await;
+        (status, cookie, body)
+    }
+
+    /// GETs a path carrying a cookie, which may be a full `Set-Cookie` value -
+    /// the name=value prefix is what a browser would send back.
+    pub async fn get_with_cookie(&self, path: &str, cookie: Option<&str>) -> (StatusCode, Value) {
+        let mut request = Request::get(path);
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie_pair(cookie));
+        }
+        let request = request.body(Body::empty()).expect("the request should build");
+        read_response(
+            kasl_server::app::router(self.pool.clone())
+                .oneshot(request)
+                .await
+                .expect("the router should answer"),
+        )
+        .await
+    }
+
+    /// GETs a path with an arbitrary Authorization header.
+    pub async fn get_with_header(&self, path: &str, authorization: Option<&str>) -> (StatusCode, Value) {
+        let mut request = Request::get(path);
+        if let Some(value) = authorization {
+            request = request.header(header::AUTHORIZATION, value);
+        }
+        let request = request.body(Body::empty()).expect("the request should build");
+        read_response(
+            kasl_server::app::router(self.pool.clone())
+                .oneshot(request)
+                .await
+                .expect("the router should answer"),
+        )
+        .await
+    }
+
+    /// POSTs carrying a cookie, returning the status, any `Set-Cookie`, and the body.
+    pub async fn post_with_cookie(&self, path: &str, cookie: Option<&str>, body: Value) -> (StatusCode, Option<String>, Value) {
+        let mut request = Request::post(path).header(header::CONTENT_TYPE, "application/json");
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie_pair(cookie));
+        }
+        let request = request.body(Body::from(body.to_string())).expect("the request should build");
+
+        let response = kasl_server::app::router(self.pool.clone())
+            .oneshot(request)
+            .await
+            .expect("the router should answer");
+        let set_cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let (status, body) = read_response(response).await;
+        (status, set_cookie, body)
+    }
+
+    /// Posts a day carrying a session cookie instead of a bearer token.
+    pub async fn post_day_with_cookie(&self, cookie: Option<&str>, day: Value) -> (StatusCode, Value) {
+        let mut request = Request::post("/api/v1/days").header(header::CONTENT_TYPE, "application/json");
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie_pair(cookie));
+        }
+        let request = request.body(Body::from(day.to_string())).expect("the request should build");
+        read_response(
+            kasl_server::app::router(self.pool.clone())
+                .oneshot(request)
+                .await
+                .expect("the router should answer"),
+        )
+        .await
+    }
+
     pub async fn count(&self, table: &str) -> i64 {
         let sql = match table {
             "workdays" => "SELECT count(*) FROM workdays",
             "pauses" => "SELECT count(*) FROM pauses",
             "tasks" => "SELECT count(*) FROM tasks",
             "agents" => "SELECT count(*) FROM agents",
+            "sessions" => "SELECT count(*) FROM sessions",
             "users" => "SELECT count(*) FROM users",
             other => panic!("no counter for `{other}`"),
         };

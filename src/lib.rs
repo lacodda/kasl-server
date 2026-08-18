@@ -11,8 +11,10 @@ pub mod config;
 pub mod error;
 pub mod import;
 pub mod ingest;
+pub mod login;
 pub mod model;
 pub mod provision;
+pub mod session;
 
 /// The embedded migrations, applied on startup and by the tests.
 ///

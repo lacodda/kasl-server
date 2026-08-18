@@ -27,6 +27,15 @@ pub struct Config {
     pub max_batch_days: usize,
     /// Largest request body accepted (`KASL_MAX_BODY_BYTES`).
     pub max_body_bytes: usize,
+    /// Bootstrap administrator (`KASL_ADMIN`), as `email:password`.
+    pub admin: String,
+    /// Whether session cookies carry `Secure` (`KASL_SECURE_COOKIES`).
+    ///
+    /// On by default, because a server holding a team's hours belongs behind
+    /// TLS. Turned off only for a stand reached over plain http, where a
+    /// `Secure` cookie is dropped by the browser and login silently does
+    /// nothing at all.
+    pub secure_cookies: bool,
 }
 
 impl Config {
@@ -44,6 +53,8 @@ impl Config {
             agents: String::new(),
             max_batch_days: DEFAULT_MAX_BATCH_DAYS,
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
+            admin: String::new(),
+            secure_cookies: true,
         }
     }
 
@@ -57,13 +68,30 @@ impl Config {
         let agents = lookup("KASL_AGENTS").unwrap_or_default();
         let max_batch_days = positive("KASL_MAX_BATCH_DAYS", &lookup, DEFAULT_MAX_BATCH_DAYS)?;
         let max_body_bytes = positive("KASL_MAX_BODY_BYTES", &lookup, DEFAULT_MAX_BODY_BYTES)?;
+        let admin = lookup("KASL_ADMIN").unwrap_or_default();
+        let secure_cookies = boolean("KASL_SECURE_COOKIES", &lookup, true)?;
         Ok(Self {
             addr,
             database_url,
             agents,
             max_batch_days,
             max_body_bytes,
+            admin,
+            secure_cookies,
         })
+    }
+}
+
+/// Reads a flag written the way an operator would write one.
+///
+/// Refuses anything else rather than guessing: reading `KASL_SECURE_COOKIES=no`
+/// as true would turn a typo into a server that quietly cannot be logged into.
+fn boolean(key: &str, lookup: &impl Fn(&str) -> Option<String>, default: bool) -> Result<bool> {
+    let Some(raw) = lookup(key) else { return Ok(default) };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        other => anyhow::bail!("{key} is not a yes/no value: {other}"),
     }
 }
 
@@ -132,6 +160,23 @@ mod tests {
 
         let error = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_MAX_BODY_BYTES", "nope")])).unwrap_err();
         assert!(error.to_string().contains("KASL_MAX_BODY_BYTES"), "{error}");
+    }
+
+    #[test]
+    fn secure_cookies_default_on_and_refuse_a_typo() {
+        let config = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl")])).unwrap();
+        assert!(config.secure_cookies, "TLS is the assumption; opting out has to be deliberate");
+
+        for value in ["0", "false", "no", "off", "OFF"] {
+            let config = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_SECURE_COOKIES", value)])).unwrap();
+            assert!(!config.secure_cookies, "`{value}` should turn it off");
+        }
+
+        // The failure mode this guards: a value nobody parses as false, read as
+        // true, giving a server that cannot be logged into over plain http with
+        // nothing in the log to say why.
+        let error = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_SECURE_COOKIES", "nope")])).unwrap_err();
+        assert!(error.to_string().contains("KASL_SECURE_COOKIES"), "{error}");
     }
 
     #[test]

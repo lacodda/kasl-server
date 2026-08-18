@@ -18,7 +18,7 @@
 use anyhow::{Context, Result};
 use sqlx::PgPool;
 
-use crate::auth::hash_token;
+use crate::{auth::hash_token, session::hash_password};
 
 /// One `email:token` pair from the environment.
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +104,56 @@ pub async fn apply_seeds(pool: &PgPool, seeds: &[AgentSeed]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Creates the first administrator, or resets an existing one's password.
+///
+/// The account is upserted rather than refused when it exists: an operator who
+/// locked themselves out has no other way back in, and demanding they first
+/// delete a row by hand in psql helps nobody. Promoting to admin is part of it
+/// for the same reason - the alternative is a server with data in it and no way
+/// to administer it.
+pub async fn ensure_admin(pool: &sqlx::PgPool, email: &str, password: &str) -> Result<()> {
+    let email = email.trim();
+    if email.is_empty() {
+        anyhow::bail!("an administrator needs an email address");
+    }
+    // Not a policy, a floor. Real password rules belong with the account
+    // management UI, where they can be explained to the person typing.
+    if password.chars().count() < 8 {
+        anyhow::bail!("the password must be at least 8 characters");
+    }
+
+    let hash = hash_password(password)?;
+    sqlx::query(
+        "INSERT INTO users (email, display_name, role, password_hash, active)
+         VALUES ($1, $1, 'admin', $2, true)
+         ON CONFLICT (lower(email)) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'admin', active = true",
+    )
+    .bind(email)
+    .bind(&hash)
+    .execute(pool)
+    .await
+    .context("failed to create the administrator")?;
+
+    Ok(())
+}
+
+/// Parses `KASL_ADMIN`, which is `email:password`.
+///
+/// Absent or empty yields nothing: a server whose admin already exists has no
+/// reason to carry the password in its environment forever.
+pub fn parse_admin(raw: &str) -> Result<Option<(String, String)>> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    // `split_once`, so a colon inside the password stays in the password.
+    let (email, password) = raw.split_once(':').context("KASL_ADMIN is not `email:password`")?;
+    if password.is_empty() {
+        anyhow::bail!("KASL_ADMIN carries no password");
+    }
+    Ok(Some((email.trim().to_string(), password.to_string())))
 }
 
 #[cfg(test)]
