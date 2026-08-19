@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-08-19
+
+### Documentation
+- Describe signing in, and record why sessions are rows
+
+### Features
+- Sign people in with server-side sessions
+
 ## [0.5.0] - 2026-08-17
 
 ### CI
@@ -9,6 +17,7 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Document the import and refresh the transcript for 0.5.0
+- Cut 0.5.0
 
 ### Features
 - Bring an employee's local kasl history onto the server
