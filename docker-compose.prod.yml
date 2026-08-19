@@ -39,6 +39,12 @@ services:
       # Agent tokens, until the admin UI issues them. Empty is valid: the
       # agents already in the database keep working.
       KASL_AGENTS: ${KASL_AGENTS:-}
+      # First administrator, as `email:password`. Empty once the account exists:
+      # there is no reason to keep a password in the environment forever.
+      KASL_ADMIN: ${KASL_ADMIN:-}
+      # This stand is reached over plain http, where a Secure cookie would be
+      # dropped by the browser and login would appear to do nothing.
+      KASL_SECURE_COOKIES: ${KASL_SECURE_COOKIES:-false}
       # Upload bounds. The defaults suit a team of agents backfilling a month;
       # raise them only for a deliberately larger import.
       KASL_MAX_BATCH_DAYS: ${KASL_MAX_BATCH_DAYS:-31}

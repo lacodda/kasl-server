@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database. The tables are filled; nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database, and people can now sign in. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-17T20:03:33.666684Z  INFO kasl_server: database schema is up to date version=20260814000001
-2026-08-17T20:03:33.751573Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-17T20:03:33.751992Z  INFO kasl_server: kasl-server listening version="0.5.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-19T00:00:50.330100Z  INFO kasl_server: database schema is up to date version=20260818000001
+2026-08-19T00:00:50.460212Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-19T00:00:50.466427Z  INFO kasl_server: kasl-server listening version="0.6.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.5.0"}
+{"database":"ok","status":"ok","version":"0.6.0"}
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
@@ -108,6 +108,48 @@ unrecognized, revoked or deactivated token gets `401`. The reasoning behind all
 of this is in [ADR 0004](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0004-the-ingest-contract.md)
 and [ADR 0005](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0005-deletions-and-backfill.md).
 
+## Signing in
+
+People sign in with an email and a password; kasl agents keep using their bearer
+token and are unaffected by any of this.
+
+```console
+$ kasl-server admin --email boss@example.com --password '...'
+admin boss@example.com is ready
+
+$ curl -i -X POST http://127.0.0.1:8080/api/v1/auth/login     -H "Content-Type: application/json"     -d '{"email":"boss@example.com","password":"..."}'
+HTTP/1.1 200 OK
+set-cookie: kasl_session=b7857303342e1a4b...; Path=/; HttpOnly; SameSite=Strict; Max-Age=1209600
+{"status":"ok"}
+
+$ curl -H "Cookie: kasl_session=b7857303342e1a4b..." http://127.0.0.1:8080/api/v1/auth/me
+{"id":"de836432-5dce-4705-9344-a65b356fc662","email":"boss@example.com","display_name":"boss@example.com","role":"admin"}
+```
+
+`POST /auth/logout` ends this session, `POST /auth/logout-everywhere` ends all of
+them, and `GET /auth/me` says who the caller is.
+
+Sessions are rows in the database, not signed tokens. The query per request buys
+the thing a self-contained token cannot give: access ends when it is ended — the
+afternoon someone leaves, not whenever their token happens to expire. A session
+lasts a fortnight and each use pushes that out again.
+
+An unknown email, a deactivated account and a wrong password all answer
+`{"error":"wrong email or password"}`, so the login form cannot be used to find
+out who works somewhere.
+
+**The first administrator** comes from `kasl-server admin` or
+`KASL_ADMIN=email:password` in the environment. Running it again resets the
+password and promotes the account, which is both the way back in after a
+forgotten password and the way to make an admin of someone whose account already
+exists because their agent has been reporting. Accounts created by `KASL_AGENTS`
+have no password and cannot be signed into — they exist to own an agent's data.
+
+Set `KASL_SECURE_COOKIES=false` when serving over plain `http://`. A `Secure`
+cookie is silently dropped by the browser there, which looks exactly like login
+doing nothing. The reasoning is in
+[ADR 0007](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0007-sessions-and-the-first-admin.md).
+
 ## Importing history from before the server
 
 Someone can track their time with kasl for a year before their team runs a
@@ -148,6 +190,7 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | Table | Holds |
 | --- | --- |
 | `users` | People and their role: admin, manager, employee |
+| `sessions` | Browser sign-ins; a token hash each, never the token |
 | `agents` | Installed kasl instances; a token hash each, never the token |
 | `workdays` | One row per person per date: when the day started and ended |
 | `pauses` | Idle stretches and manual breaks inside a day |
