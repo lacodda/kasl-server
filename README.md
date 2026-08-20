@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database, and people can now sign in. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team and its agent tokens without touching the host. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-19T00:00:50.330100Z  INFO kasl_server: database schema is up to date version=20260818000001
-2026-08-19T00:00:50.460212Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-19T00:00:50.466427Z  INFO kasl_server: kasl-server listening version="0.6.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-20T23:14:30.598244Z  INFO kasl_server: database schema is up to date version=20260818000001
+2026-08-20T23:14:30.653426Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-20T23:14:30.656763Z  INFO kasl_server: kasl-server listening version="0.7.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.6.0"}
+{"database":"ok","status":"ok","version":"0.7.0"}
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
@@ -149,6 +149,53 @@ Set `KASL_SECURE_COOKIES=false` when serving over plain `http://`. A `Secure`
 cookie is silently dropped by the browser there, which looks exactly like login
 doing nothing. The reasoning is in
 [ADR 0007](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0007-sessions-and-the-first-admin.md).
+
+## Managing the team
+
+Once an administrator exists, people and agent tokens are managed over the API
+rather than through the host's environment.
+
+```console
+$ curl -X POST http://127.0.0.1:8080/api/v1/users -H "Cookie: kasl_session=..."     -H "Content-Type: application/json"     -d '{"email":"ivan@example.com","display_name":"Ivan","password":"..."}'
+{"id":"9b5c1fd8-cf3d-433e-bb9e-0c2bf1c1cfac"}
+
+$ curl -X POST http://127.0.0.1:8080/api/v1/users/9b5c1fd8-.../agents     -H "Cookie: kasl_session=..." -H "Content-Type: application/json"     -d '{"name":"ivan-laptop"}'
+{"id":"b749b090-db08-464d-b48d-4fe15f7acc43","name":"ivan-laptop",
+ "token":"kasl_<64 hex chars>",
+ "notice":"this token is shown once; the server keeps only its hash"}
+
+$ curl -X DELETE http://127.0.0.1:8080/api/v1/agents/b749b090-... -H "Cookie: kasl_session=..."
+# 204; the same token now gets 401 from the ingest routes
+```
+
+| Route | Who |
+| --- | --- |
+| `GET /users`, `GET /users/{id}/agents` | admin, manager |
+| `POST /users`, `PATCH /users/{id}` | admin |
+| `POST /users/{id}/agents`, `DELETE /agents/{id}` | admin |
+| `POST /auth/password` | anyone signed in, for their own password |
+
+**A manager reads the team and changes nothing.** Departments arrive in the next
+milestone; until a manager has a group to be in charge of, any authority granted
+is authority over the whole company — and issuing an agent token is the
+authority to write someone's history.
+
+**An administrator sets an initial password and hands it over; the person
+changes it** with `POST /auth/password`, which requires the current one. The
+server has no mail channel, so there is nothing to send an invite link to that
+would not be handed over the same way a password is.
+
+Some things follow from a change rather than being asked for separately:
+
+- Deactivating someone, or resetting their password, deletes their sessions.
+- Changing your own password ends every *other* session and keeps the one you
+  are using.
+- The last administrator cannot be demoted or deactivated — the only way back
+  from that is the `admin` subcommand on the host.
+- A user is never deleted, only deactivated: their days have to keep an owner.
+
+Agent tokens are shown once and stored as a SHA-256. The reasoning is in
+[ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md).
 
 ## Importing history from before the server
 
