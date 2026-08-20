@@ -2,10 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-08-20
+
+### Documentation
+- Describe managing the team, and record what a manager may do
+
+### Features
+- Manage people and issue agent tokens
+
 ## [0.6.0] - 2026-08-19
 
 ### Documentation
 - Describe signing in, and record why sessions are rows
+- Cut 0.6.0
 
 ### Features
 - Sign people in with server-side sessions
