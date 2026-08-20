@@ -293,6 +293,38 @@ impl TestServer {
         (status, set_cookie, body)
     }
 
+    /// PATCHes carrying a cookie.
+    pub async fn patch_with_cookie(&self, path: &str, cookie: Option<&str>, body: Value) -> (StatusCode, Option<String>, Value) {
+        self.send_with_cookie("PATCH", path, cookie, Some(body)).await
+    }
+
+    /// DELETEs carrying a cookie.
+    pub async fn delete_with_cookie(&self, path: &str, cookie: Option<&str>) -> (StatusCode, Option<String>, Value) {
+        self.send_with_cookie("DELETE", path, cookie, None).await
+    }
+
+    async fn send_with_cookie(&self, method: &str, path: &str, cookie: Option<&str>, body: Option<Value>) -> (StatusCode, Option<String>, Value) {
+        let mut request = Request::builder().method(method).uri(path).header(header::CONTENT_TYPE, "application/json");
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie_pair(cookie));
+        }
+        let request = request
+            .body(body.map(|body| Body::from(body.to_string())).unwrap_or_else(Body::empty))
+            .expect("the request should build");
+
+        let response = kasl_server::app::router(self.pool.clone())
+            .oneshot(request)
+            .await
+            .expect("the router should answer");
+        let set_cookie = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let (status, body) = read_response(response).await;
+        (status, set_cookie, body)
+    }
+
     /// Posts a day carrying a session cookie instead of a bearer token.
     pub async fn post_day_with_cookie(&self, cookie: Option<&str>, day: Value) -> (StatusCode, Value) {
         let mut request = Request::post("/api/v1/days").header(header::CONTENT_TYPE, "application/json");

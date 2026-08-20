@@ -5,6 +5,7 @@
 //! the real router and the real provisioning path instead of a copy that
 //! drifts from what ships.
 
+pub mod admin;
 pub mod app;
 pub mod auth;
 pub mod config;

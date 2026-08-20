@@ -3,13 +3,13 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, patch, post},
 };
 use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{config::Config, ingest, login};
+use crate::{admin, config::Config, ingest, login};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,7 +33,14 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/auth/login", post(login::login))
         .route("/auth/logout", post(login::logout))
         .route("/auth/logout-everywhere", post(login::logout_everywhere))
-        .route("/auth/me", get(login::me));
+        .route("/auth/me", get(login::me))
+        .route("/auth/password", post(admin::change_own_password))
+        // Administration. Reading the team is a manager's; changing it is not,
+        // until departments give a manager something to be in charge of.
+        .route("/users", get(admin::list_users).post(admin::create_user))
+        .route("/users/{id}", patch(admin::update_user))
+        .route("/users/{id}/agents", get(admin::list_agents).post(admin::create_agent))
+        .route("/agents/{id}", delete(admin::revoke_agent));
 
     Router::new()
         .route("/health", get(health))
