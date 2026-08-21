@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team and its agent tokens without touching the host. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-20T23:14:30.598244Z  INFO kasl_server: database schema is up to date version=20260818000001
-2026-08-20T23:14:30.653426Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-20T23:14:30.656763Z  INFO kasl_server: kasl-server listening version="0.7.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-21T21:17:10.598497Z  INFO kasl_server: database schema is up to date version=20260821000001
+2026-08-21T21:17:10.664121Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-21T21:17:10.666807Z  INFO kasl_server: kasl-server listening version="0.8.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.7.0"}
+{"database":"ok","status":"ok","version":"0.8.0"}
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
@@ -170,15 +170,39 @@ $ curl -X DELETE http://127.0.0.1:8080/api/v1/agents/b749b090-... -H "Cookie: ka
 
 | Route | Who |
 | --- | --- |
-| `GET /users`, `GET /users/{id}/agents` | admin, manager |
+| `GET /users`, `GET /users/{id}/agents` | admin (everyone), manager (their departments) |
+| `GET /departments` | admin, manager |
+| `POST /departments`, `PATCH`/`DELETE /departments/{id}` | admin |
+| `PUT /users/{id}/department` | admin |
 | `POST /users`, `PATCH /users/{id}` | admin |
 | `POST /users/{id}/agents`, `DELETE /agents/{id}` | admin |
 | `POST /auth/password` | anyone signed in, for their own password |
 
-**A manager reads the team and changes nothing.** Departments arrive in the next
-milestone; until a manager has a group to be in charge of, any authority granted
-is authority over the whole company — and issuing an agent token is the
-authority to write someone's history.
+**A manager reads their departments and changes nothing.** A department names its
+manager, and a person belongs to one:
+
+```console
+$ curl -X POST http://127.0.0.1:8080/api/v1/departments -H "Cookie: kasl_session=..."     -H "Content-Type: application/json"     -d '{"name":"Engineering","manager_id":"d7c9ef3a-..."}'
+{"id":"997c3947-4028-45e6-9c1c-9cd334b10c5d"}
+
+$ curl -X PUT http://127.0.0.1:8080/api/v1/users/<id>/department -H "Cookie: kasl_session=..."     -H "Content-Type: application/json" -d '{"department_id":"997c3947-..."}'
+# 204; `{"department_id":null}` takes them out again without deleting anything
+```
+
+The manager of Engineering sees the people in Engineering, plus themselves — a
+manager who runs nothing yet would otherwise get an empty page and think the
+product was broken. An administrator sees everyone.
+
+**Someone with no department is visible to the administrator alone.** Showing
+the unfiled to every manager, so nobody gets lost, fails in the direction nobody
+observes: forget to file a person and they are exposed company-wide, silently.
+Missing from a list is reported the same afternoon.
+
+Deleting a department leaves its people unfiled rather than deleting them, and
+an employee cannot be made to run one — they could not see it, so it would
+silently have no working head. Issuing an agent token stays with the
+administrator: it is the authority to write someone's history, and there is no
+audit log until the next milestone.
 
 **An administrator sets an initial password and hands it over; the person
 changes it** with `POST /auth/password`, which requires the current one. The
@@ -195,7 +219,8 @@ Some things follow from a change rather than being asked for separately:
 - A user is never deleted, only deactivated: their days have to keep an owner.
 
 Agent tokens are shown once and stored as a SHA-256. The reasoning is in
-[ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md).
+[ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md)
+and [ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md).
 
 ## Importing history from before the server
 
@@ -238,6 +263,7 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | --- | --- |
 | `users` | People and their role: admin, manager, employee |
 | `sessions` | Browser sign-ins; a token hash each, never the token |
+| `departments` | Groups of people, each naming the manager who runs it |
 | `agents` | Installed kasl instances; a token hash each, never the token |
 | `workdays` | One row per person per date: when the day started and ended |
 | `pauses` | Idle stretches and manual breaks inside a day |
