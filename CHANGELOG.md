@@ -2,10 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.0] - 2026-08-21
+
+### Breaking Changes
+- For a manager, GET /api/v1/users now returns only the departments they run plus themselves, where it previously returned the whole company. Administrators and agents are unaffected. See ADR 0009 for the migration path: none is needed for a client that does not assume a company-wide list.
+
+### Documentation
+- Describe departments and record the visibility rules
+
+### Features
+- Give a manager a boundary to be in charge of
+
 ## [0.7.0] - 2026-08-20
 
 ### Documentation
 - Describe managing the team, and record what a manager may do
+- Cut 0.7.0
 
 ### Features
 - Manage people and issue agent tokens

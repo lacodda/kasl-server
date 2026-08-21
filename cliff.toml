@@ -18,7 +18,10 @@ body = """
 - {{ commit.breaking_description | upper_first }}
 {% endfor %}\
 {% endif %}\
-{% for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
+{# Breaking commits appear in both places on purpose: the section above is the
+   warning, the group below is the answer to "what was added". Filtering them
+   out of their group leaves a release whose Features section is empty even
+   though it shipped one. #}{% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group }}
 {% for commit in commits %}\
 - {{ commit.message | upper_first }}
