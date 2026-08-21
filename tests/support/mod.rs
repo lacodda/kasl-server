@@ -298,6 +298,11 @@ impl TestServer {
         self.send_with_cookie("PATCH", path, cookie, Some(body)).await
     }
 
+    /// PUTs carrying a cookie.
+    pub async fn put_with_cookie(&self, path: &str, cookie: Option<&str>, body: Value) -> (StatusCode, Option<String>, Value) {
+        self.send_with_cookie("PUT", path, cookie, Some(body)).await
+    }
+
     /// DELETEs carrying a cookie.
     pub async fn delete_with_cookie(&self, path: &str, cookie: Option<&str>) -> (StatusCode, Option<String>, Value) {
         self.send_with_cookie("DELETE", path, cookie, None).await

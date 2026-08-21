@@ -45,6 +45,10 @@ pub struct UserRow {
     pub agents: i64,
     /// The most recent moment any of their agents was heard from.
     pub last_seen_at: Option<DateTime<Utc>>,
+    pub department_id: Option<Uuid>,
+    /// Carried alongside the id so a list can be rendered without a second
+    /// request per row.
+    pub department: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -104,6 +108,14 @@ pub struct IssuedAgent {
 }
 
 /// Lists everyone. The one route a manager may call.
+/// Lists the people the caller may see.
+///
+/// An administrator sees everyone. A manager sees the departments they run,
+/// plus themselves - a manager who could not find their own row would think
+/// the page was broken. Someone with no department is visible to the admin
+/// alone: an unfiled person is noticed at once because they are missing from
+/// every manager's list, whereas showing them to every manager would be a leak
+/// nobody sees happening (ADR 0009).
 pub async fn list_users(State(state): State<AppState>, user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
 
@@ -112,10 +124,18 @@ pub async fn list_users(State(state): State<AppState>, user: CurrentUser) -> Res
                 (u.password_hash IS NOT NULL) AS has_password,
                 (SELECT count(*) FROM agents a WHERE a.user_id = u.id AND a.revoked_at IS NULL) AS agents,
                 (SELECT max(a.last_seen_at) FROM agents a WHERE a.user_id = u.id) AS last_seen_at,
+                u.department_id,
+                d.name AS department,
                 u.created_at
          FROM users u
+         LEFT JOIN departments d ON d.id = u.department_id
+         WHERE $1
+            OR u.id = $2
+            OR u.department_id IN (SELECT id FROM departments WHERE manager_id = $2)
          ORDER BY u.display_name, u.email",
     )
+    .bind(user.role == UserRole::Admin)
+    .bind(user.user_id)
     .fetch_all(&state.pool)
     .await?;
 

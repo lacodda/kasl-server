@@ -3,13 +3,13 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, config::Config, ingest, login};
+use crate::{admin, config::Config, department, ingest, login};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,7 +40,11 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/users", get(admin::list_users).post(admin::create_user))
         .route("/users/{id}", patch(admin::update_user))
         .route("/users/{id}/agents", get(admin::list_agents).post(admin::create_agent))
-        .route("/agents/{id}", delete(admin::revoke_agent));
+        .route("/agents/{id}", delete(admin::revoke_agent))
+        // Departments: what gives a manager a boundary to be in charge of.
+        .route("/departments", get(department::list).post(department::create))
+        .route("/departments/{id}", patch(department::update).delete(department::delete))
+        .route("/users/{id}/department", put(department::assign));
 
     Router::new()
         .route("/health", get(health))

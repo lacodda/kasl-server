@@ -120,10 +120,14 @@ async fn a_manager_reads_the_team_and_changes_nothing() {
 
     let (status, list) = server.get_with_cookie("/api/v1/users", Some(&manager)).await;
     assert_eq!(status, StatusCode::OK, "a manager has a dashboard to build: {list}");
-    assert!(list.as_array().unwrap().len() >= 2);
+    // Since 0.8.0 the list is scoped to the departments this manager runs, and
+    // this one runs none - so it is their own row and nothing else. Who a
+    // manager can see is the subject of tests/department.rs.
+    assert_eq!(list.as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list[0]["email"], "manager@example.test");
 
-    // Everything that changes the team belongs to an admin until departments
-    // give a manager a scope to be in charge of.
+    // Everything that changes the team belongs to an admin. Departments give a
+    // manager a scope to *see*, not a licence to reorganise it.
     let (status, _, _) = server
         .post_with_cookie("/api/v1/users", Some(&manager), json!({"email": "sneaky@example.test"}))
         .await;

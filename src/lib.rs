@@ -9,6 +9,7 @@ pub mod admin;
 pub mod app;
 pub mod auth;
 pub mod config;
+pub mod department;
 pub mod error;
 pub mod import;
 pub mod ingest;
