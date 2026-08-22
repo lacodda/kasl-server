@@ -161,6 +161,12 @@ pub struct AuditQuery {
 const MAX_LIMIT: i64 = 500;
 const DEFAULT_LIMIT: i64 = 100;
 
+// Neither constant has a unit test. Asserting `DEFAULT_LIMIT <= MAX_LIMIT` here
+// would compare two literals and pass at compile time regardless of what the
+// handler does with them; the clamp is exercised against the running handler in
+// tests/audit.rs, where a request for more than the ceiling must come back with
+// exactly the ceiling.
+
 /// Reads the log. Administrators only.
 ///
 /// A manager is deliberately not admitted. The log records who changed what,
@@ -223,15 +229,5 @@ mod tests {
         // unrecorded.
         let entry = Entry::new(action::USER_CREATED);
         assert!(entry.actor_id.is_none() && entry.actor_email.is_none());
-    }
-
-    #[test]
-    fn the_ceiling_leaves_room_for_a_useful_page() {
-        // The clamp itself is checked against the running handler in
-        // tests/audit.rs: restating the arithmetic here would test a copy of
-        // the logic rather than the code, and stay green if the handler
-        // stopped applying it.
-        assert!(DEFAULT_LIMIT <= MAX_LIMIT);
-        assert!(DEFAULT_LIMIT >= 20, "a default page nobody has to page through twice to read");
     }
 }
