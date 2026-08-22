@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-21T21:17:10.598497Z  INFO kasl_server: database schema is up to date version=20260821000001
-2026-08-21T21:17:10.664121Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-21T21:17:10.666807Z  INFO kasl_server: kasl-server listening version="0.8.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-22T00:59:30.690752Z  INFO kasl_server: database schema is up to date version=20260822000001
+2026-08-22T00:59:30.821217Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-22T00:59:30.828436Z  INFO kasl_server: kasl-server listening version="0.9.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.8.0"}
+{"database":"ok","status":"ok","version":"0.9.0"}
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
@@ -177,6 +177,7 @@ $ curl -X DELETE http://127.0.0.1:8080/api/v1/agents/b749b090-... -H "Cookie: ka
 | `POST /users`, `PATCH /users/{id}` | admin |
 | `POST /users/{id}/agents`, `DELETE /agents/{id}` | admin |
 | `POST /auth/password` | anyone signed in, for their own password |
+| `GET /audit` | admin |
 
 **A manager reads their departments and changes nothing.** A department names its
 manager, and a person belongs to one:
@@ -222,6 +223,39 @@ Agent tokens are shown once and stored as a SHA-256. The reasoning is in
 [ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md)
 and [ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md).
 
+## The audit log
+
+Everything that changes people, departments or agent tokens is recorded, along
+with sign-ins and the attempts that failed:
+
+```console
+$ curl -H "Cookie: kasl_session=..." "http://127.0.0.1:8080/api/v1/audit?limit=2"
+[{"id":4,"actor_id":null,"actor_email":"ivan@example.com","action":"auth.login_failed",
+  "target_id":null,"target_label":null,"details":null,"at":"2026-08-22T00:58:12.880538Z"},
+ {"id":3,"actor_id":"85440341-...","actor_email":"boss@example.com","action":"agent.issued",
+  "target_id":"dcb60120-...","target_label":"ivan-laptop",
+  "details":{"user_id":"9dce4dd0-..."},"at":"2026-08-22T00:58:11.850690Z"}]
+```
+
+Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
+`limit` (500 at most) and `offset`. "Everything that happened to this person" is
+`?target_id=...`.
+
+**Nothing secret goes in.** An issued token is recorded as having been issued,
+never as a value; a password change is recorded as having happened. A failed
+sign-in keeps the address that was tried — a run of them against one account is
+the thing worth seeing — but never the password, which is often a real one
+belonging to somewhere else.
+
+**There is no route to delete from it.** Not for old entries, not for a date
+range. A journal the watched party can erase is not a journal, and the
+administrator is the log'"'"'s main subject; trimming it is an operation for
+whoever holds the database. Reading the log is not itself recorded — an audit of
+the audit buries the actions under a log of people looking at the log.
+
+Only an administrator may read it. The reasoning is in
+[ADR 0010](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0010-the-audit-log.md).
+
 ## Importing history from before the server
 
 Someone can track their time with kasl for a year before their team runs a
@@ -264,6 +298,7 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | `users` | People and their role: admin, manager, employee |
 | `sessions` | Browser sign-ins; a token hash each, never the token |
 | `departments` | Groups of people, each naming the manager who runs it |
+| `audit_log` | Who did what, to whom, and when; append-only |
 | `agents` | Installed kasl instances; a token hash each, never the token |
 | `workdays` | One row per person per date: when the day started and ended |
 | `pauses` | Idle stretches and manual breaks inside a day |
