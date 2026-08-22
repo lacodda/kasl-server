@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.0] - 2026-08-22
+
+### Documentation
+- Describe the audit log and record what it does not keep
+
+### Features
+- Record who did what, and let an administrator read it
+
 ## [0.8.0] - 2026-08-21
 
 ### Breaking Changes
@@ -9,6 +17,7 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Describe departments and record the visibility rules
+- Cut 0.8.0, and stop hiding breaking commits from their group
 
 ### Features
 - Give a manager a boundary to be in charge of
