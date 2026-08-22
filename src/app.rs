@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, config::Config, department, ingest, login};
+use crate::{admin, audit, config::Config, department, ingest, login};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -44,7 +44,10 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // Departments: what gives a manager a boundary to be in charge of.
         .route("/departments", get(department::list).post(department::create))
         .route("/departments/{id}", patch(department::update).delete(department::delete))
-        .route("/users/{id}/department", put(department::assign));
+        .route("/users/{id}/department", put(department::assign))
+        // The record of who did what. Administrators only, and no way to
+        // delete from it (ADR 0010).
+        .route("/audit", get(audit::list));
 
     Router::new()
         .route("/health", get(health))

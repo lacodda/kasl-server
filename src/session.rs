@@ -87,11 +87,14 @@ pub async fn issue(pool: &PgPool, user_id: Uuid) -> Result<IssuedSession> {
 }
 
 /// Who a session token belongs to, if it is still good for anything.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SessionUser {
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub role: crate::model::UserRole,
+    /// Read alongside the rest so an audit entry can name the actor without a
+    /// second query per recorded action.
+    pub email: String,
 }
 
 /// Resolves a token to its user, refusing expired sessions and inactive people.
@@ -100,8 +103,8 @@ pub struct SessionUser {
 /// its welcome must not authenticate anyone even if the sweep that deletes it
 /// has not run.
 pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Option<SessionUser>> {
-    let row: Option<(Uuid, Uuid, crate::model::UserRole)> = sqlx::query_as(
-        "SELECT s.id, s.user_id, u.role FROM sessions s
+    let row: Option<(Uuid, Uuid, crate::model::UserRole, String)> = sqlx::query_as(
+        "SELECT s.id, s.user_id, u.role, u.email FROM sessions s
          JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active",
     )
@@ -109,7 +112,7 @@ pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Option<SessionUs
     .fetch_optional(pool)
     .await?;
 
-    let Some((session_id, user_id, role)) = row else { return Ok(None) };
+    let Some((session_id, user_id, role, email)) = row else { return Ok(None) };
 
     // Rolling expiry, best-effort: someone working through the day should not
     // be logged out mid-afternoon, and failing to extend costs them nothing
@@ -123,7 +126,12 @@ pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Option<SessionUs
         tracing::warn!(%error, %session_id, "failed to extend the session");
     }
 
-    Ok(Some(SessionUser { session_id, user_id, role }))
+    Ok(Some(SessionUser {
+        session_id,
+        user_id,
+        role,
+        email,
+    }))
 }
 
 /// Ends one session - what "log out" does.

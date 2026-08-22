@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{app::AppState, error::ApiError, login::CurrentUser, model::UserRole};
+use crate::{app::AppState, audit, error::ApiError, login::CurrentUser, model::UserRole};
 
 /// A department as the admin screens list it.
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -114,6 +114,15 @@ pub async fn create(State(state): State<AppState>, user: CurrentUser, Json(new):
     };
 
     tracing::info!(%id, by = %user.user_id, "created a department");
+    audit::Entry::new(audit::action::DEPARTMENT_CREATED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(id)
+        .labelled(name)
+        .with(serde_json::json!({"manager_id": new.manager_id}))
+        .record(&state.pool)
+        .await;
+
     Ok((StatusCode::CREATED, Json(serde_json::json!({"id": id}))))
 }
 
@@ -165,6 +174,14 @@ pub async fn update(
     }
 
     tracing::info!(%target, by = %user.user_id, "updated a department");
+    audit::Entry::new(audit::action::DEPARTMENT_UPDATED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(target)
+        .with(serde_json::json!({"renamed_to": name, "manager_set": set_manager, "manager_id": manager_id}))
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -186,6 +203,13 @@ pub async fn delete(State(state): State<AppState>, user: CurrentUser, Path(targe
     }
 
     tracing::info!(%target, by = %user.user_id, "deleted a department");
+    audit::Entry::new(audit::action::DEPARTMENT_DELETED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(target)
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -217,6 +241,16 @@ pub async fn assign(
     }
 
     tracing::info!(%target, department = ?assignment.department_id, by = %user.user_id, "assigned a department");
+    // Who can see whom changes here, which is exactly what an audit reader
+    // wants to reconstruct.
+    audit::Entry::new(audit::action::DEPARTMENT_ASSIGNED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(target)
+        .with(serde_json::json!({"department_id": assignment.department_id}))
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     app::AppState,
+    audit,
     error::ApiError,
     model::UserRole,
     session::{self, SESSION_COOKIE},
@@ -39,11 +40,14 @@ pub struct Identity {
 ///
 /// A route that omits it has no user to act for, which makes forgetting the
 /// check a compile error rather than a security hole.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub role: UserRole,
+    /// Carried so an audit entry can name who acted without a second query on
+    /// every recorded action, and stay readable after a rename.
+    pub email: String,
 }
 
 impl FromRequestParts<AppState> for CurrentUser {
@@ -61,6 +65,7 @@ impl FromRequestParts<AppState> for CurrentUser {
             session_id: user.session_id,
             user_id: user.user_id,
             role: user.role,
+            email: user.email,
         })
     }
 }
@@ -106,15 +111,23 @@ pub async fn login(State(state): State<AppState>, Json(credentials): Json<Creden
         // to verify a password is done anyway, so that "no such user" and
         // "wrong password" do not differ by a measurable pause.
         session::verify_password(&credentials.password, DUMMY_HASH);
+        record_failure(&state.pool, &credentials.email).await;
         return Err(refused());
     };
 
     if !session::verify_password(&credentials.password, &hash) {
+        record_failure(&state.pool, &credentials.email).await;
         return Err(refused());
     }
 
     let issued = session::issue(&state.pool, user_id).await?;
     tracing::info!(%user_id, "signed in");
+    audit::Entry::new(audit::action::LOGIN_SUCCEEDED)
+        .by(user_id)
+        .by_email(&credentials.email)
+        .on(user_id)
+        .record(&state.pool)
+        .await;
 
     Ok((
         StatusCode::OK,
@@ -139,6 +152,13 @@ pub async fn logout(State(state): State<AppState>, user: CurrentUser) -> Result<
 pub async fn logout_everywhere(State(state): State<AppState>, user: CurrentUser) -> Result<Response, ApiError> {
     let ended = session::revoke_all(&state.pool, user.user_id).await?;
     tracing::info!(user_id = %user.user_id, ended, "ended every session");
+    audit::Entry::new(audit::action::SESSIONS_ENDED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(user.user_id)
+        .with(serde_json::json!({"ended": ended}))
+        .record(&state.pool)
+        .await;
     Ok((
         StatusCode::OK,
         [(header::SET_COOKIE, expired_cookie(state.secure_cookies))],
@@ -149,17 +169,25 @@ pub async fn logout_everywhere(State(state): State<AppState>, user: CurrentUser)
 
 /// Who am I - what the SPA calls on load to decide whether to show the login.
 pub async fn me(State(state): State<AppState>, user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
-    let (email, display_name): (String, String) = sqlx::query_as("SELECT email, display_name FROM users WHERE id = $1")
+    let display_name: String = sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
         .bind(user.user_id)
         .fetch_one(&state.pool)
         .await?;
 
     Ok(Json(Identity {
         id: user.user_id,
-        email,
+        email: user.email.clone(),
         display_name,
         role: user.role,
     }))
+}
+
+/// Records a refused sign-in.
+///
+/// The attempted address is kept because a run of failures against one account
+/// is the thing worth seeing; the password never is, not even its length.
+async fn record_failure(pool: &sqlx::PgPool, attempted_email: &str) {
+    audit::Entry::new(audit::action::LOGIN_FAILED).by_email(attempted_email).record(pool).await;
 }
 
 /// Builds the session cookie.
@@ -252,6 +280,7 @@ mod tests {
             session_id: Uuid::nil(),
             user_id: Uuid::nil(),
             role,
+            email: "someone@example.test".to_string(),
         };
         assert!(user(UserRole::Admin).require_admin().is_ok());
         assert!(user(UserRole::Manager).require_admin().is_err());

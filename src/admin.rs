@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{app::AppState, auth::hash_token, error::ApiError, login::CurrentUser, model::UserRole, session};
+use crate::{app::AppState, audit, auth::hash_token, error::ApiError, login::CurrentUser, model::UserRole, session};
 
 /// The shortest password the server will store.
 ///
@@ -184,6 +184,15 @@ pub async fn create_user(State(state): State<AppState>, user: CurrentUser, Json(
     };
 
     tracing::info!(%id, by = %user.user_id, "created a user");
+    audit::Entry::new(audit::action::USER_CREATED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(id)
+        .labelled(email)
+        .with(serde_json::json!({"role": new.role, "with_password": password_hash.is_some()}))
+        .record(&state.pool)
+        .await;
+
     Ok((StatusCode::CREATED, Json(serde_json::json!({"id": id}))))
 }
 
@@ -243,6 +252,21 @@ pub async fn update_user(
     }
 
     tracing::info!(%target, by = %user.user_id, "updated a user");
+    // The fields that were touched, never their values: a password reset is
+    // worth recording, the password is not.
+    audit::Entry::new(audit::action::USER_UPDATED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(target)
+        .with(serde_json::json!({
+            "display_name": patch.display_name.is_some(),
+            "role": patch.role,
+            "active": patch.active,
+            "password_reset": patch.password.is_some(),
+        }))
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -295,6 +319,17 @@ pub async fn create_agent(
         .await?;
 
     tracing::info!(%id, %target, by = %user.user_id, "issued an agent token");
+    // The token itself is never recorded - this table is read in a UI and
+    // pasted into tickets.
+    audit::Entry::new(audit::action::AGENT_ISSUED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(id)
+        .labelled(name)
+        .with(serde_json::json!({"user_id": target}))
+        .record(&state.pool)
+        .await;
+
     Ok((
         StatusCode::CREATED,
         Json(IssuedAgent {
@@ -332,6 +367,14 @@ pub async fn revoke_agent(State(state): State<AppState>, user: CurrentUser, Path
     }
 
     tracing::info!(%agent, by = %user.user_id, "revoked an agent token");
+    audit::Entry::new(audit::action::AGENT_REVOKED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(agent)
+        .with(serde_json::json!({"already_revoked": revoked == 0}))
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -377,6 +420,13 @@ pub async fn change_own_password(State(state): State<AppState>, user: CurrentUse
         .await?;
 
     tracing::info!(user_id = %user.user_id, "changed their password");
+    audit::Entry::new(audit::action::PASSWORD_CHANGED)
+        .by(user.user_id)
+        .by_email(&user.email)
+        .on(user.user_id)
+        .record(&state.pool)
+        .await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -478,6 +528,7 @@ mod tests {
             session_id: Uuid::nil(),
             user_id: Uuid::nil(),
             role,
+            email: "someone@example.test".to_string(),
         };
         assert!(require_manager_or_admin(&user(UserRole::Admin)).is_ok());
         assert!(require_manager_or_admin(&user(UserRole::Manager)).is_ok());
