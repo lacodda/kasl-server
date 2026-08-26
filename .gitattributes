@@ -1,0 +1,13 @@
+# One line ending in the repository, whatever the checkout platform.
+#
+# The repository grew up mixed - some files CRLF, some LF - and an editor or a
+# script touching a CRLF file rewrote it whole, turning a two-line change into
+# an eight-hundred-line diff. Normalizing costs one large commit and saves that
+# noise on every commit after it.
+* text=auto eol=lf
+
+# Binary assets are left alone: a byte in an image is not a line ending.
+*.png binary
+*.jpg binary
+*.ico binary
+*.svg text eol=lf
