@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-22T00:59:30.690752Z  INFO kasl_server: database schema is up to date version=20260822000001
-2026-08-22T00:59:30.821217Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-22T00:59:30.828436Z  INFO kasl_server: kasl-server listening version="0.9.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-26T12:30:42.924377Z  INFO kasl_server: database schema is up to date version=20260826000001
+2026-08-26T12:30:42.996647Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-26T12:30:43.012461Z  INFO kasl_server: kasl-server listening version="0.10.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.9.0"}
+{"database":"ok","status":"ok","version":"0.10.0"}
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
