@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -84,9 +84,9 @@ with the same day objects, and the answer reports each one:
 
 ```json
 {"accepted": 2, "rejected": 1, "results": [
-  {"status": "accepted", "date": "2026-08-10", "workday_id": "...", "pauses": 1, "tasks": 3, "deleted_tasks": 0},
+  {"status": "accepted", "date": "2026-08-10", "workday_id": "...", "pauses": 1, "tasks": 3, "deleted_tasks": 0, "privacy_level": "full"},
   {"status": "rejected", "date": "2026-08-11", "error": "ended_at is before started_at"},
-  {"status": "accepted", "date": "2026-08-12", "workday_id": "...", "pauses": 0, "tasks": 1, "deleted_tasks": 0}
+  {"status": "accepted", "date": "2026-08-12", "workday_id": "...", "pauses": 0, "tasks": 1, "deleted_tasks": 0, "privacy_level": "full"}
 ]}
 ```
 
@@ -101,6 +101,11 @@ accepted as sent, however many times it is tried - fix it or drop it. `5xx`
 means the fault is on this side; send it again later. A batch that answers `5xx`
 stopped partway: the days already accepted are stored, and re-sending them is
 safe because the last upload wins.
+
+**Every accepted day reports the privacy level that applied**, and a
+`discarded` object when that level left something out. See
+[what the server stores about you](#what-the-server-stores-about-you): an agent
+should never report a break as recorded by a server that did not store it.
 
 A malformed day is refused with `400` and a reason naming the field
 (`{"error":"tasks[0]: completeness must be between 0 and 100"}`); an
@@ -223,6 +228,82 @@ Agent tokens are shown once and stored as a SHA-256. The reasoning is in
 [ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md)
 and [ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md).
 
+## What the server stores about you
+
+An employee is asked to run an agent that notices when they stop typing. The
+honest answer to "what does it send" is one the server enforces and can recite,
+so it is an endpoint rather than a paragraph:
+
+```console
+$ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/privacy/agent
+{"level":"full",
+ "summary":"This server stores your working hours, every interruption with the reason you gave for it, and the tasks you logged with their comments.",
+ "stored":[{"what":"workdays","detail":"the date, when the day started, and when it ended"},
+           {"what":"pauses","detail":"each interruption: when it began, how long it lasted, ..."},
+           {"what":"tasks","detail":"what you logged: the name, your comment, and how complete you marked it"},
+           {"what":"pause reasons","detail":"the text you type when you take a break by hand"},
+           {"what":"account","detail":"your email, display name, role, department, ..."}],
+ "never_collected":["keystrokes or what you type","window titles","which applications you run",
+                    "screenshots or camera images","web pages you visit","file names or paths","your location"],
+ "visible_to":["you, in your own account","the manager of your department","administrators of this installation"],
+ "retention":"Kept for as long as the installation keeps it: there is no automatic deletion. ...",
+ "on_change":"Changing this setting affects what arrives from now on. ..."}
+```
+
+An agent reads it with its own token, so kasl can show it in the CLI - where the
+employee already is - instead of requiring a login to the server that watches
+them. Anyone signed in reads the same manifest at `GET /api/v1/privacy`.
+
+### Three levels
+
+How much detail an installation keeps is a setting, and the server enforces it
+on the way in. A field a level excludes is dropped before the day is written: it
+never reaches the database, never reaches a backup, and no later change of mind
+can recover it.
+
+| Level | Workdays | Pauses | Tasks | Free text |
+| --- | --- | --- | --- | --- |
+| `full` (default) | hours | each one, timed | name and comment | kept |
+| `moderate` | hours | each one, timed | name only | dropped |
+| `coarse` | hours | how many, how long in total | not stored | dropped |
+
+Under `coarse` a day still records how much of it was paused, as a count and a
+total. Without that the day would claim uninterrupted work, which is a more
+flattering picture than the truth and a false one.
+
+`full` is the default because the alternative is a breaking change disguised as
+a virtue: a timid default would silently start discarding data in installations
+already running. Narrowing is the deliberate act, and it is one request:
+
+```console
+$ curl -X PUT -H "Cookie: kasl_session=..." -H "Content-Type: application/json"        -d '{"level":"moderate"}' http://127.0.0.1:8080/api/v1/privacy
+```
+
+Only an administrator may set it, and the change goes into the audit log with
+both ends of it - a policy that can be quietly loosened is not a policy.
+
+**An upload says what it dropped.** The response to `POST /api/v1/days` carries
+the level that applied, and a `discarded` object when the level left something
+out:
+
+```json
+{"workday_id":"...","date":"2026-08-24","pauses":0,"tasks":0,"deleted_tasks":0,
+ "privacy_level":"coarse","discarded":{"pauses":2,"tasks":1}}
+```
+
+Told "5 pauses accepted" by a server that stored none, an agent would report a
+break as recorded when it was not.
+
+**Changing the level does not rewrite history.** Narrowing it stops new detail
+from arriving and leaves what is already stored; widening it does not bring back
+what was dropped. A day the agent re-sends, though, is stored under the level in
+force now.
+
+There is no per-employee opt-out. It was considered and rejected: a manager
+comparing a team where one person's pauses are missing gets a dashboard that
+lies by omission. The unit of the promise is the installation. The reasoning is
+in [ADR 0011](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0011-the-privacy-manifest.md).
+
 ## The audit log
 
 Everything that changes people, departments or agent tokens is recorded, along
@@ -299,8 +380,9 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | `sessions` | Browser sign-ins; a token hash each, never the token |
 | `departments` | Groups of people, each naming the manager who runs it |
 | `audit_log` | Who did what, to whom, and when; append-only |
+| `settings` | One row: how much detail this installation stores |
 | `agents` | Installed kasl instances; a token hash each, never the token |
-| `workdays` | One row per person per date: when the day started and ended |
+| `workdays` | One row per person per date: when the day started and ended, and - under a coarse privacy level - how much of it was paused |
 | `pauses` | Idle stretches and manual breaks inside a day |
 | `tasks`, `tags`, `task_tags` | What was worked on, and how it is labelled |
 | `reports` | That a report was submitted, when, and with which figures |
@@ -345,6 +427,10 @@ Everything comes from the environment:
 | `RUST_LOG` | Log filter (tracing syntax) | `kasl_server=info,tower_http=info` |
 
 Database migrations are embedded in the binary and applied on startup.
+
+The privacy level is deliberately not here. It is set through the API and the
+change is audited; an operator editing a file and restarting leaves nothing
+behind that says who loosened the policy or when.
 
 `KASL_AGENTS` is how the first agents get in while the admin UI does not exist
 yet: each entry becomes an employee and an agent holding that token's hash.

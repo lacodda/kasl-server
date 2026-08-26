@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, config::Config, department, ingest, login};
+use crate::{admin, audit, config::Config, department, ingest, login, privacy};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -47,7 +47,14 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/users/{id}/department", put(department::assign))
         // The record of who did what. Administrators only, and no way to
         // delete from it (ADR 0010).
-        .route("/audit", get(audit::list));
+        .route("/audit", get(audit::list))
+        // What this installation stores about a person. Readable by anyone
+        // signed in; set by an administrator alone (ADR 0011).
+        .route("/privacy", get(privacy::show).put(privacy::update))
+        // The same manifest for an agent's bearer token, so kasl can show it
+        // in the CLI - where the employee already is - rather than requiring a
+        // login to the server that watches them.
+        .route("/privacy/agent", get(privacy::show_to_agent));
 
     Router::new()
         .route("/health", get(health))

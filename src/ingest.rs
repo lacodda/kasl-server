@@ -24,7 +24,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{app::AppState, auth::AuthenticatedAgent, error::ApiError};
+use crate::{
+    app::AppState,
+    auth::AuthenticatedAgent,
+    error::ApiError,
+    privacy::{Dropped, Policy, PrivacyLevel},
+};
 
 /// One day as the agent recorded it.
 #[derive(Debug, Deserialize)]
@@ -99,6 +104,14 @@ pub struct DayAccepted {
     /// Tasks dropped because the agent declared its set authoritative. Zero on
     /// the common upload; a non-zero count is worth noticing in a log.
     pub deleted_tasks: u64,
+    /// The privacy level that applied. Always reported, even at `full`: an
+    /// agent should be able to tell an installation that keeps everything from
+    /// one whose policy it has not read yet.
+    pub privacy_level: PrivacyLevel,
+    /// What that level discarded. Absent from the response when it discarded
+    /// nothing, which is the common case (ADR 0011).
+    #[serde(skip_serializing_if = "Dropped::is_empty")]
+    pub discarded: Dropped,
 }
 
 /// A stretch of days at once - what an agent sends after time offline.
@@ -133,7 +146,8 @@ pub enum DayResult {
 
 /// Accepts one day from an authenticated agent.
 pub async fn upload_day(State(state): State<AppState>, agent: AuthenticatedAgent, Json(day): Json<DayUpload>) -> Result<impl IntoResponse, ApiError> {
-    let accepted = store_day(&state.pool, agent, &day).await?;
+    let policy = Policy::load(&state.pool).await?;
+    let accepted = store_day(&state.pool, agent, &day, policy).await?;
     Ok((StatusCode::OK, Json(accepted)))
 }
 
@@ -150,12 +164,17 @@ pub async fn upload_batch(State(state): State<AppState>, agent: AuthenticatedAge
         ));
     }
 
+    // Once for the batch, not once per day in it: thirty days of backfill
+    // are one policy, and reading it thirty times would only add ways for the
+    // days in one request to disagree with each other.
+    let policy = Policy::load(&state.pool).await?;
+
     let mut results = Vec::with_capacity(batch.days.len());
     let mut accepted = 0;
     let mut rejected = 0;
 
     for day in &batch.days {
-        match store_day(&state.pool, agent, day).await {
+        match store_day(&state.pool, agent, day, policy).await {
             Ok(stored) => {
                 accepted += 1;
                 results.push(DayResult::Accepted { day: stored });
@@ -183,17 +202,29 @@ pub async fn upload_batch(State(state): State<AppState>, agent: AuthenticatedAge
 ///
 /// Shared by the single-day route and the batch one so a backfilled day is
 /// stored by exactly the same code as a live one.
-async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUpload) -> Result<DayAccepted, ApiError> {
+async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUpload, policy: Policy) -> Result<DayAccepted, ApiError> {
     validate(day)?;
+
+    // Before the transaction, deliberately: what the level excludes is never
+    // handed to a statement, so it cannot be written and then filtered on the
+    // way out. The promise is about the disk (ADR 0011).
+    let level = policy.level();
+    let (day, discarded, pause_totals) = filter(day, level);
+    let day = &day;
 
     // All of it or none: a day whose pauses landed but whose tasks did not
     // would show up on a dashboard as real, and nobody would know to re-send.
     let mut tx = pool.begin().await?;
 
-    let workday_id = upsert_workday(&mut tx, agent.user_id, day).await?;
+    let workday_id = upsert_workday(&mut tx, agent.user_id, day, pause_totals).await?;
     replace_pauses(&mut tx, workday_id, &day.pauses).await?;
     let tasks = upsert_tasks(&mut tx, agent.user_id, day.date, &day.tasks).await?;
-    let deleted_tasks = if day.tasks_are_complete {
+    // A level that stores no tasks clears the date's, flag or no flag. Without
+    // this, a task written while the policy was wider survives a re-upload
+    // under a narrower one, and the server keeps a name and a comment the
+    // policy says it does not hold - found by driving the real thing, because
+    // the pauses next to it are replaced wholesale and looked fine.
+    let deleted_tasks = if day.tasks_are_complete || !level.keeps_tasks() {
         delete_missing_tasks(&mut tx, agent.user_id, day.date, &day.tasks).await?
     } else {
         0
@@ -211,7 +242,125 @@ async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUplo
         pauses: day.pauses.len(),
         tasks,
         deleted_tasks,
+        privacy_level: level,
+        discarded,
     })
+}
+
+/// Applies the installation's privacy level to a day before anything is
+/// written.
+///
+/// Returns the day as it will be stored, what was left out, and - for a level
+/// that does not keep pauses one by one - what they came to. The totals are
+/// computed here, from what the agent sent, because after filtering the rows
+/// are gone and the day could no longer describe itself.
+///
+/// The day is rebuilt rather than mutated in place because the caller holds a
+/// borrowed upload that a batch will reuse: filtering must not change what the
+/// next day in the request sees.
+fn filter(day: &DayUpload, level: PrivacyLevel) -> (DayUpload, Dropped, Option<PauseTotals>) {
+    let mut discarded = Dropped::default();
+
+    let pauses = if level.keeps_pause_times() {
+        day.pauses
+            .iter()
+            .map(|pause| PauseUpload {
+                started_at: pause.started_at,
+                ended_at: pause.ended_at,
+                duration_seconds: pause.duration_seconds,
+                manual: pause.manual,
+                reason: match (&pause.reason, level.keeps_free_text()) {
+                    (Some(reason), false) if !reason.is_empty() => {
+                        discarded.free_text += 1;
+                        None
+                    }
+                    (reason, true) => reason.clone(),
+                    _ => None,
+                },
+            })
+            .collect()
+    } else {
+        // Not stored one by one - the day carries the count and the total
+        // instead, so its hours still add up (see `paused_count` in the
+        // schema). An empty list here means "no rows", not "no interruptions".
+        discarded.pauses = day.pauses.len();
+        Vec::new()
+    };
+
+    let tasks = if level.keeps_tasks() {
+        day.tasks
+            .iter()
+            .map(|task| TaskUpload {
+                agent_task_id: task.agent_task_id,
+                agent_group_id: task.agent_group_id,
+                recorded_at: task.recorded_at,
+                name: task.name.clone(),
+                comment: match (&task.comment, level.keeps_free_text()) {
+                    (Some(comment), false) if !comment.is_empty() => {
+                        discarded.free_text += 1;
+                        None
+                    }
+                    (comment, true) => comment.clone(),
+                    _ => None,
+                },
+                completeness: task.completeness,
+            })
+            .collect()
+    } else {
+        discarded.tasks = day.tasks.len();
+        Vec::new()
+    };
+
+    // `tasks_are_complete` is carried through even where no tasks are stored:
+    // it is how a level that stops keeping tasks clears the ones an earlier,
+    // wider level left behind. Tightening the policy does not erase history on
+    // its own, but a day the agent re-sends is stored under the policy in
+    // force now.
+    let filtered = DayUpload {
+        date: day.date,
+        started_at: day.started_at,
+        ended_at: day.ended_at,
+        pauses,
+        tasks,
+        tasks_are_complete: day.tasks_are_complete,
+    };
+
+    let totals = (!level.keeps_pause_times()).then(|| pause_totals(&day.pauses));
+
+    (filtered, discarded, totals)
+}
+
+/// What a day's pauses came to: how many, and how long in total.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PauseTotals {
+    count: i32,
+    seconds: i32,
+}
+
+/// What a day's pauses come to, for the levels that do not store them one by
+/// one.
+///
+/// Counted from what the agent sent, before filtering drops the rows: the
+/// summary has to describe the day that happened, not the empty list left
+/// after the policy is applied.
+fn pause_totals(pauses: &[PauseUpload]) -> PauseTotals {
+    let count = pauses.len() as i32;
+    let seconds = pauses
+        .iter()
+        .map(|pause| {
+            pause.duration_seconds.unwrap_or_else(|| {
+                // A pause the agent did not measure: fall back to the interval
+                // it reported, and to zero for one still running, which has no
+                // duration yet by definition.
+                pause
+                    .ended_at
+                    .map(|ended| (ended - pause.started_at).num_seconds().clamp(0, i32::MAX as i64) as i32)
+                    .unwrap_or(0)
+            })
+        })
+        .fold(0i32, |total, seconds| total.saturating_add(seconds));
+
+    PauseTotals { count, seconds }
 }
 
 /// Rejects payloads the schema would refuse anyway, with a message that says
@@ -248,16 +397,26 @@ fn validate(day: &DayUpload) -> Result<(), ApiError> {
 }
 
 /// Writes the day, or corrects the one already stored for that date.
-async fn upsert_workday(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, day: &DayUpload) -> Result<Uuid, ApiError> {
+///
+/// `pause_totals` is set only under a level that does not store pauses one by
+/// one. Without it such a day would claim uninterrupted work - a more
+/// flattering picture than the truth, and a false one.
+async fn upsert_workday(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, day: &DayUpload, pause_totals: Option<PauseTotals>) -> Result<Uuid, ApiError> {
     let workday_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO workdays (user_id, date, started_at, ended_at) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, date) DO UPDATE SET started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at
+        "INSERT INTO workdays (user_id, date, started_at, ended_at, paused_count, paused_seconds) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (user_id, date) DO UPDATE SET
+             started_at = EXCLUDED.started_at,
+             ended_at = EXCLUDED.ended_at,
+             paused_count = EXCLUDED.paused_count,
+             paused_seconds = EXCLUDED.paused_seconds
          RETURNING id",
     )
     .bind(user_id)
     .bind(day.date)
     .bind(day.started_at.with_timezone(&Utc))
     .bind(day.ended_at.map(|at| at.with_timezone(&Utc)))
+    .bind(pause_totals.map(|totals| totals.count))
+    .bind(pause_totals.map(|totals| totals.seconds))
     .fetch_one(&mut **tx)
     .await?;
 

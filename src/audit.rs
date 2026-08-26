@@ -40,6 +40,7 @@ pub mod action {
     pub const LOGIN_FAILED: &str = "auth.login_failed";
     pub const PASSWORD_CHANGED: &str = "auth.password_changed";
     pub const SESSIONS_ENDED: &str = "auth.sessions_ended";
+    pub const PRIVACY_LEVEL_CHANGED: &str = "privacy.level_changed";
 }
 
 /// One entry being written.

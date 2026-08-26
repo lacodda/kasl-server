@@ -75,6 +75,12 @@ pub struct Workday {
     pub started_at: DateTime<Utc>,
     /// `None` while the day is still open.
     pub ended_at: Option<DateTime<Utc>>,
+    /// How many times the day was interrupted, under a privacy level that does
+    /// not store pauses one by one. `None` where the `Pause` rows answer this
+    /// themselves (ADR 0011).
+    pub paused_count: Option<i32>,
+    /// Seconds paused in total, alongside `paused_count` and on the same terms.
+    pub paused_seconds: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
