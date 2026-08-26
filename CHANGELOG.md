@@ -2,10 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.0] - 2026-08-26
+
+### Features
+- Say what the server keeps about a person, and enforce it
+
 ## [0.9.0] - 2026-08-22
+
+### Bug Fixes
+- Drop a unit test that compared two constants
 
 ### Documentation
 - Describe the audit log and record what it does not keep
+- Cut 0.9.0
 
 ### Features
 - Record who did what, and let an administrator read it
