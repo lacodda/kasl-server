@@ -2,10 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.11.2] - 2026-08-27
+
+### Bug Fixes
+- Allow the generated web UI in the published package
+
 ## [0.11.1] - 2026-08-27
 
 ### Bug Fixes
 - Drop the frontend's dependencies before packaging
+
+### Documentation
+- Cut 0.11.1
 
 ## [0.11.0] - 2026-08-27
 
