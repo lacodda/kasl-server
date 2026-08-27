@@ -25,6 +25,19 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
+      # `cargo publish` packages `frontend/dist` (ADR 0012) and verifies the
+      # package by building it. An unbuilt UI would publish a crate that
+      # installs into a server with no web UI.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the web UI
+        run: pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend build
       - name: Get a crates.io token (OIDC trusted publishing)
         uses: rust-lang/crates-io-auth-action@v1
         id: auth

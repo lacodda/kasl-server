@@ -18,11 +18,16 @@ use rust_embed::Embed;
 
 /// The contents of `frontend/dist`, as of compile time.
 ///
-/// The directory must exist for the build to succeed. A clean checkout without
-/// Node keeps a placeholder there so `cargo build` works; CI and the Docker
-/// build replace it with the real thing.
+/// `allow_missing` because the directory is a build output: it is gitignored,
+/// and `pnpm build` empties it before writing, so nothing committed can keep
+/// it in place. Without this a clean checkout would not compile at all, and a
+/// Rust-only contributor would be stopped by a missing Node toolchain.
+///
+/// A binary built that way is honest about it - every path answers "no web UI
+/// was built into this binary" rather than an empty page.
 #[derive(Embed)]
 #[folder = "frontend/dist"]
+#[allow_missing = true]
 struct Assets;
 
 /// Answers a request that no API route matched.

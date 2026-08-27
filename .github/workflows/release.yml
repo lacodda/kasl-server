@@ -30,6 +30,19 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+      # The binary embeds the built UI (ADR 0012). Without this step the embed
+      # finds nothing and the release artifacts ship an API with no web UI -
+      # which compiles, passes, and is wrong.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the web UI
+        run: pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend build
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package (Windows)

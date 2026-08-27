@@ -3,10 +3,10 @@
 
 # Web UI
 frontend/node_modules/
-# The built app, except the placeholder that keeps `cargo build` working in a
-# checkout without Node - rust-embed needs the directory to exist (ADR 0012).
-frontend/dist/*
-!frontend/dist/.gitkeep
+# The built app. Nothing is kept here: `pnpm build` empties the directory, so a
+# committed placeholder could not survive anyway - the embed tolerates its
+# absence instead (ADR 0012).
+frontend/dist/
 
 # Docs site (Astro Starlight)
 docs/node_modules/

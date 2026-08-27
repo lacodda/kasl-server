@@ -65,9 +65,17 @@ and CI builds the SPA before the crate that embeds it. A release now fails if
 the frontend does not compile, which is correct - a binary carrying a stale
 `dist` would be worse.
 
-`rust-embed` needs `frontend/dist` to exist at compile time. A checked-in
-placeholder keeps `cargo build` working in a clean checkout without Node, and
-the real `dist` replaces it in CI and in the Docker build.
+The embed tolerates a missing `frontend/dist` (`allow_missing`), so a clean
+checkout compiles without Node and a Rust-only contributor is not stopped by a
+frontend toolchain. A committed placeholder was tried first and does not work:
+`pnpm build` empties the directory before writing, so nothing kept there
+survives a single build.
+
+The cost is that a release could ship a binary with no UI in it and compile
+perfectly well. Two checks in `release_consistency` stand in for the compiler:
+one that `frontend/dist/index.html` exists before a version is cut, and one
+that `Cargo.toml` still includes `frontend/dist/**` in the package - without
+it, `cargo install kasl-server` builds a server with no web UI.
 
 ADR 0002's other half stands: the same React/TypeScript/Vite/Tailwind/i18next
 stack, and extraction into a shared package still waits for the components to
