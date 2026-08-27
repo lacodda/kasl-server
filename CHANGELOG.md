@@ -2,7 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.11.0] - 2026-08-27
+
+### Features
+- Serve a web UI from the same binary, starting with signing in
+
 ## [0.10.0] - 2026-08-26
+
+### Documentation
+- Cut 0.10.0
+- Refresh the transcripts for 0.10.0
 
 ### Features
 - Say what the server keeps about a person, and enforce it
