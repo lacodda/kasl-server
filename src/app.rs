@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, config::Config, department, ingest, login, privacy};
+use crate::{admin, audit, config::Config, department, ingest, login, privacy, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -58,7 +58,15 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
 
     Router::new()
         .route("/health", get(health))
-        .nest("/api/v1", api_v1)
+        // Anything under `/api` that no route matched is a client's mistake and
+        // has to look like one. Without this the web UI's fallback would catch
+        // it and answer a misspelled endpoint with `200` and an HTML page -
+        // which a kasl agent would read as success.
+        .nest("/api", Router::new().nest("/v1", api_v1).fallback(unknown_endpoint))
+        // The web UI, compiled into the binary. Last on purpose: it answers
+        // everything the API did not claim, so a real endpoint always wins
+        // over the single-page app's own routing (ADR 0012).
+        .fallback(web::serve)
         .with_state(AppState {
             pool,
             max_batch_days: config.max_batch_days,
@@ -74,6 +82,14 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
 /// when the limits are not what is under test.
 pub fn router(pool: PgPool) -> Router {
     router_with(pool, &Config::defaults_for_database(String::new()))
+}
+
+/// Answers a path under `/api` that no route matched.
+///
+/// JSON, like every other API failure: a client that parses our errors must
+/// not have to special-case the one shape that says "no such endpoint".
+async fn unknown_endpoint() -> Response {
+    (StatusCode::NOT_FOUND, Json(json!({ "error": "no such endpoint" }))).into_response()
 }
 
 /// Liveness + readiness in one place: the process answers, and the database
@@ -136,8 +152,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_routes_return_404() {
-        let response = router(dead_pool()).oneshot(Request::get("/nope").body(Body::empty()).unwrap()).await.unwrap();
+    async fn an_unknown_api_path_is_a_json_404() {
+        // Under `/api` a path that matched nothing is a client's mistake. It
+        // must not reach the web UI's fallback, which would answer `200` and
+        // an HTML page - success, as far as a kasl agent can tell.
+        let response = router(dead_pool())
+            .oneshot(Request::get("/api/v1/nope").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"], "no such endpoint");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_page_path_belongs_to_the_web_ui() {
+        // Outside `/api` an unmatched path is a client-side route, and only the
+        // app knows whether it exists. This used to be a flat 404; it changed
+        // deliberately when the UI arrived (ADR 0012).
+        let response = router(dead_pool()).oneshot(Request::get("/nope").body(Body::empty()).unwrap()).await.unwrap();
+
+        let content_type = response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        assert!(
+            content_type.starts_with("text/html") || content_type.starts_with("text/plain"),
+            "the web UI answers this path, got `{content_type}`",
+        );
     }
 }

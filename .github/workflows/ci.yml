@@ -24,6 +24,19 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # The release build embeds `frontend/dist` (ADR 0012). Without this the
+      # binary would be built around the repository's placeholder and the job
+      # would pass while shipping no web UI at all.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the web UI
+        run: pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend build
       - name: Format
         run: cargo fmt --check
       - name: Lint
@@ -73,6 +86,29 @@ jobs:
             echo "::error::the database tests skipped themselves; DATABASE_URL did not reach them"
             exit 1
           fi
+
+  # The web UI has its own gate: types, lint and its unit tests. Kept separate
+  # from the Rust matrix so a broken component is reported as a broken
+  # component rather than as a failed release build.
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Lint, typecheck and test
+        run: pnpm --dir frontend lint
+      - name: Build
+        run: pnpm --dir frontend build
 
   # rust-version is a promise to anyone running `cargo install`. Without a job
   # that actually builds on it, the number silently rots the first time a new

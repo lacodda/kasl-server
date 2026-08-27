@@ -1,9 +1,12 @@
 /target
 /.env
 
-# Web UI (arrives with the web milestone)
+# Web UI
 frontend/node_modules/
-frontend/dist/
+# The built app, except the placeholder that keeps `cargo build` working in a
+# checkout without Node - rust-embed needs the directory to exist (ADR 0012).
+frontend/dist/*
+!frontend/dist/.gitkeep
 
 # Docs site (Astro Starlight)
 docs/node_modules/

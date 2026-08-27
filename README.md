@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The web UI has arrived — the same binary serves a sign-in screen and the page that shows an employee what is stored about them. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -16,12 +16,15 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-26T12:30:42.924377Z  INFO kasl_server: database schema is up to date version=20260826000001
-2026-08-26T12:30:42.996647Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-26T12:30:43.012461Z  INFO kasl_server: kasl-server listening version="0.10.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-27T00:35:35.439490Z  INFO kasl_server: database schema is up to date version=20260826000001
+2026-08-27T00:35:35.473939Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-27T00:35:35.476950Z  INFO kasl_server: kasl-server listening version="0.11.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.10.0"}
+{"database":"ok","status":"ok","version":"0.11.0"}
+
+# The web UI is served by the same binary on the same port - open
+# http://127.0.0.1:8080 and sign in.
 
 # An agent back from three days offline. The middle day is impossible - it ends
 # before it starts - and the others land anyway.
@@ -227,6 +230,44 @@ Some things follow from a change rather than being asked for separately:
 Agent tokens are shown once and stored as a SHA-256. The reasoning is in
 [ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md)
 and [ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md).
+
+## The web UI
+
+The same binary that answers the API serves the web app, on the same port:
+`http://127.0.0.1:8080` is the sign-in screen, and `/api/v1/...` is the API. A
+self-hosted install is one file - there is no web server to configure, and no
+way for the UI to be from a different build than the API it calls.
+
+So far it holds sign-in and the page an employee is owed most: **what this
+server stores about them**. The manifest is rendered from what the server
+actually enforces (ADR 0011) rather than described again in the page, so the
+two cannot disagree.
+
+The version in the header comes from `/health` - the server's, not the
+bundle's. One product, one number.
+
+### Working on it
+
+```console
+$ pnpm --dir frontend install
+$ pnpm --dir frontend dev      # http://localhost:5173, proxies /api to :8080
+```
+
+Vite serves the app and proxies `/api` to the server, so the browser sees one
+origin and the session cookie behaves as it will in production. A change is a
+page reload rather than a Rust compile.
+
+```console
+$ pnpm --dir frontend lint     # eslint, tsc and the unit tests
+$ pnpm --dir frontend build    # what gets embedded
+```
+
+`cargo build --release` embeds whatever is in `frontend/dist` at that moment.
+The repository carries an empty placeholder there, so a checkout without Node
+still compiles - and a binary built that way says
+`no web UI was built into this binary` instead of serving a blank page. The
+decision and its trade-offs are in
+[ADR 0012](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0012-serving-the-web-ui.md).
 
 ## What the server stores about you
 
@@ -443,13 +484,13 @@ UI.
 
 - Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
 - Manager dashboards: who is working right now, hours per person, trends over time
-- Personal pages: every employee sees their own history
-- Roles: admin, manager, employee
-- Self-hosted: a single binary (Docker image planned) plus PostgreSQL — your data stays on your infrastructure
+- Personal pages: every employee sees their own history *(sign-in and the privacy manifest: done)*
+- Roles: admin, manager, employee *(done)*
+- Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure
 
 ## Stack
 
-Rust REST API (axum) + PostgreSQL (sqlx), React single-page app for the web UI. Architectural decisions are recorded in [docs/adr/](https://github.com/lacodda/kasl-server/tree/main/docs/adr).
+Rust REST API (axum) + PostgreSQL (sqlx); the web UI is React 19 + TypeScript + Vite + Tailwind 4, built into the binary. Architectural decisions are recorded in [docs/adr/](https://github.com/lacodda/kasl-server/tree/main/docs/adr).
 
 ## License
 

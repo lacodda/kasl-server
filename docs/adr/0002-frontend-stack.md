@@ -1,7 +1,7 @@
 # 0002. Frontend stack: shared with kilna
 
 Date: 2026-08-12
-Status: Accepted
+Status: Accepted, component-kit decision amended by [ADR 0012](0012-serving-the-web-ui.md)
 
 ## Context
 

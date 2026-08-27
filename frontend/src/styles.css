@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens from the approved UI mockup. The vocabulary is the mockup's own
+ * (bg / raise / line / dim / accent) rather than stock component-library names,
+ * so a screen can be checked against the mockup in the mockup's words.
+ *
+ * One accent, and it is the product's gold. Status meaning never rests on
+ * colour alone - a badge carries an icon and a word - so good/warn/bad exist
+ * for emphasis, not as the message.
+ *
+ * Theme selection: no class on <html> follows the OS, an explicit `light` or
+ * `dark` class pins it. Components never use `dark:` utilities; every colour
+ * goes through a token and the theme swaps the token.
+ */
+
+:root {
+  --bg: #14120e;
+  --raise: #1c1916;
+  --soft: rgba(255, 255, 255, 0.045);
+  --softer: rgba(255, 255, 255, 0.025);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.15);
+  --text: #efeae0;
+  --dim: #aca595;
+  --faint: #726c60;
+  --accent: #d9a82e;
+  --accent-2: #e8bd52;
+  --accent-soft: rgba(217, 168, 46, 0.16);
+  /* Gold is a light colour: text on it is the dark ground, not white. */
+  --on-accent: #1a1509;
+  --good: #45d18f;
+  --good-soft: rgba(69, 209, 143, 0.14);
+  --warn: #e8b13f;
+  --warn-soft: rgba(232, 177, 63, 0.14);
+  --bad: #ef6a6a;
+  --bad-soft: rgba(239, 106, 106, 0.15);
+  --info: #4cc4e0;
+  --info-soft: rgba(76, 196, 224, 0.14);
+  --shadow-raise: 0 10px 34px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+/*
+ * Light theme. The accent darkens to #8A6A18 for text: gold on white fails
+ * contrast at any text size, and the mockup fixes the darkened value rather
+ * than leaving each screen to invent one.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    --bg: #f6f4ef;
+    --raise: #ffffff;
+    --soft: rgba(40, 32, 16, 0.05);
+    --softer: rgba(40, 32, 16, 0.03);
+    --line: rgba(40, 32, 16, 0.11);
+    --line-2: rgba(40, 32, 16, 0.2);
+    --text: #26211a;
+    --dim: #6b6355;
+    --faint: #9a9284;
+    --accent: #8a6a18;
+    --accent-2: #6f5512;
+    --accent-soft: rgba(138, 106, 24, 0.12);
+    --on-accent: #fff;
+    --good: #178a58;
+    --good-soft: rgba(23, 138, 88, 0.12);
+    --warn: #9a6b0c;
+    --warn-soft: rgba(178, 124, 17, 0.14);
+    --bad: #c93b3b;
+    --bad-soft: rgba(201, 59, 59, 0.12);
+    --info: #0d7f9c;
+    --info-soft: rgba(13, 127, 156, 0.11);
+    --shadow-raise: 0 10px 30px rgba(50, 40, 20, 0.14);
+    color-scheme: light;
+  }
+}
+
+:root.light {
+  --bg: #f6f4ef;
+  --raise: #ffffff;
+  --soft: rgba(40, 32, 16, 0.05);
+  --softer: rgba(40, 32, 16, 0.03);
+  --line: rgba(40, 32, 16, 0.11);
+  --line-2: rgba(40, 32, 16, 0.2);
+  --text: #26211a;
+  --dim: #6b6355;
+  --faint: #9a9284;
+  --accent: #8a6a18;
+  --accent-2: #6f5512;
+  --accent-soft: rgba(138, 106, 24, 0.12);
+  --on-accent: #fff;
+  --good: #178a58;
+  --good-soft: rgba(23, 138, 88, 0.12);
+  --warn: #9a6b0c;
+  --warn-soft: rgba(178, 124, 17, 0.14);
+  --bad: #c93b3b;
+  --bad-soft: rgba(201, 59, 59, 0.12);
+  --info: #0d7f9c;
+  --info-soft: rgba(13, 127, 156, 0.11);
+  --shadow-raise: 0 10px 30px rgba(50, 40, 20, 0.14);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-raise: var(--raise);
+  --color-soft: var(--soft);
+  --color-softer: var(--softer);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-text: var(--text);
+  --color-dim: var(--dim);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  /* Figures, codes, axes and the day timeline are mono; the rest is the
+   * system sans. Numbers line up in a column only in the mono face. */
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Figures are compared down a column far more often than they are read in a
+ * sentence, so digits keep a fixed width everywhere. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,30 @@
+{
+  "app": { "name": "kasl-server" },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Your team's kasl server",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "failed": "Wrong email or password",
+    "unavailable": "The server is not answering. Try again in a moment."
+  },
+  "nav": {
+    "myDay": "My day",
+    "privacy": "What is stored about me",
+    "signOut": "Sign out"
+  },
+  "privacy": {
+    "title": "What this server stores about you",
+    "level": "Detail level",
+    "levels": { "full": "Full", "moderate": "Moderate", "coarse": "Coarse" },
+    "stored": "What is kept",
+    "neverCollected": "Never collected",
+    "visibleTo": "Who can see it",
+    "retention": "How long",
+    "onChange": "If this setting changes",
+    "updatedAt": "Policy last changed"
+  },
+  "common": { "loading": "Loading…", "error": "Something went wrong" }
+}

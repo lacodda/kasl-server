@@ -1,6 +1,6 @@
 [package]
 name = "kasl-server"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.94"
 description = "Team server for kasl: collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages"
@@ -11,7 +11,27 @@ readme = "README.md"
 keywords = ["time-tracking", "server", "team", "dashboard", "kasl"]
 categories = ["web-programming::http-server"]
 authors = ["Kirill Lakhtachev <lahtachev@gmail.com>"]
-exclude = ["docs/", ".github/", "frontend/", "cliff.toml", "rustfmt.toml"]
+# The web UI ships as its build output, not as its sources: `cargo install
+# kasl-server` must produce a working server without Node, and rust-embed reads
+# `frontend/dist` at compile time (ADR 0012). `include` is what puts `dist` in
+# the package at all - it is gitignored, and without an explicit list cargo
+# would leave it out.
+include = [
+    "src/**",
+    "migrations/**",
+    "tests/**",
+    "assets/**",
+    "tools/**",
+    "frontend/dist/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.prod.yml",
+]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -32,6 +52,9 @@ serde_json = "1.0.151"
 sha2 = "0.11.0"
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "chrono", "uuid"] }
 tokio = { version = "1.53.1", features = ["full"] }
+# The built web UI is compiled into the binary, so a self-hosted install is one
+# file and the UI can never be from a different build than the API (ADR 0012).
+rust-embed = { version = "8.7.2", features = ["mime-guess"] }
 tower-http = { version = "0.7.0", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

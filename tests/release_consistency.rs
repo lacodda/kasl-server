@@ -108,3 +108,29 @@ fn readme_is_not_duplicated() {
         );
     }
 }
+
+#[test]
+fn the_package_carries_the_built_web_ui() {
+    // The UI is embedded in the binary (ADR 0012), and `frontend/dist` is
+    // gitignored - so only `include` puts it in the crate. Drop that line and
+    // `cargo install kasl-server` stops compiling for everyone, which is
+    // discovered by a stranger rather than by us.
+    let manifest = read("Cargo.toml");
+    assert!(
+        manifest.contains("\"frontend/dist/**\""),
+        "Cargo.toml must include frontend/dist in the package, or `cargo install` cannot build it"
+    );
+}
+
+#[test]
+fn the_web_ui_was_built_before_this_release() {
+    // A placeholder `dist` compiles fine and produces a binary that answers
+    // "no web UI was built into this binary" - a release that looks complete
+    // and serves nothing. The check is for the built document, not the
+    // directory, because the directory always exists.
+    let index = repo_root().join("frontend/dist/index.html");
+    assert!(
+        index.exists(),
+        "frontend/dist/index.html is missing; run `pnpm --dir frontend build` before packaging or tagging"
+    );
+}
