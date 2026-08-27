@@ -16,12 +16,12 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-27T00:35:35.439490Z  INFO kasl_server: database schema is up to date version=20260826000001
-2026-08-27T00:35:35.473939Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-27T00:35:35.476950Z  INFO kasl_server: kasl-server listening version="0.11.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-27T01:07:49.123561Z  INFO kasl_server: database schema is up to date version=20260826000001
+2026-08-27T01:07:49.174687Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-27T01:07:49.178002Z  INFO kasl_server: kasl-server listening version="0.11.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.11.0"}
+{"database":"ok","status":"ok","version":"0.11.1"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
