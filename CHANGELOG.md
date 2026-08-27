@@ -2,7 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.11.1] - 2026-08-27
+
+### Bug Fixes
+- Drop the frontend's dependencies before packaging
+
 ## [0.11.0] - 2026-08-27
+
+### Bug Fixes
+- Build the web UI wherever the binary is built
+
+### Documentation
+- Cut 0.11.0
 
 ### Features
 - Serve a web UI from the same binary, starting with signing in
