@@ -48,6 +48,11 @@ jobs:
       - name: Get a crates.io token (OIDC trusted publishing)
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
-      - run: cargo publish
+      # `--allow-dirty` because the crate deliberately ships a build output:
+      # `frontend/dist` is gitignored (it is generated) but included in the
+      # package, and cargo otherwise refuses to publish anything it cannot find
+      # in git. The tag is what fixes the sources; the UI is built from them a
+      # few steps above.
+      - run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
