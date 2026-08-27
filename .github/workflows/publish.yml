@@ -38,6 +38,13 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Build the web UI
         run: pnpm --dir frontend install --frozen-lockfile && pnpm --dir frontend build
+      # cargo collects every LICENSE and README under the package directory on
+      # its own - `include` and `exclude` do not reach them - so the installed
+      # JS dependencies would add 1353 untracked files and `cargo publish`
+      # refuses the package over them. The build output is what ships; the
+      # dependencies that produced it have no business in the crate.
+      - name: Drop the frontend's dependencies before packaging
+        run: rm -rf frontend/node_modules
       - name: Get a crates.io token (OIDC trusted publishing)
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
