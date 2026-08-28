@@ -306,6 +306,11 @@ $ pnpm --dir frontend lint     # eslint, tsc and the unit tests
 $ pnpm --dir frontend build    # what gets embedded
 ```
 
+**TypeScript is held at 6.x on purpose.** typescript-eslint does not run under
+TS 7 yet, so upgrading takes linting with it - `pnpm update --latest` pulls 7
+and `pnpm lint` then fails before it type-checks anything. The `^6.0.3` range
+in `frontend/package.json` is what keeps that from happening by accident.
+
 `cargo build --release` embeds whatever is in `frontend/dist` at that moment.
 The repository carries an empty placeholder there, so a checkout without Node
 still compiles - and a binary built that way says

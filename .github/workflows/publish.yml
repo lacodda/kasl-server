@@ -28,10 +28,10 @@ jobs:
       # `cargo publish` packages `frontend/dist` (ADR 0012) and verifies the
       # package by building it. An unbuilt UI would publish a crate that
       # installs into a server with no web UI.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: frontend/package.json
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm

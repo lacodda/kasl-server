@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use argon2::{
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
@@ -33,9 +33,11 @@ pub const SESSION_COOKIE: &str = "kasl_session";
 
 /// Hashes a password for storage.
 pub fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    // The salt comes from the crate's own generator rather than one built here:
+    // since 0.6 that is what `hash_password` does, and a salt is exactly the
+    // parameter a caller should not be trusted to supply.
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|error| anyhow::anyhow!("failed to hash the password: {error}"))
 }
@@ -173,6 +175,25 @@ mod tests {
         assert!(verify_password("correct horse battery staple", &hash));
         assert!(!verify_password("Correct horse battery staple", &hash), "verification is exact");
         assert!(!verify_password("", &hash));
+    }
+
+    #[test]
+    fn a_hash_from_an_earlier_release_still_verifies() {
+        // Written before upgrading argon2, from a hash this crate produced at
+        // 0.12.0. Password hashing is the one dependency whose output lives in
+        // the customer's database: a version that stopped reading the previous
+        // format would lock every existing account out of a running
+        // installation, and no migration could recover the passwords.
+        //
+        // The fixture is a hash of a known string generated here, never a real
+        // account's - a repository is the wrong place for either.
+        const RELEASED_0_12_0: &str = "$argon2id$v=19$m=19456,t=2,p=1$IuuVYrGRFHiMJVcyee67FQ$hKIMtAWUiR0BAJvDvau0apBSl9+rv/5T9kWC3aKerjg";
+
+        assert!(
+            verify_password("a fixture password", RELEASED_0_12_0),
+            "an upgrade must not invalidate stored passwords"
+        );
+        assert!(!verify_password("a different password", RELEASED_0_12_0));
     }
 
     #[test]
