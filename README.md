@@ -16,12 +16,20 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-28T11:48:44.511775Z  INFO kasl_server: database schema is up to date version=20260826000001
-2026-08-28T11:48:44.758115Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
-2026-08-28T11:48:44.792230Z  INFO kasl_server: kasl-server listening version="0.13.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-28T14:20:13.722743Z  INFO kasl_server: database schema is up to date version=20260826000001
+2026-08-28T14:20:13.793359Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+
+  An administrator account was created, because this installation had none:
+
+      email:    admin@kasl.local
+      password: 6fp35gainu7zpj2yfwy3
+
+  This is the only time it is shown. Sign in and change it.
+
+2026-08-28T14:20:14.349447Z  INFO kasl_server: kasl-server listening version="0.14.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.13.0"}
+{"database":"ok","status":"ok","version":"0.14.0"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -542,7 +550,7 @@ $ docker compose logs server | grep -A 4 'administrator account'
   An administrator account was created, because this installation had none:
 
       email:    admin@kasl.local
-      password: fvfcyap9bigg2qc8a3wj
+      password: 6fp35gainu7zpj2yfwy3
 ```
 
 Open `http://localhost:8080`, sign in with that, and change it. **The password
