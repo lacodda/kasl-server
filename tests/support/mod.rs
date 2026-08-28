@@ -198,6 +198,12 @@ impl TestServer {
         }
     }
 
+    /// The name of the throwaway database, for a test that has to point a
+    /// separate process at it.
+    pub fn database_name(&self) -> String {
+        self.db.as_ref().expect("a server always has a database").name.clone()
+    }
+
     /// Drops the database behind this server. Only needed where a test holds
     /// two of them; the ordinary single-server test leaves it to `TestDb`.
     pub async fn close(mut self) {

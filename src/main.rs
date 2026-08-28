@@ -100,7 +100,13 @@ fn parse_offset(raw: &str) -> Result<chrono::FixedOffset, String> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Logs go to stderr, always. `kasl-server backup` writes the backup itself
+    // to stdout, and the startup line about migrations landing in the middle of
+    // it produced a file that looked fine and could not be parsed - found by
+    // running the documented command against the published image, not by a
+    // test. Keeping the two streams apart is also what every other CLI does.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("kasl_server=info,tower_http=info")))
         .init();
 

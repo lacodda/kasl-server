@@ -201,6 +201,41 @@ async fn an_agent_can_still_deliver_after_a_restore() {
 }
 
 #[tokio::test]
+async fn the_command_writes_a_parseable_file_to_stdout() {
+    let Some(server) = TestServer::start().await else { return };
+    let Ok(url) = std::env::var("DATABASE_URL") else { return };
+
+    let (status, body) = server.post_day(&server.token, day("2026-08-24", 1)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Through the real binary, because the defect this guards was not in the
+    // module: the startup log about migrations went to stdout and landed in
+    // the middle of the backup. Every test above calls `dump` directly and
+    // could not have seen it - only running the documented command did.
+    let database = support::replace_database(&url, &server.database_name());
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kasl-server"))
+        .arg("backup")
+        .env("DATABASE_URL", database)
+        .output()
+        .expect("the binary should run");
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    let first = String::from_utf8_lossy(&output.stdout);
+    let first = first.lines().next().expect("stdout should carry the backup");
+    let header: serde_json::Value = serde_json::from_str(first).unwrap_or_else(|error| {
+        panic!("the first line of stdout is not the backup header ({error}): {first}");
+    });
+    assert_eq!(header["format"], "kasl-server-backup");
+
+    // And the progress line is still reported - to the other stream.
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("wrote"),
+        "the summary belongs on stderr, where it cannot corrupt the file"
+    );
+}
+
+#[tokio::test]
 async fn a_restore_refuses_a_database_that_already_holds_people() {
     let Some(server) = TestServer::start().await else { return };
     let file = dump(&server).await;
