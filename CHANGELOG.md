@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.1] - 2026-08-28
+
+### Features
+- Tell an agent whose token it holds
+
 ## [0.14.0] - 2026-08-28
 
 ### Bug Fixes
@@ -9,6 +14,7 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Cut 0.14.0
+- Include the stdout fix in 0.14.0
 
 ### Features
 - Back the installation up and restore it
