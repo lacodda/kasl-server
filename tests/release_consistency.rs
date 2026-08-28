@@ -134,3 +134,47 @@ fn the_web_ui_was_built_before_this_release() {
         "frontend/dist/index.html is missing; run `pnpm --dir frontend build` before packaging or tagging"
     );
 }
+
+#[test]
+fn the_install_compose_names_the_image_this_repository_publishes() {
+    // The install path is "download this file, run it". If the image name in
+    // it drifts from what `image.yml` pushes, that instruction fails for a
+    // stranger and works for us - we have the source and never pull.
+    let compose = read("docker-compose.install.yml");
+    let workflow = read(".github/workflows/image.yml");
+
+    assert!(
+        compose.contains("ghcr.io/lacodda/kasl-server:"),
+        "the install compose must pull the published image"
+    );
+    assert!(
+        workflow.contains("ghcr.io/${{ github.repository }}"),
+        "the image workflow must publish under the repository's own name"
+    );
+    assert!(
+        !compose.contains("build:"),
+        "the install compose must not build from source; that is docker-compose.prod.yml"
+    );
+}
+
+#[test]
+fn the_readme_documents_every_environment_variable() {
+    // The configuration table is the only place an operator learns these
+    // exist. A variable added to the code and not to the table is invisible
+    // until someone reads the source, which is not what a self-hosted product
+    // can ask of them.
+    let config = read("src/config.rs");
+    let readme = read("README.md");
+
+    for line in config.lines() {
+        let Some(start) = line.find("lookup(\"KASL_") else { continue };
+        let rest = &line[start + "lookup(\"".len()..];
+        let Some(end) = rest.find('"') else { continue };
+        let variable = &rest[..end];
+
+        assert!(
+            readme.contains(variable),
+            "{variable} is read by the server but missing from the README's configuration table"
+        );
+    }
+}

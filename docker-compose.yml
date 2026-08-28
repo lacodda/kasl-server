@@ -1,5 +1,9 @@
-# Dev database only. The server itself runs via `cargo run`;
-# a full deployment compose arrives with the deployment milestone.
+# Dev database only. The server itself runs via `cargo run`.
+#
+# The other two are for running it properly:
+#   docker-compose.install.yml - the published image, for an installation
+#   docker-compose.prod.yml    - built from source, which is what this
+#                                project's own stand does
 services:
   db:
     image: postgres:18-alpine

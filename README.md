@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a status that says what the server actually knows, and a drill-down into anyone's days. The same binary serves all of it. What is missing is the shape of a real deployment: no Docker image to install, no way for kasl to send on its own yet (history is imported or posted by hand), and no backups.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a status that says what the server actually knows, and a drill-down into anyone's days. The same binary serves all of it, and installing it is a compose file and a published image rather than a build. What is still missing is the other half of the loop: kasl cannot send on its own yet, so history is imported or posted by hand.
 
 ## Try it
 
@@ -527,28 +527,85 @@ with a time zone (the agent stores bare wall-clock text, which does not survive
 a team spread across zones), and rows are tied together by foreign keys rather
 than by comparing dates. Both are recorded in [ADR 0003](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0003-time-and-identity-in-the-schema.md).
 
-## Running it somewhere real
+## Installing it
 
-`docker-compose.prod.yml` builds the server and starts it next to PostgreSQL.
-The image is built on the machine that will run it, so a stand on a Raspberry
-Pi gets an aarch64 binary without cross-compiling anything:
+Docker and nothing else — no Rust, no Node, no build:
 
 ```console
-$ cat > .env <<'ENV'
-POSTGRES_PASSWORD=<a long random string>
-KASL_AGENTS=employee@example.com:<the agent's token>
-ENV
+$ curl -o docker-compose.yml \
+    https://raw.githubusercontent.com/lacodda/kasl-server/main/docker-compose.install.yml
+$ printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 24)" > .env
 $ chmod 600 .env
+$ docker compose up -d
+$ docker compose logs server | grep -A 4 'administrator account'
+
+  An administrator account was created, because this installation had none:
+
+      email:    admin@kasl.local
+      password: fvfcyap9bigg2qc8a3wj
+```
+
+Open `http://localhost:8080`, sign in with that, and change it. **The password
+is printed once and stored nowhere else** — the alternative, writing one into a
+file the server reads at every boot, leaves a credential lying around forever.
+To name the administrator yourself instead, set `KASL_ADMIN=email:password`
+before the first start.
+
+The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
+same compose file works on a laptop and on a Raspberry Pi. Pin a version in
+production (`KASL_VERSION=0.14.0`); `latest` is for a first look.
+
+Two more things before this holds a team's hours:
+
+- **Put it behind HTTPS** and set `KASL_SECURE_COOKIES=true`. Over plain
+  `http://` the session cookie cannot carry `Secure`, which is why the compose
+  file ships with it off — convenient for a trial, wrong for anything real.
+- **Take backups.** See below; the database's volume is the only copy until you
+  do.
+
+### Building from source instead
+
+`docker-compose.prod.yml` builds the image on the machine that will run it,
+which is what this project's own stand does — it makes every deploy a proof
+that the code compiles for that architecture. It takes about fifteen minutes on
+a Pi 4 the first time; later builds reuse the cached layers.
+
+```console
 $ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-The database publishes no port — only the server reaches it, over the compose
-network — and the server runs as an unprivileged user. The first build takes a
-while on a small machine (about fifteen minutes on a Pi 4); later ones reuse
-the cached layers.
+In both cases the database publishes no port — only the server reaches it, over
+the compose network — and the server runs as an unprivileged user.
 
-This is a stand, not a supported deployment: backups, restore and an install
-guide come with the deployment milestone.
+## Backups
+
+The whole installation goes into one file and comes back out of it:
+
+```console
+$ docker compose exec server kasl-server backup > kasl-$(date +%F).jsonl
+wrote 4213 rows from 12 tables
+
+$ docker compose exec -T server kasl-server restore < kasl-2026-08-28.jsonl
+restored 4213 rows into 12 tables
+```
+
+The file is JSON Lines — one line per table — so it reads in any tool and
+compresses well. `--out` and `--from` take paths instead of the standard
+streams.
+
+**A restore refuses a database that already holds accounts.** Merging two
+installations would mean deciding what wins, and every answer to that is wrong
+for somebody; restore into an empty database and the decision stays yours.
+
+**And it refuses a backup from a newer server.** A file carries the schema
+version it was taken at, because the failure being avoided is not an error — it
+is a restore that appears to work while quietly dropping columns the older
+schema has no place for.
+
+Agent tokens survive a restore, so the machines in the field keep reporting
+without being re-enrolled — which matters most on the day you actually need
+this. If you already have a backup regime, `pg_dump` remains available and this
+does not replace it.
 
 ## Configuration
 
@@ -559,6 +616,11 @@ Everything comes from the environment:
 | `DATABASE_URL` | PostgreSQL connection string | required |
 | `KASL_SERVER_ADDR` | Address the HTTP server binds to | `0.0.0.0:8080` |
 | `KASL_AGENTS` | Agents to provision on startup, as `email:token` pairs separated by commas | none |
+| `KASL_ADMIN` | First administrator, as `email:password`. Unset, the server generates one on a first run | none |
+| `KASL_ADMIN_EMAIL` | Email for that generated administrator | `admin@kasl.local` |
+| `KASL_SECURE_COOKIES` | Whether the session cookie carries `Secure`. Set `false` only when serving plain `http://` | `true` |
+| `KASL_MAX_BATCH_DAYS` | Days one `/days/batch` request may carry | `31` |
+| `KASL_MAX_BODY_BYTES` | Largest request body accepted | `4194304` |
 | `RUST_LOG` | Log filter (tracing syntax) | `kasl_server=info,tower_http=info` |
 
 Database migrations are embedded in the binary and applied on startup.
@@ -580,7 +642,7 @@ UI.
 - Manager dashboards: who is working right now, hours per person, trends over time *(the team's week and a drill-down into one person: done)*
 - Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
-- Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure
+- Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure *(published image, install guide and backups: done)*
 
 ## Stack
 

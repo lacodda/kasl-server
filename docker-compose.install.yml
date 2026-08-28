@@ -1,0 +1,62 @@
+# Install kasl-server: the published image plus its database.
+#
+# Nothing is built here - the image comes from the registry, so a machine needs
+# Docker and nothing else. Building from source is `docker-compose.prod.yml`,
+# which is what the project's own stand uses.
+#
+#   curl -o docker-compose.yml \
+#     https://raw.githubusercontent.com/lacodda/kasl-server/main/docker-compose.install.yml
+#   printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 24)" > .env
+#   chmod 600 .env
+#   docker compose up -d
+#
+# On the first run the server creates an administrator and prints its password
+# once - `docker compose logs server` has it. Sign in and change it.
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kasl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: kasl
+    volumes:
+      # postgres:18+ keeps data in a version-specific subdirectory; the mount
+      # sits one level up or the entrypoint refuses to start.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kasl -d kasl"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # No published port: only the server reaches it, over the private network.
+
+  server:
+    # Pin a version in production. `latest` is convenient for a first look and
+    # a poor thing to have an unattended `docker compose pull` follow.
+    image: ghcr.io/lacodda/kasl-server:${KASL_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://kasl:${POSTGRES_PASSWORD}@db:5432/kasl
+      KASL_SERVER_ADDR: 0.0.0.0:8080
+      # Set these only if you want to name the first administrator yourself.
+      # Left empty, the server generates one on its first run and prints the
+      # password - which is then in the logs and nowhere else, rather than
+      # living in this file forever.
+      KASL_ADMIN: ${KASL_ADMIN:-}
+      KASL_ADMIN_EMAIL: ${KASL_ADMIN_EMAIL:-admin@kasl.local}
+      # Agent tokens are issued through the web UI. This is for seeding one
+      # before anybody has signed in.
+      KASL_AGENTS: ${KASL_AGENTS:-}
+      # `true` once this is behind HTTPS. Over plain http a Secure cookie is
+      # dropped by the browser, and signing in appears to do nothing at all.
+      KASL_SECURE_COOKIES: ${KASL_SECURE_COOKIES:-false}
+      RUST_LOG: ${RUST_LOG:-kasl_server=info,tower_http=info}
+    ports:
+      - "${KASL_PORT:-8080}:8080"
+
+volumes:
+  db-data:

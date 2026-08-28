@@ -1,0 +1,107 @@
+name: Image
+
+# The container image, published alongside the release it belongs to.
+#
+# Until this existed, installing meant building on the target machine: Rust,
+# Node and about fifteen minutes on a Raspberry Pi. That is a fine way to run a
+# stand and a poor way to try a product.
+on:
+  push:
+    tags: ['v*']
+  # Buildable by hand, because a failure here must not need a new tag to retry.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Pushing to GHCR is done with the workflow's own token: no registry password
+  # to store, and nothing to rotate.
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            # Native arm64 rather than emulation: a Rust build under QEMU takes
+            # the better part of an hour, and this one has a Node stage too.
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each runner pushes a digest rather than a tag; the manifest below is
+      # what gives the two of them one name.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      # The file's name is the digest without its `sha256:` prefix, which is
+      # what `imagetools create` wants back when it assembles the manifest.
+      - name: Export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  manifest:
+    name: Publish the manifest
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` moves and the version does not: someone who pinned 0.14.0 gets
+      # that image forever, and someone who wrote `latest` in a compose file
+      # gets whatever shipped last.
+      - name: Create the multi-architecture tag
+        working-directory: /tmp/digests
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$version" \
+            --tag "$IMAGE:latest" \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Show what was published
+        run: docker buildx imagetools inspect "$IMAGE:${GITHUB_REF_NAME#v}"
