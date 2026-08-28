@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.0] - 2026-08-28
+
+### Dependencies
+- Update the toolchain and dependencies
+
+### Features
+- The team's hours and a drill-down into one person
+- The manager's dashboard, with a drill-down into a week
+
 ## [0.12.0] - 2026-08-28
+
+### Documentation
+- Cut 0.12.0
 
 ### Features
 - Read your own days over GET /me/days
@@ -63,6 +75,9 @@ All notable changes to this project are documented in this file.
 
 ### Breaking Changes
 - For a manager, GET /api/v1/users now returns only the departments they run plus themselves, where it previously returned the whole company. Administrators and agents are unaffected. See ADR 0009 for the migration path: none is needed for a client that does not assume a company-wide list.
+
+### Dependencies
+- Update the toolchain and dependencies
 
 ### Documentation
 - Describe departments and record the visibility rules
@@ -144,6 +159,9 @@ All notable changes to this project are documented in this file.
 ### CI
 - Restore the publish tag trigger
 - Run the schema tests against a real PostgreSQL
+
+### Dependencies
+- Update the toolchain and dependencies
 
 ### Documentation
 - Record the schema and how it differs from the agent

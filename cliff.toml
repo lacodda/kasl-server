@@ -47,5 +47,9 @@ commit_parsers = [
   { message = "^test", group = "Testing" },
   { message = "^build", group = "Build" },
   { message = "^ci", group = "CI" },
+  # Dependency updates are the one `chore` a reader of the changelog needs:
+  # they carry the major upgrades that explain a moved MSRV or a changed
+  # requirement. `chore(release)` and the rest stay out.
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
   { message = "^chore", skip = true },
 ]
