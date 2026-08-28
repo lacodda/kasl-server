@@ -1,9 +1,9 @@
 //! What a person can read about themselves: `GET /api/v1/me/days`.
 //!
 //! The first read endpoint this server has. Every route before it either took
-//! data in or described the installation; this one hands a day back, and it
-//! sets the shape the manager's views will reuse in v0.13 with a different
-//! subject and the same body.
+//! data in or described the installation; this one hands a day back, and its
+//! shape is reused by the manager's drill-down in [`crate::team`] - the same
+//! answer for a different subject, through [`days_for`].
 //!
 //! Two decisions stand behind it, both taken before the code:
 //!
@@ -13,8 +13,8 @@
 //!   current UI rather than a contract.
 //! * **`/me`, not `/users/{id}` with your own id.** Nothing here consults a
 //!   role or a department, so no reading of them can be wrong. Someone else's
-//!   days arrive in v0.13 through a route where the permission is the point,
-//!   and is checked in the open.
+//!   days go through [`crate::team`], where the permission is the subject and
+//!   is checked in the open.
 //!
 //! The response says what the privacy level withheld, rather than answering an
 //! empty list. Under `coarse` the server stores no individual pauses, and a
@@ -116,7 +116,7 @@ pub struct Days {
 }
 
 /// What a level withholds, in the words a screen can show as-is.
-fn not_stored_at(level: PrivacyLevel) -> Vec<&'static str> {
+pub fn not_stored_at(level: PrivacyLevel) -> Vec<&'static str> {
     let mut withheld = Vec::new();
     if !level.keeps_pause_times() {
         withheld.push("pauses");
@@ -132,25 +132,33 @@ fn not_stored_at(level: PrivacyLevel) -> Vec<&'static str> {
 
 /// Answers the signed-in person's own days.
 pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range): Query<Range>) -> Result<impl IntoResponse, ApiError> {
-    validate(&range)?;
+    validate_range(&range)?;
+    Ok(Json(days_for(&state.pool, user.user_id, &range).await?))
+}
 
-    let level = Policy::load(&state.pool).await?.level();
-    let days = load_days(&state.pool, user.user_id, &range).await?;
+/// Builds one person's answer, whoever is asking.
+///
+/// Shared with the manager's drill-down, which is this screen pointed at
+/// someone else: the permission differs, the answer must not. Callers check who
+/// may read what before they get here.
+pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Days, ApiError> {
+    let level = Policy::load(pool).await?.level();
+    let days = load_days(pool, user_id, range).await?;
 
-    Ok(Json(Days {
+    Ok(Days {
         from: range.from,
         to: range.to,
         days,
         privacy_level: level,
         not_stored: not_stored_at(level),
-    }))
+    })
 }
 
 /// Rejects a range the server will not serve, with the reason.
 ///
 /// Separate from the handler so the rules can be read - and tested - without a
 /// database behind them.
-fn validate(range: &Range) -> Result<(), ApiError> {
+pub fn validate_range(range: &Range) -> Result<(), ApiError> {
     if range.to < range.from {
         return Err(ApiError::bad_request("`to` is before `from`"));
     }
@@ -367,12 +375,12 @@ mod tests {
         // Both ends inclusive: the drill-down asks for one date with the same
         // parameter twice, and rejecting that would make the common case the
         // awkward one.
-        assert!(validate(&range("2026-08-27", "2026-08-27")).is_ok());
+        assert!(validate_range(&range("2026-08-27", "2026-08-27")).is_ok());
     }
 
     #[test]
     fn a_backwards_range_is_refused() {
-        let error = validate(&range("2026-08-27", "2026-08-01")).unwrap_err();
+        let error = validate_range(&range("2026-08-27", "2026-08-01")).unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
         assert!(error.to_string().contains("before"), "the message should say what is wrong: {error}");
     }
@@ -383,10 +391,10 @@ mod tests {
         // refuses a legitimate year or lifts the cap the test claims to guard.
         let widest = range("2026-01-01", "2027-02-04");
         assert_eq!((widest.to - widest.from).num_days() + 1, MAX_RANGE_DAYS);
-        assert!(validate(&widest).is_ok(), "exactly {MAX_RANGE_DAYS} days is allowed");
+        assert!(validate_range(&widest).is_ok(), "exactly {MAX_RANGE_DAYS} days is allowed");
 
         let too_wide = range("2026-01-01", "2027-02-05");
-        let error = validate(&too_wide).unwrap_err();
+        let error = validate_range(&too_wide).unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
         assert!(error.to_string().contains("401"), "the message should name the span asked for: {error}");
     }

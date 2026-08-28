@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, config::Config, department, ingest, login, me, privacy, web};
+use crate::{admin, audit, config::Config, department, ingest, login, me, privacy, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,9 +37,13 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/auth/password", post(admin::change_own_password))
         // What a person can read about themselves. `/me` rather than their own
         // id under `/users`: this route consults no role and no department, so
-        // there is no permission here to get wrong. Reading someone else's days
-        // arrives in v0.13 as its own route, where the check is the point.
+        // there is no permission here to get wrong.
         .route("/me/days", get(me::days))
+        // Other people's data, for whoever is entitled to it. Separate routes
+        // from `/me` on purpose: here a permission is checked, and a route that
+        // sometimes checks one is a route where forgetting is invisible.
+        .route("/team/days", get(team::days))
+        .route("/users/{id}/days", get(team::user_days))
         // Administration. Reading the team is a manager's; changing it is not,
         // until departments give a manager something to be in charge of.
         .route("/users", get(admin::list_users).post(admin::create_user))

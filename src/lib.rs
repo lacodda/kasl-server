@@ -20,6 +20,7 @@ pub mod model;
 pub mod privacy;
 pub mod provision;
 pub mod session;
+pub mod team;
 pub mod web;
 
 /// The embedded migrations, applied on startup and by the tests.

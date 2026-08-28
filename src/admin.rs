@@ -119,7 +119,9 @@ pub struct IssuedAgent {
 pub async fn list_users(State(state): State<AppState>, user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
 
-    let users: Vec<UserRow> = sqlx::query_as(
+    // `AssertSqlSafe` because the only interpolation is `VISIBLE_USERS`, a
+    // constant in this file; everything from the request is still bound.
+    let users: Vec<UserRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT u.id, u.email, u.display_name, u.role, u.active,
                 (u.password_hash IS NOT NULL) AS has_password,
                 (SELECT count(*) FROM agents a WHERE a.user_id = u.id AND a.revoked_at IS NULL) AS agents,
@@ -129,11 +131,9 @@ pub async fn list_users(State(state): State<AppState>, user: CurrentUser) -> Res
                 u.created_at
          FROM users u
          LEFT JOIN departments d ON d.id = u.department_id
-         WHERE $1
-            OR u.id = $2
-            OR u.department_id IN (SELECT id FROM departments WHERE manager_id = $2)
-         ORDER BY u.display_name, u.email",
-    )
+         WHERE {VISIBLE_USERS}
+         ORDER BY u.display_name, u.email"
+    )))
     .bind(user.role == UserRole::Admin)
     .bind(user.user_id)
     .fetch_all(&state.pool)
@@ -431,12 +431,23 @@ pub async fn change_own_password(State(state): State<AppState>, user: CurrentUse
 }
 
 /// Both roles that may read the team.
-fn require_manager_or_admin(user: &CurrentUser) -> Result<(), ApiError> {
+pub fn require_manager_or_admin(user: &CurrentUser) -> Result<(), ApiError> {
     match user.role {
         UserRole::Admin | UserRole::Manager => Ok(()),
         UserRole::Employee => Err(ApiError::new(StatusCode::FORBIDDEN, "not allowed")),
     }
 }
+
+/// The `WHERE` clause deciding whose rows a reader may see, as one string.
+///
+/// Written once and pasted into every query that answers for other people:
+/// three copies of this rule would be three chances for one of them to widen
+/// quietly, and a visibility bug is invisible to the person it leaks to.
+///
+/// Takes two binds, in order: whether the reader is an administrator, and their
+/// own id. An unfiled person - no department - is deliberately visible to the
+/// administrator alone (ADR 0009).
+pub const VISIBLE_USERS: &str = "($1 OR u.id = $2 OR u.department_id IN (SELECT id FROM departments WHERE manager_id = $2))";
 
 /// Hashes a password after checking it is long enough to be one.
 fn hash_new_password(password: &str) -> Result<String, ApiError> {
