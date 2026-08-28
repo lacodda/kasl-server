@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router'
+import { NavLink, Navigate, Route, Routes } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { Login } from '@/pages/Login'
+import { MyDay } from '@/pages/MyDay'
 import { Privacy } from '@/pages/Privacy'
 import { Button } from '@/components/ui/Button'
 
@@ -24,10 +25,11 @@ export function App() {
       <Header />
       <main className="flex-1 p-6">
         <Routes>
+          <Route path="/day" element={<MyDay />} />
           <Route path="/privacy" element={<Privacy />} />
-          {/* One screen so far. Anything else lands on it rather than on a
-              blank page - the rest of the map arrives with v0.12 and v0.13. */}
-          <Route path="*" element={<Navigate to="/privacy" replace />} />
+          {/* An unknown path lands on the person's own week rather than on a
+              blank page. The manager's screens arrive with v0.13. */}
+          <Route path="*" element={<Navigate to="/day" replace />} />
         </Routes>
       </main>
     </div>
@@ -47,6 +49,13 @@ function Header() {
             binary, and two numbers on one product send bug reports to the
             wrong place. */}
         <span className="font-mono text-xs text-faint tabular">{version}</span>
+        {/* The employee's own screens. The mockup gives each role a sidebar;
+            with two screens a header row says the same thing without the
+            furniture, and the sidebar arrives when v0.13 fills it. */}
+        <nav className="ml-4 flex items-center gap-1">
+          <Tab to="/day">{t('nav.myDay')}</Tab>
+          <Tab to="/privacy">{t('nav.privacy')}</Tab>
+        </nav>
       </div>
       <div className="flex items-center gap-4">
         <span className="text-sm text-dim">{user?.display_name}</span>
@@ -55,6 +64,22 @@ function Header() {
         </Button>
       </div>
     </header>
+  )
+}
+
+/** One entry in the header navigation, lit when its screen is the open one. */
+function Tab({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `rounded-[9px] px-2.5 py-1 text-sm transition-colors ${
+          isActive ? 'bg-accent-soft text-accent-2' : 'text-dim hover:bg-soft hover:text-text'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
   )
 }
 

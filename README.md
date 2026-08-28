@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The web UI has arrived — the same binary serves a sign-in screen and the page that shows an employee what is stored about them. The tables are filled; almost nothing reads them back yet — dashboards and the personal page are the next milestones, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The web UI has arrived — the same binary serves the sign-in screen, the page that shows an employee what is stored about them, and now their own week: seven days drawn as timelines, any of which opens to its pauses and tasks. The data goes in and comes back out for the person it belongs to; the manager's dashboard is the next milestone, and there is still nothing to deploy for real use.
 
 ## Try it
 
@@ -158,6 +158,44 @@ cookie is silently dropped by the browser there, which looks exactly like login
 doing nothing. The reasoning is in
 [ADR 0007](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0007-sessions-and-the-first-admin.md).
 
+## Reading your own days
+
+`GET /api/v1/me/days` answers the signed-in person's own history: the workdays
+in a range, each with its pauses and the tasks logged on it. Both ends are
+inclusive, so one date twice is one day.
+
+```console
+$ curl -H "Cookie: kasl_session=..."        "http://127.0.0.1:8080/api/v1/me/days?from=2026-08-24&to=2026-08-30"
+{"from":"2026-08-24","to":"2026-08-30","privacy_level":"full","not_stored":[],
+ "days":[{"date":"2026-08-24","started_at":"2026-08-24T12:05:00Z","ended_at":"2026-08-24T21:12:00Z",
+          "worked_seconds":29640,"paused_count":2,"paused_seconds":3180,
+          "pauses":[{"id":"56e75449-...","started_at":"2026-08-24T15:30:00Z","ended_at":"2026-08-24T16:15:00Z",
+                     "duration_seconds":2700,"manual":true,"reason":"lunch"}],
+          "tasks":[{"id":"2a9bd688-...","name":"Read-only endpoint","comment":null,
+                    "completeness":100,"recorded_at":"2026-08-24T20:50:00Z"}]}]}
+```
+
+`worked_seconds` is the day's span minus what was paused, and it is `null` while
+the day is still open — a day in progress has no total, and reporting the hours
+so far as the day's figure would make every working afternoon look short.
+`paused_count` and `paused_seconds` are always answered, whether they come from
+the stored pauses or from the totals a coarse policy keeps instead.
+
+**The route is `/me`, not your own id under `/users`.** It consults no role and
+no department, so there is no permission here to read wrong; reading someone
+else's days arrives with the manager's dashboard as its own route, where the
+check is the point. A session is required — an agent's bearer token writes days
+and reads the privacy manifest, and that is deliberately the whole list.
+
+**`not_stored` names what the installation's privacy level withholds** —
+`pauses`, `tasks`, `free_text`, or nothing at all. It is what lets a screen say
+"not stored" where it would otherwise draw an empty section: an employee cannot
+tell "no pauses were kept" from "you took no breaks", and only one of those is
+true (ADR 0011).
+
+A range covers at most 400 days; a wider one, or one that runs backwards, is a
+`400` naming the span asked for rather than a truncated answer.
+
 ## Managing the team
 
 Once an administrator exists, people and agent tokens are managed over the API
@@ -238,10 +276,16 @@ The same binary that answers the API serves the web app, on the same port:
 self-hosted install is one file - there is no web server to configure, and no
 way for the UI to be from a different build than the API it calls.
 
-So far it holds sign-in and the page an employee is owed most: **what this
-server stores about them**. The manifest is rendered from what the server
-actually enforces (ADR 0011) rather than described again in the page, so the
-two cannot disagree.
+Two screens so far. **My week** is the employee's own history: seven days, each
+drawn as a timeline of gold stretches broken by the pauses in them, and any day
+opens to its pauses and the tasks logged on it. **What is stored about me**
+renders the manifest from what the server actually enforces (ADR 0011) rather
+than describing it again in the page, so the two cannot disagree.
+
+Where the installation's privacy level withheld something, the page says so in
+that spot. A `coarse` day draws no timeline and states how many interruptions
+there were and how long they came to, because an unbroken gold bar would be a
+claim about the day that the server did not keep the evidence for.
 
 The version in the header comes from `/health` - the server's, not the
 bundle's. One product, one number.
@@ -484,7 +528,7 @@ UI.
 
 - Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
 - Manager dashboards: who is working right now, hours per person, trends over time
-- Personal pages: every employee sees their own history *(sign-in and the privacy manifest: done)*
+- Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
 - Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure
 

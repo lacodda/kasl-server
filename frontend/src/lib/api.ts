@@ -36,6 +36,52 @@ export interface PrivacyManifest {
   updated_at: string | null
 }
 
+export interface Pause {
+  id: string
+  started_at: string
+  ended_at: string | null
+  duration_seconds: number | null
+  /** A break the employee entered by hand, as opposed to detected idleness. */
+  manual: boolean
+  reason: string | null
+}
+
+export interface Task {
+  id: string
+  name: string
+  comment: string | null
+  completeness: number
+  recorded_at: string
+}
+
+export interface Day {
+  date: string
+  started_at: string
+  ended_at: string | null
+  /** `null` while the day is still open - an unfinished day has no total. */
+  worked_seconds: number | null
+  paused_count: number
+  paused_seconds: number
+  pauses: Pause[]
+  tasks: Task[]
+}
+
+/** What a privacy level withholds, in the server's own vocabulary. */
+export type NotStored = 'pauses' | 'tasks' | 'free_text'
+
+export interface DaysResponse {
+  from: string
+  to: string
+  days: Day[]
+  privacy_level: PrivacyLevel
+  /**
+   * Kinds of detail this installation does not keep. The screen must say so
+   * where it would otherwise render an empty section: "no pauses stored" and
+   * "you took no breaks" look identical, and only one of them is true.
+   */
+  not_stored: NotStored[]
+}
+
 /** A request the server refused, carrying the status so a caller can branch. */
 export class ApiError extends Error {
   readonly status: number
@@ -117,4 +163,12 @@ export const api = {
   me: () => request<Identity>('/auth/me'),
 
   privacy: () => request<PrivacyManifest>('/privacy'),
+
+  /**
+   * The signed-in person's own days, both ends inclusive.
+   *
+   * Dates are the employee's local calendar dates as their agent recorded
+   * them, not dates derived from a timestamp in the browser's zone (ADR 0003).
+   */
+  myDays: (from: string, to: string) => request<DaysResponse>(`/me/days?from=${from}&to=${to}`),
 }
