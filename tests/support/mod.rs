@@ -31,6 +31,7 @@ impl TestDb {
         let name = format!("kasl_test_{}", Uuid::new_v4().simple());
 
         let mut admin = PgConnection::connect(&admin_url).await.expect("DATABASE_URL is set but not reachable");
+        sweep_abandoned(&mut admin).await;
         // `CREATE DATABASE` takes no bind parameters, so the name is
         // interpolated. It is a literal prefix plus a generated UUID, never
         // anything from outside this test.
@@ -59,6 +60,52 @@ impl TestDb {
             let _ = admin.execute(AssertSqlSafe(format!(r#"DROP DATABASE IF EXISTS "{name}" WITH (FORCE)"#))).await;
             admin.close().await.ok();
         }
+    }
+}
+
+/// Drops test databases left behind by earlier runs. Once per process.
+///
+/// `TestDb::drop` is the ordinary way out, but it only runs when a test
+/// finishes: an interrupted run, a panic in a `#[should_panic]` neighbour, or a
+/// killed `cargo test` leaves its database on the server. They accumulate
+/// silently and eventually take the suite down with them - a month of runs left
+/// 1778 of them, and the shared memory they reserved failed the next run with
+/// "could not resize shared memory segment".
+///
+/// Only databases older than a day are swept, so a suite running in parallel
+/// with this one - a second terminal, another CI job on a shared server - keeps
+/// the databases it is still using.
+async fn sweep_abandoned(admin: &mut PgConnection) {
+    static SWEPT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if SWEPT.set(()).is_err() {
+        return;
+    }
+
+    // `pg_database` has no created-at column; the datdba-owned directory does
+    // not travel through SQL either. `pg_stat_file` on the database's directory
+    // gives its modification time, which for an abandoned database is the last
+    // time anything touched it.
+    let abandoned: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT datname FROM pg_database
+        WHERE datname LIKE 'kasl\_test\_%'
+          AND (pg_stat_file('base/' || oid::text, true)).modification < now() - interval '1 day'
+        "#,
+    )
+    .fetch_all(&mut *admin)
+    .await
+    .unwrap_or_default();
+
+    if abandoned.is_empty() {
+        return;
+    }
+
+    eprintln!("sweeping {} abandoned test databases", abandoned.len());
+    for name in abandoned {
+        // Names come from `pg_database` filtered to the suite's own prefix, and
+        // a failure here is not the running test's problem: a database another
+        // process just grabbed is skipped rather than fatal.
+        let _ = admin.execute(AssertSqlSafe(format!(r#"DROP DATABASE IF EXISTS "{name}" WITH (FORCE)"#))).await;
     }
 }
 
