@@ -11,8 +11,10 @@
 //! with the login milestone, need a different treatment.
 
 use axum::{
-    extract::FromRequestParts,
+    Json,
+    extract::{FromRequestParts, State},
     http::{StatusCode, request::Parts},
+    response::IntoResponse,
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -99,6 +101,48 @@ async fn authenticate(pool: &PgPool, token: &str) -> Result<Option<Authenticated
     }
 
     Ok(Some(AuthenticatedAgent { agent_id, user_id }))
+}
+
+/// What an agent is told about its own token: `GET /api/v1/agent/whoami`.
+///
+/// The only route that answers an agent a question about itself. Without it a
+/// token is opaque to the machine holding it: `kasl server connect` could
+/// confirm that a token works, but not whose it is, and a token pasted from
+/// the wrong chat window would file this machine's days under a colleague's
+/// name without a word. The check belongs at connect time, where a person is
+/// watching.
+#[derive(Debug, serde::Serialize)]
+pub struct Whoami {
+    /// The employee this agent reports for, as the server displays them.
+    pub user_name: String,
+    /// The label the administrator gave this agent, typically the machine.
+    pub agent_name: String,
+    /// The API version this path belongs to. Sent so a client can say "this
+    /// server speaks v1" without parsing the URL it just called.
+    pub api_version: &'static str,
+    /// The server's own version, for the connect summary and for support
+    /// questions. Already public on `/health`; repeated here so a connecting
+    /// agent needs one round trip, not two.
+    pub server_version: &'static str,
+}
+
+/// Answers whose token this is.
+pub async fn whoami(State(state): State<AppState>, agent: AuthenticatedAgent) -> Result<impl IntoResponse, ApiError> {
+    let (user_name, agent_name): (String, String) = sqlx::query_as(
+        "SELECT u.display_name, a.name FROM agents a
+         JOIN users u ON u.id = a.user_id
+         WHERE a.id = $1",
+    )
+    .bind(agent.agent_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(Whoami {
+        user_name,
+        agent_name,
+        api_version: "v1",
+        server_version: env!("CARGO_PKG_VERSION"),
+    }))
 }
 
 #[cfg(test)]

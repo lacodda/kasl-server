@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, config::Config, department, ingest, login, me, privacy, team, web};
+use crate::{admin, audit, auth, config::Config, department, ingest, login, me, privacy, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -63,7 +63,12 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // The same manifest for an agent's bearer token, so kasl can show it
         // in the CLI - where the employee already is - rather than requiring a
         // login to the server that watches them.
-        .route("/privacy/agent", get(privacy::show_to_agent));
+        .route("/privacy/agent", get(privacy::show_to_agent))
+        // Whose token this is. The one question an agent can ask about
+        // itself, and the one `kasl server connect` needs so a token pasted
+        // from the wrong place is caught by a person rather than discovered
+        // in a dashboard weeks later.
+        .route("/agent/whoami", get(auth::whoami));
 
     Router::new()
         .route("/health", get(health))

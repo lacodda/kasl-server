@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-08-28T14:20:14.349447Z  INFO kasl_server: kasl-server listening version="0.14.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-28T14:20:14.349447Z  INFO kasl_server: kasl-server listening version="0.14.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.14.0"}
+{"database":"ok","status":"ok","version":"0.14.1"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -112,6 +112,20 @@ accepted as sent, however many times it is tried - fix it or drop it. `5xx`
 means the fault is on this side; send it again later. A batch that answers `5xx`
 stopped partway: the days already accepted are stored, and re-sending them is
 safe because the last upload wins.
+
+**`GET /api/v1/agent/whoami`** — whose token this is. An agent token is opaque
+to the machine holding it, so a token pasted from the wrong place would file
+that machine's days under a colleague's name without a word. This answers the
+question at connect time, while a person is watching:
+
+```console
+$ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/agent/whoami
+{"user_name":"kirill","agent_name":"laptop","api_version":"v1","server_version":"0.14.1"}
+```
+
+Refused with `401` for a token that is unknown, revoked, or belongs to a
+deactivated account - the same answer the upload routes give, because a token
+that cannot write must not be able to read a name off the installation either.
 
 **Every accepted day reports the privacy level that applied**, and a
 `discarded` object when that level left something out. See
@@ -561,7 +575,7 @@ before the first start.
 
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
-production (`KASL_VERSION=0.14.0`); `latest` is for a first look.
+production (`KASL_VERSION=0.14.1`); `latest` is for a first look.
 
 Two more things before this holds a team's hours:
 
