@@ -230,6 +230,83 @@ async fn the_admin_bootstrap_creates_and_then_resets() {
 }
 
 #[tokio::test]
+async fn an_installation_with_no_administrator_gets_one() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // A fresh install: an agent account exists (the seed), but nobody can
+    // administer the server. Without this the operator has an installation
+    // they cannot sign into at all.
+    let password = kasl_server::provision::ensure_some_admin(&server.pool, "admin@kasl.local")
+        .await
+        .expect("the first run should create an administrator")
+        .expect("and report the password it generated");
+
+    assert!(password.len() >= 16, "a generated password has to be unguessable: {password}");
+    let (status, cookie, body) = server.login("admin@kasl.local", &password).await;
+    assert_eq!(status, StatusCode::OK, "the generated password must actually work: {body}");
+
+    let (_, me) = server.get_with_cookie("/api/v1/auth/me", cookie.as_deref()).await;
+    assert_eq!(me["role"], "admin", "{me}");
+}
+
+#[tokio::test]
+async fn a_restart_does_not_mint_a_second_administrator() {
+    let Some(server) = TestServer::start().await else { return };
+
+    let first = kasl_server::provision::ensure_some_admin(&server.pool, "admin@kasl.local")
+        .await
+        .expect("the first run")
+        .expect("a password");
+
+    // Every boot calls this. If it made an account each time, a restart would
+    // print a new password and quietly rotate the credential an operator had
+    // written down - or worse, keep working while they think it did not.
+    let second = kasl_server::provision::ensure_some_admin(&server.pool, "admin@kasl.local")
+        .await
+        .expect("a second run should be a no-op");
+    assert!(second.is_none(), "a restart must not create another administrator");
+
+    let (status, _, _) = server.login("admin@kasl.local", &first).await;
+    assert_eq!(status, StatusCode::OK, "and the first password must still work");
+    assert_eq!(server.count("users").await, 2, "the seeded agent's account plus this one");
+}
+
+#[tokio::test]
+async fn an_existing_administrator_is_left_alone() {
+    let Some(server) = TestServer::start().await else { return };
+
+    server.add_admin("boss@example.test", PASSWORD).await;
+    let generated = kasl_server::provision::ensure_some_admin(&server.pool, "admin@kasl.local")
+        .await
+        .expect("the check should succeed");
+
+    // The operator named their own administrator. Adding a second one with a
+    // password printed to the console would be a way in that nobody asked for.
+    assert!(generated.is_none(), "an installation that has an admin needs no other");
+    let (status, _, _) = server.login("admin@kasl.local", "anything at all").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "no such account should exist");
+}
+
+#[tokio::test]
+async fn generated_passwords_differ_between_installations() {
+    let Some(first) = TestServer::start().await else { return };
+    let Some(second) = TestServer::start().await else { return };
+
+    let one = kasl_server::provision::ensure_some_admin(&first.pool, "admin@kasl.local")
+        .await
+        .unwrap()
+        .unwrap();
+    let two = kasl_server::provision::ensure_some_admin(&second.pool, "admin@kasl.local")
+        .await
+        .unwrap()
+        .unwrap();
+
+    // A constant would be worse than no password at all: every installation in
+    // the world would ship with the same admin credential.
+    assert_ne!(one, two);
+}
+
+#[tokio::test]
 async fn promoting_an_existing_employee_to_admin_keeps_their_history() {
     let Some(server) = TestServer::start().await else { return };
 

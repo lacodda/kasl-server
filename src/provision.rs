@@ -139,6 +139,44 @@ pub async fn ensure_admin(pool: &sqlx::PgPool, email: &str, password: &str) -> R
     Ok(())
 }
 
+/// Creates the first administrator with a generated password, if there is no
+/// administrator at all.
+///
+/// The alternative - refusing to start until the operator sets `KASL_ADMIN` -
+/// makes the first run a documentation exercise, and the password it teaches
+/// them to write then lives in a `.env` file forever. Here the secret exists
+/// for one line of one log and is never stored in a file the operator has to
+/// remember to clean up.
+///
+/// Does nothing once an administrator exists, so a restart is not a way to
+/// mint credentials, and nothing is printed on the hundredth boot.
+pub async fn ensure_some_admin(pool: &sqlx::PgPool, email: &str) -> Result<Option<String>> {
+    let admins: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE role = 'admin' AND active")
+        .fetch_one(pool)
+        .await
+        .context("failed to look for an administrator")?;
+    if admins > 0 {
+        return Ok(None);
+    }
+
+    let password = generated_password();
+    ensure_admin(pool, email, &password).await?;
+    Ok(Some(password))
+}
+
+/// A password nobody has to remember: it is used once, to sign in and change
+/// it. Base32-ish alphabet without the characters people misread aloud or in a
+/// terminal font - this gets copied off a screen more often than pasted.
+fn generated_password() -> String {
+    use rand::RngExt;
+
+    const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
+    // 20 characters of a 32-symbol alphabet: 100 bits, which is beyond
+    // guessing for something that also only has to survive until it is changed.
+    let mut rng = rand::rng();
+    (0..20).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
+}
+
 /// Parses `KASL_ADMIN`, which is `email:password`.
 ///
 /// Absent or empty yields nothing: a server whose admin already exists has no

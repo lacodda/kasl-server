@@ -5,6 +5,11 @@ use anyhow::{Context, Result};
 /// Default bind address when `KASL_SERVER_ADDR` is not set.
 const DEFAULT_ADDR: &str = "0.0.0.0:8080";
 
+/// Email of the administrator created on a first run, when the operator named
+/// none. Not a real address, and not meant to be: it is a name to sign in with,
+/// and one that reads as "change me" rather than looking like someone's account.
+const DEFAULT_ADMIN_EMAIL: &str = "admin@kasl.local";
+
 /// Days one batch may carry. A month of backfill in a single request, which is
 /// generous for the case it exists for and still bounded.
 const DEFAULT_MAX_BATCH_DAYS: usize = 31;
@@ -29,6 +34,13 @@ pub struct Config {
     pub max_body_bytes: usize,
     /// Bootstrap administrator (`KASL_ADMIN`), as `email:password`.
     pub admin: String,
+    /// Email for the administrator generated on a first run (`KASL_ADMIN_EMAIL`).
+    ///
+    /// Only used when `KASL_ADMIN` is unset and the installation has no
+    /// administrator at all: the server makes one with a random password and
+    /// prints it once. The default is deliberately obvious rather than clever -
+    /// an operator who never sets this should still recognize the account.
+    pub admin_email: String,
     /// Whether session cookies carry `Secure` (`KASL_SECURE_COOKIES`).
     ///
     /// On by default, because a server holding a team's hours belongs behind
@@ -54,6 +66,7 @@ impl Config {
             max_batch_days: DEFAULT_MAX_BATCH_DAYS,
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
             admin: String::new(),
+            admin_email: DEFAULT_ADMIN_EMAIL.to_string(),
             secure_cookies: true,
         }
     }
@@ -69,6 +82,7 @@ impl Config {
         let max_batch_days = positive("KASL_MAX_BATCH_DAYS", &lookup, DEFAULT_MAX_BATCH_DAYS)?;
         let max_body_bytes = positive("KASL_MAX_BODY_BYTES", &lookup, DEFAULT_MAX_BODY_BYTES)?;
         let admin = lookup("KASL_ADMIN").unwrap_or_default();
+        let admin_email = lookup("KASL_ADMIN_EMAIL").unwrap_or_else(|| DEFAULT_ADMIN_EMAIL.to_string());
         let secure_cookies = boolean("KASL_SECURE_COOKIES", &lookup, true)?;
         Ok(Self {
             addr,
@@ -77,6 +91,7 @@ impl Config {
             max_batch_days,
             max_body_bytes,
             admin,
+            admin_email,
             secure_cookies,
         })
     }
