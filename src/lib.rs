@@ -15,6 +15,7 @@ pub mod error;
 pub mod import;
 pub mod ingest;
 pub mod login;
+pub mod me;
 pub mod model;
 pub mod privacy;
 pub mod provision;
