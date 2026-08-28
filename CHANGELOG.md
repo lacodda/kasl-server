@@ -2,10 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.12.0] - 2026-08-28
+
+### Features
+- Read your own days over GET /me/days
+- The employee's own week, with the day timeline
+
+### Testing
+- Sweep test databases abandoned by interrupted runs
+
 ## [0.11.2] - 2026-08-27
 
 ### Bug Fixes
 - Allow the generated web UI in the published package
+
+### Documentation
+- Cut 0.11.2
 
 ## [0.11.1] - 2026-08-27
 
