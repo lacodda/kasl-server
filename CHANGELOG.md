@@ -2,10 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.0] - 2026-08-28
+
+### Features
+- Back the installation up and restore it
+- Create an administrator on a first run and print it once
+- Publish the image and document installing from it
+
 ## [0.13.0] - 2026-08-28
 
 ### Dependencies
 - Update the toolchain and dependencies
+
+### Documentation
+- Cut 0.13.0
 
 ### Features
 - The team's hours and a drill-down into one person
