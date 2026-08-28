@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The web UI has arrived — the same binary serves the sign-in screen, the page that shows an employee what is stored about them, and now their own week: seven days drawn as timelines, any of which opens to its pauses and tasks. The data goes in and comes back out for the person it belongs to; the manager's dashboard is the next milestone, and there is still nothing to deploy for real use.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a status that says what the server actually knows, and a drill-down into anyone's days. The same binary serves all of it. What is missing is the shape of a real deployment: no Docker image to install, no way for kasl to send on its own yet (history is imported or posted by hand), and no backups.
 
 ## Try it
 
@@ -196,6 +196,45 @@ true (ADR 0011).
 A range covers at most 400 days; a wider one, or one that runs backwards, is a
 `400` naming the span asked for rather than a truncated answer.
 
+## The team's hours
+
+`GET /api/v1/team/days` answers a row per person over a range: hours, days
+recorded, pauses, and what the server knows about them right now. Managers and
+administrators only.
+
+```console
+$ curl -H "Cookie: kasl_session=..."        "http://127.0.0.1:8080/api/v1/team/days?from=2026-08-24&to=2026-08-30"
+{"from":"2026-08-24","to":"2026-08-30","privacy_level":"full","not_stored":[],
+ "members":[
+   {"id":"c49ea6a8-...","display_name":"Anna","email":"anna@example.com","department":"Engineering",
+    "days_recorded":3,"worked_seconds":72600,"paused_seconds":8100,"last_day":"2026-08-26",
+    "day_open":false,"last_seen_at":"2026-08-26T20:31:00Z","agents":1},
+   {"id":"0073460d-...","display_name":"Clara","email":"clara@example.com","department":null,
+    "days_recorded":0,"worked_seconds":0,"paused_seconds":0,"last_day":null,
+    "day_open":false,"last_seen_at":null,"agents":0}]}
+```
+
+**Everyone the reader may see is listed, including people with nothing
+recorded.** Clara above has no agent installed and no days; she is on the list
+anyway, because an employee whose agent never reported is exactly who a manager
+needs to notice. A table that dropped her would hide the case it exists for.
+
+**`day_open` and `last_seen_at` are what the server actually knows** - whether
+a day is open on that person's own calendar, and when one of their agents last
+delivered anything. Neither says someone is at their keyboard; that needs
+heartbeats, which is a later milestone. The dashboard says "day open, last data
+20 min ago" rather than "working now", because only the first is true.
+
+**Who sees whom** is the rule departments established: an administrator sees
+everyone, a manager sees the departments they run plus themselves, and a person
+in no department is visible to the administrator alone
+([ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md)).
+
+`GET /api/v1/users/{id}/days` is the drill-down: **the same response as
+`/me/days`**, for a person the caller is entitled to see. An id they may not
+see answers `404` rather than `403` - a manager probing ids should not be able
+to tell an employee in another department from one who does not exist.
+
 ## Managing the team
 
 Once an administrator exists, people and agent tokens are managed over the API
@@ -276,11 +315,17 @@ The same binary that answers the API serves the web app, on the same port:
 self-hosted install is one file - there is no web server to configure, and no
 way for the UI to be from a different build than the API it calls.
 
-Two screens so far. **My week** is the employee's own history: seven days, each
-drawn as a timeline of gold stretches broken by the pauses in them, and any day
-opens to its pauses and the tasks logged on it. **What is stored about me**
-renders the manifest from what the server actually enforces (ADR 0011) rather
-than describing it again in the page, so the two cannot disagree.
+**My week** is the employee's own history: seven days, each drawn as a timeline
+of gold stretches broken by the pauses in them, and any day opens to its pauses
+and the tasks logged on it. **The team** is the manager's dashboard - a row per
+person with their hours, bars that compare people with each other, and a status
+that says what the server knows; clicking a row opens that person's week in the
+same component the personal page uses. **What is stored about me** renders the
+manifest from what the server actually enforces (ADR 0011) rather than
+describing it again in the page, so the two cannot disagree.
+
+The team screens are hidden from an employee's navigation, but that is tidiness
+rather than security: the endpoints behind them refuse an employee outright.
 
 Where the installation's privacy level withheld something, the page says so in
 that spot. A `coarse` day draws no timeline and states how many interruptions
@@ -532,7 +577,7 @@ UI.
 ## What it will do
 
 - Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
-- Manager dashboards: who is working right now, hours per person, trends over time
+- Manager dashboards: who is working right now, hours per person, trends over time *(the team's week and a drill-down into one person: done)*
 - Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
 - Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure

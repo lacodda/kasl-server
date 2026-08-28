@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { useSession } from '@/lib/session'
+import { Dashboard, PersonWeek } from '@/pages/Dashboard'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Privacy } from '@/pages/Privacy'
@@ -20,12 +21,20 @@ export function App() {
 
   if (!user) return <Login />
 
+  // Who gets the team screens. The server decides for real; this only keeps a
+  // link out of the way of someone it would refuse.
+  const managesPeople = user.role === 'manager' || user.role === 'admin'
+
   return (
     <div className="flex min-h-full flex-col">
-      <Header />
+      <Header managesPeople={managesPeople} />
       <main className="flex-1 p-6">
         <Routes>
           <Route path="/day" element={<MyDay />} />
+          {/* Guarded on the server too - these routes answer 403 to an
+              employee. Hiding them here is for tidiness, not for safety. */}
+          {managesPeople && <Route path="/team" element={<Dashboard />} />}
+          {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
           <Route path="/privacy" element={<Privacy />} />
           {/* An unknown path lands on the person's own week rather than on a
               blank page. The manager's screens arrive with v0.13. */}
@@ -36,7 +45,7 @@ export function App() {
   )
 }
 
-function Header() {
+function Header({ managesPeople }: { managesPeople: boolean }) {
   const { t } = useTranslation()
   const { user, signOut } = useSession()
   const version = useServerVersion()
@@ -54,6 +63,7 @@ function Header() {
             furniture, and the sidebar arrives when v0.13 fills it. */}
         <nav className="ml-4 flex items-center gap-1">
           <Tab to="/day">{t('nav.myDay')}</Tab>
+          {managesPeople && <Tab to="/team">{t('nav.team')}</Tab>}
           <Tab to="/privacy">{t('nav.privacy')}</Tab>
         </nav>
       </div>

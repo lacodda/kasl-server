@@ -8,13 +8,33 @@ import { Button } from '@/components/ui/Button'
 
 /**
  * The employee's own week: what the server holds about them, in their words.
+ */
+export function MyDay() {
+  const { t } = useTranslation()
+  return <WeekView title={t('myDay.title')} load={api.myDays} />
+}
+
+/**
+ * A week of one person's days, whoever they are.
+ *
+ * Shared by the personal page and the manager's drill-down: both render the
+ * same answer from the server (`/me/days` and `/users/{id}/days` are the same
+ * shape by design), and a second copy of this would drift from the first.
  *
  * The screen shows a week at a time and lets one day be opened. Where the
  * installation's privacy level withheld something, it says so in that spot
  * rather than rendering an empty list - which is the whole reason the endpoint
  * reports `not_stored` (ADR 0011).
  */
-export function MyDay() {
+export function WeekView({
+  title,
+  subtitle,
+  load,
+}: {
+  title: string
+  subtitle?: React.ReactNode
+  load: (from: string, to: string) => Promise<DaysResponse>
+}) {
   const { t } = useTranslation()
   const [monday, setMonday] = useState(() => startOfWeek(new Date()))
   // The answer carries the range it is for. Clearing it in the effect instead
@@ -30,8 +50,7 @@ export function MyDay() {
 
   useEffect(() => {
     let cancelled = false
-    api
-      .myDays(from, to)
+    load(from, to)
       .then((value) => {
         if (!cancelled) setLoaded({ range: `${from}:${to}`, answer: value })
       })
@@ -43,7 +62,7 @@ export function MyDay() {
     return () => {
       cancelled = true
     }
-  }, [from, to])
+  }, [from, to, load])
 
   const current = loaded?.range === range ? loaded : null
   const answer = current?.answer ?? null
@@ -63,7 +82,8 @@ export function MyDay() {
     <div className="mx-auto max-w-3xl space-y-5">
       <header className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">{t('myDay.title')}</h1>
+          <h1 className="text-lg font-semibold">{title}</h1>
+          {subtitle}
           <p className="mt-1 font-mono text-xs text-faint tabular">
             {from} — {to}
           </p>

@@ -82,6 +82,36 @@ export interface DaysResponse {
   not_stored: NotStored[]
 }
 
+/** One person's period, as the manager's dashboard lists them. */
+export interface Member {
+  id: string
+  display_name: string
+  email: string
+  department: string | null
+  days_recorded: number
+  worked_seconds: number
+  paused_seconds: number
+  last_day: string | null
+  /** A day is open right now on this person's calendar. */
+  day_open: boolean
+  /**
+   * When one of their agents last delivered anything - the honest half of
+   * "who is working now". The server knows when it last heard from a machine,
+   * not whether someone is sitting at it.
+   */
+  last_seen_at: string | null
+  /** Live agent tokens. Zero explains a silent row without guessing. */
+  agents: number
+}
+
+export interface TeamResponse {
+  from: string
+  to: string
+  members: Member[]
+  privacy_level: PrivacyLevel
+  not_stored: NotStored[]
+}
+
 /** A request the server refused, carrying the status so a caller can branch. */
 export class ApiError extends Error {
   readonly status: number
@@ -171,4 +201,15 @@ export const api = {
    * them, not dates derived from a timestamp in the browser's zone (ADR 0003).
    */
   myDays: (from: string, to: string) => request<DaysResponse>(`/me/days?from=${from}&to=${to}`),
+
+  /** The team's hours over a range. Managers and administrators only. */
+  teamDays: (from: string, to: string) => request<TeamResponse>(`/team/days?from=${from}&to=${to}`),
+
+  /**
+   * One person's days, for a manager who may see them.
+   *
+   * Answers exactly what `myDays` does - the drill-down is the personal screen
+   * pointed at someone else, so the two share a renderer.
+   */
+  userDays: (id: string, from: string, to: string) => request<DaysResponse>(`/users/${id}/days?from=${from}&to=${to}`),
 }

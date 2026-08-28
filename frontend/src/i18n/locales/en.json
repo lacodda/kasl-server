@@ -12,6 +12,7 @@
   },
   "nav": {
     "myDay": "My day",
+    "team": "Team",
     "privacy": "What is stored about me",
     "signOut": "Sign out"
   },
@@ -37,6 +38,27 @@
     "pausesWithheld": "This server does not store your pauses one by one - only that there were {{count}} of them, {{total}} in total.",
     "tasksWithheld": "This server does not store the tasks you log.",
     "whyNotStored": "What this server stores about me"
+  },
+  "team": {
+    "title": "The team",
+    "workedTotal": "Worked",
+    "people": "People",
+    "dayOpen": "Day open",
+    "silent": "Not reporting",
+    "nobody": "Nobody is in your departments yet.",
+    "noDepartment": "No department",
+    "noData": "No days recorded in this week",
+    "days": "days",
+    "pausedShort": "paused",
+    "open": "Day open",
+    "noAgent": "No agent installed",
+    "neverReported": "Never reported",
+    "lastSeen": "last data {{ago}} ago",
+    "minutesAgo": "{{count}} min",
+    "hoursAgo": "{{count}} h",
+    "daysAgo": "{{count}} d",
+    "backToTeam": "Back to the team",
+    "person": "Their week"
   },
   "privacy": {
     "title": "What this server stores about you",

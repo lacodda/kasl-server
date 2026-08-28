@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Day, Pause } from '@/lib/api'
-import { bands, duration, isoDate, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
+import { bands, duration, isoDate, shiftWeeks, since, startOfWeek, weekDates, weekdayName } from '@/lib/day'
 
 function pause(from: string, to: string | null, seconds: number, manual = false): Pause {
   return { id: from, started_at: from, ended_at: to, duration_seconds: seconds, manual, reason: null }
@@ -79,6 +79,33 @@ describe('weekdayName', () => {
     // Midday rather than midnight: parsed at 00:00 a date can slide onto the
     // previous day west of Greenwich, and the row would be labelled Sunday.
     expect(weekdayName('2026-08-27')).toBe('Thu')
+  })
+})
+
+describe('since', () => {
+  const now = new Date('2026-08-28T12:00:00Z').getTime()
+  const ago = (minutes: number) => new Date(now - minutes * 60000).toISOString()
+
+  it('reports minutes, then hours, then days', () => {
+    expect(since(ago(12), now)).toEqual(['minutes', 12])
+    expect(since(ago(90), now)).toEqual(['hours', 2])
+    expect(since(ago(60 * 72), now)).toEqual(['days', 3])
+  })
+
+  it('switches units at its boundaries', () => {
+    // 59 minutes is still minutes; an hour is not.
+    expect(since(ago(59), now)[0]).toBe('minutes')
+    expect(since(ago(60), now)[0]).toBe('hours')
+    // Hours run to two days, so yesterday afternoon stays legible as hours
+    // rather than collapsing into a bare "1 d".
+    expect(since(ago(60 * 47), now)[0]).toBe('hours')
+    expect(since(ago(60 * 48), now)[0]).toBe('days')
+  })
+
+  it('never reports a future moment', () => {
+    // A client clock a little ahead of the server's must read as "just now",
+    // not as "-3 min", which would look like a bug in the server.
+    expect(since(new Date(now + 3 * 60000).toISOString(), now)).toEqual(['minutes', 0])
   })
 })
 

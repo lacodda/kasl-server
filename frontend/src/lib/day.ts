@@ -88,6 +88,27 @@ function locale(): string {
   return i18n.language || 'en'
 }
 
+/**
+ * How long ago a timestamp was, as a unit and a count: `['minutes', 12]`.
+ *
+ * Coarse by design. The server records when an agent last delivered, not what
+ * anyone was doing, so "14:32:07" would dress a rough fact in false precision.
+ * A caller turns the pair into words through i18n.
+ */
+export function since(timestamp: string, now: number = Date.now()): ['minutes' | 'hours' | 'days', number] {
+  // Never negative: a clock a little ahead of the server's should read as
+  // "just now", not as a moment in the future.
+  const minutes = Math.max(0, Math.round((now - new Date(timestamp).getTime()) / 60000))
+  if (minutes < 60) return ['minutes', minutes]
+
+  const hours = Math.round(minutes / 60)
+  // Two days rather than one, so "yesterday afternoon" stays legible as hours
+  // instead of collapsing to a bare "1 d".
+  if (hours < 48) return ['hours', hours]
+
+  return ['days', Math.round(hours / 24)]
+}
+
 /** One band on the timeline, as a percentage of the day's span. */
 export interface Band {
   /** Distance from the day's start, 0-100. */
