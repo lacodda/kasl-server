@@ -22,6 +22,25 @@ enum Command {
     Import(ImportArgs),
     /// Create the first administrator, or reset an existing one's password.
     Admin(AdminArgs),
+    /// Write the installation's data to a file, or to stdout.
+    Backup(BackupArgs),
+    /// Load a backup into an empty installation.
+    Restore(RestoreArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct BackupArgs {
+    /// Where to write. Omit for stdout, which is what a cron job piping into
+    /// gzip or a remote copy wants.
+    #[arg(long, value_name = "PATH")]
+    out: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, clap::Args)]
+struct RestoreArgs {
+    /// The backup to read. Omit for stdin.
+    #[arg(long, value_name = "PATH")]
+    from: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -106,8 +125,56 @@ async fn main() -> Result<()> {
             println!("admin {} is ready", args.email);
             Ok(())
         }
+        Some(Command::Backup(args)) => run_backup(&pool, target, args).await,
+        Some(Command::Restore(args)) => run_restore(&pool, target, args).await,
         None => serve(pool, config).await,
     }
+}
+
+async fn run_backup(pool: &sqlx::PgPool, schema_version: i64, args: BackupArgs) -> Result<()> {
+    // Progress goes to stderr throughout: stdout may be the backup itself,
+    // and a friendly line in the middle of it would corrupt the file.
+    let summary = match &args.out {
+        Some(path) => {
+            let file = std::fs::File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
+            // `dump` flushes what it wrote; dropping the writer here is what
+            // gets the last of it onto disk.
+            let mut writer = std::io::BufWriter::new(file);
+            let summary = kasl_server::backup::dump(pool, schema_version, &mut writer).await?;
+            drop(writer);
+            eprintln!("wrote {} rows from {} tables to {}", summary.rows, summary.tables, path.display());
+            summary
+        }
+        None => {
+            let stdout = std::io::stdout();
+            let mut writer = std::io::BufWriter::new(stdout.lock());
+            let summary = kasl_server::backup::dump(pool, schema_version, &mut writer).await?;
+            drop(writer);
+            eprintln!("wrote {} rows from {} tables", summary.rows, summary.tables);
+            summary
+        }
+    };
+
+    if summary.rows == 0 {
+        eprintln!("note: this installation holds no data yet");
+    }
+    Ok(())
+}
+
+async fn run_restore(pool: &sqlx::PgPool, schema_version: i64, args: RestoreArgs) -> Result<()> {
+    let summary = match &args.from {
+        Some(path) => {
+            let file = std::fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+            kasl_server::backup::load(pool, schema_version, std::io::BufReader::new(file)).await?
+        }
+        None => {
+            let stdin = std::io::stdin();
+            kasl_server::backup::load(pool, schema_version, stdin.lock()).await?
+        }
+    };
+
+    println!("restored {} rows into {} tables", summary.rows, summary.tables);
+    Ok(())
 }
 
 async fn run_import(pool: &sqlx::PgPool, args: ImportArgs) -> Result<()> {
@@ -158,6 +225,19 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     if let Some((email, password)) = provision::parse_admin(&config.admin)? {
         provision::ensure_admin(&pool, &email, &password).await?;
         tracing::info!(%email, "administrator from KASL_ADMIN is ready");
+    } else if let Some(password) = provision::ensure_some_admin(&pool, &config.admin_email).await? {
+        // The one moment this server prints a secret. An installation with no
+        // administrator has no way in at all, and the alternative - refusing to
+        // start until the operator sets one - turns the first run into a
+        // documentation exercise and leaves that password in a file forever.
+        //
+        // Printed to stdout rather than logged: a log ships to wherever logs
+        // go, and this belongs on the console of the person who just typed
+        // `docker compose up`.
+        println!("\n  An administrator account was created, because this installation had none:\n");
+        println!("      email:    {}", config.admin_email);
+        println!("      password: {password}\n");
+        println!("  This is the only time it is shown. Sign in and change it.\n");
     }
 
     // Sessions that expired while the server was down are of no use to anyone.

@@ -187,6 +187,25 @@ impl TestServer {
         Some(server)
     }
 
+    /// Wraps a database that is already populated - a restored one - so the
+    /// same request helpers can drive it. Nothing is provisioned: the accounts
+    /// and agents are whatever the database already holds.
+    pub fn wrap(db: TestDb) -> Self {
+        Self {
+            pool: db.pool.clone(),
+            token: String::new(),
+            db: Some(db),
+        }
+    }
+
+    /// Drops the database behind this server. Only needed where a test holds
+    /// two of them; the ordinary single-server test leaves it to `TestDb`.
+    pub async fn close(mut self) {
+        if let Some(db) = self.db.take() {
+            db.drop().await;
+        }
+    }
+
     /// Adds another agent and returns its token.
     pub async fn add_agent(&self, email: &str, token: &str) -> String {
         self.provision(email, token).await;
