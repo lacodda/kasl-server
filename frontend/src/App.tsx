@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 export function App() {
   const { t } = useTranslation()
   const { user } = useSession()
+  const health = useServerHealth()
 
   // The very first paint, before `me()` has answered. Rendering the login
   // screen here would flash it at someone who is already signed in.
@@ -19,7 +20,14 @@ export function App() {
     return <div className="flex min-h-full items-center justify-center text-sm text-dim">{t('common.loading')}</div>
   }
 
-  if (!user) return <Login />
+  if (!user) {
+    return (
+      <div className="flex min-h-full flex-col">
+        {health.demo && <DemoBanner />}
+        <Login demo={health.demo} />
+      </div>
+    )
+  }
 
   // Who gets the team screens. The server decides for real; this only keeps a
   // link out of the way of someone it would refuse.
@@ -27,7 +35,8 @@ export function App() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <Header managesPeople={managesPeople} />
+      {health.demo && <DemoBanner />}
+      <Header managesPeople={managesPeople} version={health.version} />
       <main className="flex-1 p-6">
         <Routes>
           <Route path="/day" element={<MyDay />} />
@@ -45,10 +54,23 @@ export function App() {
   )
 }
 
-function Header({ managesPeople }: { managesPeople: boolean }) {
+/**
+ * The line that says the data is invented. On every screen, including the
+ * login: a visitor who lands on a shared demo link must not mistake the team
+ * for anyone's real one, and a screenshot must carry the label with it.
+ */
+function DemoBanner() {
+  const { t } = useTranslation()
+  return (
+    <div role="note" className="bg-accent-soft px-4 py-1.5 text-center text-xs font-medium text-accent-2">
+      {t('demo.banner')}
+    </div>
+  )
+}
+
+function Header({ managesPeople, version }: { managesPeople: boolean; version: string }) {
   const { t } = useTranslation()
   const { user, signOut } = useSession()
-  const version = useServerVersion()
 
   return (
     <header className="flex items-center justify-between border-b border-line px-6 py-3">
@@ -94,20 +116,22 @@ function Tab({ to, children }: { to: string; children: React.ReactNode }) {
 }
 
 /**
- * The running server's version.
+ * What the running server says about itself: its version, and whether it is
+ * a demo.
  *
  * Empty until `/health` answers, and empty if it does not: a header that says
- * nothing is better than one that states a version nobody verified.
+ * nothing is better than one that states a version nobody verified, and a
+ * page that cannot reach the server has no business calling it a demo.
  */
-function useServerVersion() {
-  const [version, setVersion] = useState('')
+function useServerHealth() {
+  const [health, setHealth] = useState<{ version: string; demo: boolean }>({ version: '', demo: false })
 
   useEffect(() => {
     let cancelled = false
     api
       .health()
-      .then((health) => {
-        if (!cancelled) setVersion(health.version)
+      .then((answer) => {
+        if (!cancelled) setHealth({ version: answer.version, demo: answer.demo === true })
       })
       .catch(() => {
         // The page is already open, so the server was reachable a moment ago.
@@ -118,5 +142,5 @@ function useServerVersion() {
     }
   }, [])
 
-  return version
+  return health
 }

@@ -1,12 +1,12 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ApiError } from '@/lib/api'
+import { ApiError, api, type DemoAccounts } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Panel } from '@/components/ui/Panel'
 
-export function Login() {
+export function Login({ demo = false }: { demo?: boolean }) {
   const { t } = useTranslation()
   const { signIn } = useSession()
   const emailId = useId()
@@ -16,9 +16,9 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const accounts = useDemoAccounts(demo)
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function submit(email: string, password: string) {
     setError(null)
     setSubmitting(true)
     try {
@@ -31,6 +31,20 @@ export function Login() {
       setError(failure instanceof ApiError && failure.isUnauthorized ? t('login.failed') : t('login.unavailable'))
       setSubmitting(false)
     }
+  }
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault()
+    void submit(email, password)
+  }
+
+  // One click to a dashboard. The fields are filled too, so what just
+  // happened is visible rather than magic.
+  function tryAs(account: DemoAccounts['accounts'][number]) {
+    if (!accounts) return
+    setEmail(account.email)
+    setPassword(accounts.password)
+    void submit(account.email, accounts.password)
   }
 
   return (
@@ -81,7 +95,50 @@ export function Login() {
             {submitting ? t('login.submitting') : t('login.submit')}
           </Button>
         </form>
+
+        {accounts && (
+          <div className="mt-6 border-t border-line pt-5">
+            <p className="text-xs font-medium text-dim">{t('demo.tryAs')}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {accounts.accounts.map((account) => (
+                <Button key={account.email} size="sm" disabled={submitting} onClick={() => tryAs(account)}>
+                  {t(`demo.roles.${account.role}`)}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-faint">{t('demo.password', { password: accounts.password })}</p>
+          </div>
+        )}
       </Panel>
     </div>
   )
+}
+
+/**
+ * The accounts a demo offers, or nothing on a real server.
+ *
+ * Asked only when `/health` already said this is a demo: the endpoint answers
+ * 404 everywhere else, and a login page that fired a failing request at every
+ * real installation would be noise in every operator's log.
+ */
+function useDemoAccounts(demo: boolean) {
+  const [accounts, setAccounts] = useState<DemoAccounts | null>(null)
+
+  useEffect(() => {
+    if (!demo) return
+    let cancelled = false
+    api
+      .demoAccounts()
+      .then((answer) => {
+        if (!cancelled) setAccounts(answer)
+      })
+      .catch(() => {
+        // Without the list the form still works; the README has the logins.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [demo])
+
+  return accounts
 }

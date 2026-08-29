@@ -168,6 +168,25 @@ export interface Health {
   status: string
   version: string
   database: string
+  /**
+   * This installation holds the demo's fictional team (ADR 0013). Read from
+   * the database, not from the environment, so the label outlives the flag
+   * that seeded it. Absent when the server could not reach its database.
+   */
+  demo?: boolean
+}
+
+/** One account a visitor may sign in as on a demo. */
+export interface DemoAccount {
+  role: UserRole
+  email: string
+  display_name: string
+}
+
+export interface DemoAccounts {
+  /** The one password every demo account shares. */
+  password: string
+  accounts: DemoAccount[]
 }
 
 export const api = {
@@ -191,6 +210,13 @@ export const api = {
   logout: () => request<{ status: string }>('/auth/logout', { method: 'POST' }),
 
   me: () => request<Identity>('/auth/me'),
+
+  /**
+   * Who a visitor may sign in as. Answers only on a demo; anywhere else the
+   * server says 404, so a real installation never lists its people to
+   * someone who has not signed in.
+   */
+  demoAccounts: () => request<DemoAccounts>('/demo/accounts'),
 
   privacy: () => request<PrivacyManifest>('/privacy'),
 

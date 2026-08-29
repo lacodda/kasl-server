@@ -71,5 +71,11 @@
     "onChange": "If this setting changes",
     "updatedAt": "Policy last changed"
   },
+  "demo": {
+    "banner": "Demo - a fictional team. Nothing here is real.",
+    "tryAs": "Try it as",
+    "roles": { "admin": "Administrator", "manager": "Manager", "employee": "Employee" },
+    "password": "Every account uses the password {{password}}."
+  },
   "common": { "loading": "Loading…", "error": "Something went wrong" }
 }
