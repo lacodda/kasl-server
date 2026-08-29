@@ -16,20 +16,20 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-28T14:20:13.722743Z  INFO kasl_server: database schema is up to date version=20260826000001
-2026-08-28T14:20:13.793359Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
+2026-08-29T18:15:18.767453Z  INFO kasl_server: database schema is up to date version=20260829000001
+2026-08-29T18:15:18.811231Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
 
   An administrator account was created, because this installation had none:
 
       email:    admin@kasl.local
-      password: 6fp35gainu7zpj2yfwy3
+      password: ye4e9vgapwi8ptrh9kt9
 
   This is the only time it is shown. Sign in and change it.
 
-2026-08-28T14:20:14.349447Z  INFO kasl_server: kasl-server listening version="0.14.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-29T18:15:19.123274Z  INFO kasl_server: kasl-server listening version="0.16.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","status":"ok","version":"0.14.1"}
+{"database":"ok","demo":false,"status":"ok","version":"0.16.0"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -63,6 +63,53 @@ did not delete it.
 
 The dev database listens on 5433, leaving a PostgreSQL you may already run on
 5432 alone; override with `KASL_DB_PORT`.
+
+## The demo
+
+A fresh server has nothing on it, and an empty dashboard is where most trials
+end. `KASL_DEMO=true` fills an empty database with a fictional team — three
+departments, twelve people, eight weeks of days — so the dashboards can be seen
+before an agent is installed on anybody's machine:
+
+```console
+$ KASL_DEMO=true docker compose up -d        # or: KASL_DEMO=true cargo run
+$ docker compose logs server
+2026-08-29T18:14:37.667958Z  INFO kasl_server: database schema is up to date version=20260829000001
+2026-08-29T18:14:39.401685Z  INFO kasl_server: seeded the demo team people=12 departments=3 days=386
+
+  This is a demo: a fictional team, nothing here is real. Sign in as
+
+      manager   priya.raman@example.com          Priya Raman
+      employee  tomas.verhoeven@example.com      Tomas Verhoeven
+      admin     sam.whitfield@example.com        Sam Whitfield
+
+  with the password `kasl-demo`. The same password opens every account.
+
+$ curl http://127.0.0.1:8080/health
+{"database":"ok","demo":true,"status":"ok","version":"0.16.0"}
+```
+
+The login screen offers the same three accounts as buttons, and every screen
+carries a banner saying the data is invented.
+
+The days are shaped so that everything the dashboard knows how to show is on
+it at once: someone steady, someone working ten-hour days, someone whose hours
+shrink week by week, a day open right now, an agent that went silent a week
+ago, one that never reported, and an administrator with no agent at all. The
+history ends yesterday whenever you start it, and two demos started on the same
+day show the same numbers, so a screenshot can be reproduced.
+
+**The demo refuses a database that already holds accounts.** Twelve invented
+people alongside a real team, with nothing to say which rows are which, is the
+one outcome worse than no demo — so a flag left in a file after a trial stops
+the server with a message rather than turning the installation into one. A
+database the demo itself seeded starts normally, with or without the flag, and
+keeps its banner: the mark lives in the database, not in the environment.
+
+The agents' tokens are `demo-<firstname>` — `demo-tomas`, for instance — so a
+real kasl can be pointed at the demo and its days appear next to the invented
+ones. Every address is under `example.com`, which is reserved: the names are
+made up, and the domain guarantees the addresses are too.
 
 ## The API
 
@@ -573,6 +620,9 @@ file the server reads at every boot, leaves a credential lying around forever.
 To name the administrator yourself instead, set `KASL_ADMIN=email:password`
 before the first start.
 
+Nothing to look at yet? `KASL_DEMO=true docker compose up -d` on an empty
+database seeds a fictional team — see [The demo](#the-demo).
+
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
 production (`KASL_VERSION=0.14.1`); `latest` is for a first look.
@@ -641,6 +691,7 @@ Everything comes from the environment:
 | `KASL_ADMIN` | First administrator, as `email:password`. Unset, the server generates one on a first run | none |
 | `KASL_ADMIN_EMAIL` | Email for that generated administrator | `admin@kasl.local` |
 | `KASL_SECURE_COOKIES` | Whether the session cookie carries `Secure`. Set `false` only when serving plain `http://` | `true` |
+| `KASL_DEMO` | Seed a fictional team on an empty database, and refuse to start on one that holds real accounts. See [The demo](#the-demo) | `false` |
 | `KASL_MAX_BATCH_DAYS` | Days one `/days/batch` request may carry | `31` |
 | `KASL_MAX_BODY_BYTES` | Largest request body accepted | `4194304` |
 | `RUST_LOG` | Log filter (tracing syntax) | `kasl_server=info,tower_http=info` |
@@ -665,6 +716,7 @@ UI.
 - Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
 - Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure *(published image, install guide and backups: done)*
+- A demo: a fictional team on an empty database, to see the dashboards before installing anything *(done)*
 
 ## Stack
 

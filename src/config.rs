@@ -48,6 +48,11 @@ pub struct Config {
     /// `Secure` cookie is dropped by the browser and login silently does
     /// nothing at all.
     pub secure_cookies: bool,
+    /// Whether to seed a fictional team on an empty database (`KASL_DEMO`).
+    ///
+    /// Off by default. On, the server fills an empty database with the demo
+    /// team and refuses to start on one that holds anybody real (ADR 0013).
+    pub demo: bool,
 }
 
 impl Config {
@@ -68,6 +73,7 @@ impl Config {
             admin: String::new(),
             admin_email: DEFAULT_ADMIN_EMAIL.to_string(),
             secure_cookies: true,
+            demo: false,
         }
     }
 
@@ -84,6 +90,7 @@ impl Config {
         let admin = lookup("KASL_ADMIN").unwrap_or_default();
         let admin_email = lookup("KASL_ADMIN_EMAIL").unwrap_or_else(|| DEFAULT_ADMIN_EMAIL.to_string());
         let secure_cookies = boolean("KASL_SECURE_COOKIES", &lookup, true)?;
+        let demo = boolean("KASL_DEMO", &lookup, false)?;
         Ok(Self {
             addr,
             database_url,
@@ -93,6 +100,7 @@ impl Config {
             admin,
             admin_email,
             secure_cookies,
+            demo,
         })
     }
 }
@@ -192,6 +200,20 @@ mod tests {
         // nothing in the log to say why.
         let error = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_SECURE_COOKIES", "nope")])).unwrap_err();
         assert!(error.to_string().contains("KASL_SECURE_COOKIES"), "{error}");
+    }
+
+    #[test]
+    fn the_demo_is_off_unless_asked_for() {
+        // The failure this guards is the quiet one: a server that seeds a
+        // fictional team because a flag defaulted the wrong way.
+        let config = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl")])).unwrap();
+        assert!(!config.demo);
+
+        let config = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_DEMO", "true")])).unwrap();
+        assert!(config.demo);
+
+        let error = Config::from_lookup(env(&[("DATABASE_URL", "postgres://localhost/kasl"), ("KASL_DEMO", "maybe")])).unwrap_err();
+        assert!(error.to_string().contains("KASL_DEMO"), "{error}");
     }
 
     #[test]

@@ -310,65 +310,75 @@ pub async fn write_days(pool: &PgPool, user_id: Uuid, days: &[AgentDay], offset:
 
     for day in days {
         let mut tx = pool.begin().await?;
-
-        let workday_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO workdays (user_id, date, started_at, ended_at) VALUES ($1, $2, $3, $4)
-             ON CONFLICT (user_id, date) DO UPDATE SET started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at
-             RETURNING id",
-        )
-        .bind(user_id)
-        .bind(day.date)
-        .bind(at_offset(day.start, offset))
-        .bind(day.end.map(|end| at_offset(end, offset)))
-        .fetch_one(&mut *tx)
-        .await
-        .with_context(|| format!("failed to write the workday of {}", day.date))?;
-
-        sqlx::query("DELETE FROM pauses WHERE workday_id = $1")
-            .bind(workday_id)
-            .execute(&mut *tx)
-            .await?;
-        for pause in &day.pauses {
-            sqlx::query("INSERT INTO pauses (workday_id, started_at, ended_at, duration_seconds, manual, reason) VALUES ($1, $2, $3, $4, $5, $6)")
-                .bind(workday_id)
-                .bind(at_offset(pause.start, offset))
-                .bind(pause.end.map(|end| at_offset(end, offset)))
-                .bind(pause.duration_seconds)
-                .bind(pause.manual)
-                .bind(pause.reason.as_deref())
-                .execute(&mut *tx)
-                .await?;
-        }
-
-        for task in &day.tasks {
-            sqlx::query(
-                "INSERT INTO tasks (user_id, agent_task_id, agent_group_id, date, recorded_at, name, comment, completeness)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                 ON CONFLICT (user_id, agent_task_id) DO UPDATE SET
-                     agent_group_id = EXCLUDED.agent_group_id,
-                     date = EXCLUDED.date,
-                     recorded_at = EXCLUDED.recorded_at,
-                     name = EXCLUDED.name,
-                     comment = EXCLUDED.comment,
-                     completeness = EXCLUDED.completeness",
-            )
-            .bind(user_id)
-            .bind(task.agent_task_id)
-            .bind(task.agent_group_id)
-            .bind(day.date)
-            .bind(at_offset(task.recorded_at, offset))
-            .bind(task.name.trim())
-            .bind(task.comment.as_deref())
-            .bind(task.completeness)
-            .execute(&mut *tx)
-            .await?;
-        }
-
+        write_day(&mut tx, user_id, day, offset).await?;
         tx.commit().await?;
         written += 1;
     }
 
     Ok(written)
+}
+
+/// Writes one day inside a transaction the caller owns.
+///
+/// `write_days` commits each day on its own, which is right for an import
+/// that must survive failing halfway. The demo has the opposite need - a
+/// person's whole history in one commit, because four thousand commits is
+/// the difference between a demo that opens in seconds and one that does not.
+pub async fn write_day(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: Uuid, day: &AgentDay, offset: FixedOffset) -> Result<()> {
+    let workday_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO workdays (user_id, date, started_at, ended_at) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, date) DO UPDATE SET started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at
+         RETURNING id",
+    )
+    .bind(user_id)
+    .bind(day.date)
+    .bind(at_offset(day.start, offset))
+    .bind(day.end.map(|end| at_offset(end, offset)))
+    .fetch_one(&mut **tx)
+    .await
+    .with_context(|| format!("failed to write the workday of {}", day.date))?;
+
+    sqlx::query("DELETE FROM pauses WHERE workday_id = $1")
+        .bind(workday_id)
+        .execute(&mut **tx)
+        .await?;
+    for pause in &day.pauses {
+        sqlx::query("INSERT INTO pauses (workday_id, started_at, ended_at, duration_seconds, manual, reason) VALUES ($1, $2, $3, $4, $5, $6)")
+            .bind(workday_id)
+            .bind(at_offset(pause.start, offset))
+            .bind(pause.end.map(|end| at_offset(end, offset)))
+            .bind(pause.duration_seconds)
+            .bind(pause.manual)
+            .bind(pause.reason.as_deref())
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    for task in &day.tasks {
+        sqlx::query(
+            "INSERT INTO tasks (user_id, agent_task_id, agent_group_id, date, recorded_at, name, comment, completeness)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (user_id, agent_task_id) DO UPDATE SET
+                 agent_group_id = EXCLUDED.agent_group_id,
+                 date = EXCLUDED.date,
+                 recorded_at = EXCLUDED.recorded_at,
+                 name = EXCLUDED.name,
+                 comment = EXCLUDED.comment,
+                 completeness = EXCLUDED.completeness",
+        )
+        .bind(user_id)
+        .bind(task.agent_task_id)
+        .bind(task.agent_group_id)
+        .bind(day.date)
+        .bind(at_offset(task.recorded_at, offset))
+        .bind(task.name.trim())
+        .bind(task.comment.as_deref())
+        .bind(task.completeness)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(())
 }
 
 /// Finds the user an import writes for, refusing to invent one.

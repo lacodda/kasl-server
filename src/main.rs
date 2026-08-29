@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use kasl_server::{app, config, import, provision};
+use kasl_server::{app, config, demo, import, provision};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -223,6 +223,38 @@ async fn run_import(pool: &sqlx::PgPool, args: ImportArgs) -> Result<()> {
 }
 
 async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
+    // The demo goes first: it needs the database empty, and everything below
+    // adds to it. An agent from KASL_AGENTS lands on top of the fictional
+    // team, which is how a real kasl gets pointed at a demo.
+    match (config.demo, demo::status(&pool).await?) {
+        (true, demo::Status::Empty) => {
+            let seeded = demo::seed(&pool, chrono::Utc::now()).await?;
+            tracing::info!(
+                people = seeded.people,
+                departments = seeded.departments,
+                days = seeded.days,
+                "seeded the demo team"
+            );
+            print_demo_logins();
+        }
+        (true, demo::Status::Demo) => print_demo_logins(),
+        (true, demo::Status::Populated { accounts }) => {
+            // Refused rather than seeded alongside: a flag left in a file
+            // after a trial would otherwise put twelve invented people on a
+            // real team's dashboard, and nothing would say which are which.
+            anyhow::bail!(
+                "KASL_DEMO is set, but this database already holds {accounts} accounts that are not the demo's. \
+                 Unset KASL_DEMO to start normally, or point the demo at an empty database."
+            );
+        }
+        (false, demo::Status::Demo) => {
+            // The flag is gone from the environment but the data is still
+            // invented; the UI keeps saying so, because it reads the database.
+            tracing::info!("this installation holds the demo team (KASL_DEMO is not set; the data stays labelled as a demo)");
+        }
+        (false, _) => {}
+    }
+
     let seeds = provision::parse_seeds(&config.agents)?;
     provision::apply_seeds(&pool, &seeds).await?;
 
@@ -263,6 +295,24 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
         .await
         .context("server error")?;
     Ok(())
+}
+
+/// The accounts a visitor can try, one per role.
+///
+/// On stdout like the generated administrator's password, and for the same
+/// reason: this belongs on the console of whoever just started the demo. Not
+/// a secret - the password is in the README - so it is printed on every
+/// start, not only the first.
+fn print_demo_logins() {
+    println!("\n  This is a demo: a fictional team, nothing here is real. Sign in as\n");
+    for account in demo::showcase() {
+        let role = serde_json::to_value(account.role)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        println!("      {role:<9} {:<32} {}", account.email, account.display_name);
+    }
+    println!("\n  with the password `{}`. The same password opens every account.\n", demo::PASSWORD);
 }
 
 async fn shutdown_signal() {

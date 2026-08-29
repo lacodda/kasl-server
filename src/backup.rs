@@ -257,8 +257,14 @@ async fn insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, table: &str, row
 
     if table == SETTINGS {
         // The singleton row already exists, put there by the migration.
+        // `coalesce` on `demo`: a backup taken before the column existed has
+        // no key for it, `json_populate_record` reads that as NULL, and a
+        // restore of a perfectly good older file must not fail on the
+        // column it could not have known about.
         sqlx::query(sqlx::AssertSqlSafe(format!(
-            "UPDATE {SETTINGS} SET privacy_level = (r).privacy_level, updated_at = (r).updated_at
+            "UPDATE {SETTINGS} SET privacy_level = (r).privacy_level,
+                                   demo = coalesce((r).demo, false),
+                                   updated_at = (r).updated_at
              FROM (SELECT json_populate_record(NULL::{SETTINGS}, $1::json) AS r) AS s
              WHERE singleton"
         )))

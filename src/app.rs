@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, config::Config, department, ingest, login, me, privacy, team, web};
+use crate::{admin, audit, auth, config::Config, demo, department, ingest, login, me, privacy, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -68,7 +68,11 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // itself, and the one `kasl server connect` needs so a token pasted
         // from the wrong place is caught by a person rather than discovered
         // in a dashboard weeks later.
-        .route("/agent/whoami", get(auth::whoami));
+        .route("/agent/whoami", get(auth::whoami))
+        // Who a visitor may sign in as. Answered only on a demo - anywhere
+        // else it is a 404, so no real installation lists its people to
+        // someone who has not signed in (ADR 0013).
+        .route("/demo/accounts", get(demo::accounts));
 
     Router::new()
         .route("/health", get(health))
@@ -108,14 +112,20 @@ async fn unknown_endpoint() -> Response {
 
 /// Liveness + readiness in one place: the process answers, and the database
 /// round-trip tells whether the server can actually do its job.
+///
+/// The round-trip reads the demo flag rather than `SELECT 1`: the web UI asks
+/// this endpoint before anyone signs in, and "is this a demo" is the one
+/// fact it needs at that moment (ADR 0013).
 async fn health(State(state): State<AppState>) -> Response {
-    match sqlx::query("SELECT 1").execute(&state.pool).await {
-        Ok(_) => (
+    let demo: Result<bool, sqlx::Error> = sqlx::query_scalar("SELECT demo FROM settings WHERE singleton").fetch_one(&state.pool).await;
+    match demo {
+        Ok(demo) => (
             StatusCode::OK,
             Json(json!({
                 "status": "ok",
                 "version": env!("CARGO_PKG_VERSION"),
                 "database": "ok",
+                "demo": demo,
             })),
         )
             .into_response(),

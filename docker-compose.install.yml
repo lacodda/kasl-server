@@ -54,6 +54,11 @@ services:
       # `true` once this is behind HTTPS. Over plain http a Secure cookie is
       # dropped by the browser, and signing in appears to do nothing at all.
       KASL_SECURE_COOKIES: ${KASL_SECURE_COOKIES:-false}
+      # `KASL_DEMO=true docker compose up -d` fills an empty database with a
+      # fictional team, to see the dashboards before installing an agent
+      # anywhere. It refuses to start on a database that holds real accounts,
+      # so a flag forgotten here cannot turn an installation into a demo.
+      KASL_DEMO: ${KASL_DEMO:-false}
       RUST_LOG: ${RUST_LOG:-kasl_server=info,tower_http=info}
     ports:
       - "${KASL_PORT:-8080}:8080"

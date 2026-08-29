@@ -426,6 +426,7 @@ impl TestServer {
             "agents" => "SELECT count(*) FROM agents",
             "sessions" => "SELECT count(*) FROM sessions",
             "users" => "SELECT count(*) FROM users",
+            "departments" => "SELECT count(*) FROM departments",
             other => panic!("no counter for `{other}`"),
         };
         sqlx::query_scalar(sql).fetch_one(&self.pool).await.expect("failed to count rows")

@@ -11,6 +11,7 @@ pub mod audit;
 pub mod auth;
 pub mod backup;
 pub mod config;
+pub mod demo;
 pub mod department;
 pub mod error;
 pub mod import;
