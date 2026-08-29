@@ -2,7 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.16.0] - 2026-08-29
+
+### Features
+- Seed a fictional team on an empty database
+- Label a demo and offer its accounts on the login screen
+
 ## [0.14.1] - 2026-08-28
+
+### Documentation
+- Cut 0.14.1
 
 ### Features
 - Tell an agent whose token it holds
