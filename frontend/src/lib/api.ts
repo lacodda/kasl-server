@@ -112,6 +112,30 @@ export interface TeamResponse {
   not_stored: NotStored[]
 }
 
+/**
+ * What the server concludes about a person right now.
+ *
+ * The first three are what an agent claimed. `offline` and `unknown` are not
+ * claims - they are what silence means, and the two are kept apart on purpose:
+ * an agent that stopped sending is a different fact from one that never sent
+ * anything, and only the first says something about the person.
+ */
+export type LiveStatus = 'working' | 'paused' | 'idle' | 'offline' | 'unknown'
+
+export interface LiveMember {
+  user_id: string
+  status: LiveStatus
+  /** Seconds since the pulse arrived; null when none ever has. */
+  since_received: number | null
+}
+
+export interface LiveTeamResponse {
+  members: LiveMember[]
+  /** How often to ask again. The server owns the cadence, not this client. */
+  poll_seconds: number
+  stale_after_seconds: number
+}
+
 /** A request the server refused, carrying the status so a caller can branch. */
 export class ApiError extends Error {
   readonly status: number
@@ -230,6 +254,14 @@ export const api = {
 
   /** The team's hours over a range. Managers and administrators only. */
   teamDays: (from: string, to: string) => request<TeamResponse>(`/team/days?from=${from}&to=${to}`),
+
+  /**
+   * What the team is doing right now. Polled on a timer, so it is deliberately
+   * separate from `teamDays`: re-running the week's totals every half minute
+   * would be the heaviest query on the server answering with numbers that did
+   * not change.
+   */
+  teamLive: () => request<LiveTeamResponse>('/team/live'),
 
   /**
    * One person's days, for a manager who may see them.

@@ -44,6 +44,7 @@
     "workedTotal": "Worked",
     "people": "People",
     "dayOpen": "Day open",
+    "workingNow": "Working now",
     "silent": "Not reporting",
     "nobody": "Nobody is in your departments yet.",
     "noDepartment": "No department",
@@ -58,7 +59,8 @@
     "hoursAgo": "{{count}} h",
     "daysAgo": "{{count}} d",
     "backToTeam": "Back to the team",
-    "person": "Their week"
+    "person": "Their week",
+    "live": { "working": "Working", "paused": "On a break", "idle": "Not in a day", "offline": "Offline" }
   },
   "privacy": {
     "title": "What this server stores about you",

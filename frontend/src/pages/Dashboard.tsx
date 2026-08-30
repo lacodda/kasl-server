@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, ChevronLeft, ChevronRight, CircleDot, TriangleAlert } from 'lucide-react'
-import { api, type Member, type TeamResponse } from '@/lib/api'
+import { ArrowLeft, ChevronLeft, ChevronRight, Circle, CircleDot, TriangleAlert } from 'lucide-react'
+import { api, type LiveMember, type Member, type TeamResponse } from '@/lib/api'
 import { duration, isoDate, shiftWeeks, since, startOfWeek, weekDates } from '@/lib/day'
+import { statusTone, useLiveTeam, type LiveFeed } from '@/lib/live'
 import { Panel } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/Button'
 import { WeekView } from '@/pages/MyDay'
@@ -16,9 +17,11 @@ import { WeekView } from '@/pages/MyDay'
  * manager needs to notice, and a table that quietly dropped them would hide
  * the case it exists for.
  *
- * "Working now" is deliberately not claimed. The server knows whether a day is
- * open and when it last heard from an agent; whether someone is at the keyboard
- * needs heartbeats, which is a later milestone. The row says what is known.
+ * "Working now" is the agent's own claim, polled from `/team/live` on the
+ * cadence the server names. It is kept apart from the week's hours on purpose:
+ * an agent that stopped sending is shown as offline rather than frozen on its
+ * last claim, and a person whose kasl is too old to send a pulse reads as
+ * "unknown" rather than as someone who stopped working (ADR 0014).
  */
 export function Dashboard() {
   const { t } = useTranslation()
@@ -51,6 +54,11 @@ export function Dashboard() {
   const answer = current?.answer ?? null
   const failed = current !== null && current.answer === null
 
+  // The pulse is about now, so it is asked for regardless of which week the
+  // table is showing - a manager paging back through August still wants to see
+  // who is at work today.
+  const live = useLiveTeam()
+
   const goto = useCallback((weeks: number) => setMonday((current) => shiftWeeks(current, weeks)), [])
 
   return (
@@ -80,8 +88,8 @@ export function Dashboard() {
 
       {answer && (
         <>
-          <TeamTotals members={answer.members} />
-          <MemberTable members={answer.members} />
+          <TeamTotals members={answer.members} live={live} />
+          <MemberTable members={answer.members} live={live} />
         </>
       )}
     </div>
@@ -89,20 +97,25 @@ export function Dashboard() {
 }
 
 /** The week across everyone, so the table has something to be measured against. */
-function TeamTotals({ members }: { members: Member[] }) {
+function TeamTotals({ members, live }: { members: Member[]; live: LiveFeed }) {
   const { t } = useTranslation()
   const worked = members.reduce((sum, member) => sum + member.worked_seconds, 0)
-  const working = members.filter((member) => member.day_open).length
+  const open = members.filter((member) => member.day_open).length
   // People a manager should look at: no agent at all, or one that has never
   // delivered anything. Counted rather than buried, because this is the
   // question the dashboard is for.
   const silent = members.filter((member) => member.agents === 0 || member.last_seen_at === null).length
+  // At the keyboard right now, by their own agent's account. Shown only once a
+  // pulse has actually been answered: a hard "0 working" drawn before the first
+  // poll lands would be a claim, and a false one.
+  const working = members.filter((member) => live.byUser.get(member.id)?.status === 'working').length
 
   return (
     <Panel className="flex flex-wrap items-baseline gap-x-8 gap-y-3 p-5">
       <Figure label={t('team.workedTotal')} value={duration(worked)} accent />
       <Figure label={t('team.people')} value={String(members.length)} />
-      <Figure label={t('team.dayOpen')} value={String(working)} />
+      {live.loaded && <Figure label={t('team.workingNow')} value={String(working)} />}
+      <Figure label={t('team.dayOpen')} value={String(open)} />
       {silent > 0 && <Figure label={t('team.silent')} value={String(silent)} warn />}
     </Panel>
   )
@@ -117,7 +130,7 @@ function Figure({ label, value, accent = false, warn = false }: { label: string;
   )
 }
 
-function MemberTable({ members }: { members: Member[] }) {
+function MemberTable({ members, live }: { members: Member[]; live: LiveFeed }) {
   const { t } = useTranslation()
 
   if (members.length === 0) {
@@ -135,13 +148,13 @@ function MemberTable({ members }: { members: Member[] }) {
   return (
     <Panel className="divide-y divide-line">
       {members.map((member) => (
-        <MemberRow key={member.id} member={member} longest={longest} />
+        <MemberRow key={member.id} member={member} longest={longest} live={live.byUser.get(member.id)} />
       ))}
     </Panel>
   )
 }
 
-function MemberRow({ member, longest }: { member: Member; longest: number }) {
+function MemberRow({ member, longest, live }: { member: Member; longest: number; live: LiveMember | undefined }) {
   const { t } = useTranslation()
   const nothing = member.days_recorded === 0
 
@@ -168,7 +181,7 @@ function MemberRow({ member, longest }: { member: Member; longest: number }) {
               {member.days_recorded} {t('team.days')} · {duration(member.paused_seconds)} {t('team.pausedShort')}
             </span>
           )}
-          <Status member={member} />
+          <Status member={member} live={live} />
         </div>
       </div>
 
@@ -180,14 +193,25 @@ function MemberRow({ member, longest }: { member: Member; longest: number }) {
   )
 }
 
+/** The colour roles `statusTone` names, as literal classes Tailwind can find. */
+const TONE_CLASS = {
+  good: 'text-good',
+  warn: 'text-warn',
+  dim: 'text-dim',
+  faint: 'text-faint',
+} as const
+
 /**
- * What the server actually knows about this person right now.
+ * What the server knows about this person right now.
  *
- * Never "working": an open day plus a recent delivery is as far as the evidence
- * goes, and the label says exactly that. Icons carry the meaning alongside the
- * colour, as the mockup requires.
+ * The pulse wins when there is one: it is the agent's own claim about this
+ * minute, where everything else on the row is about days already filed. When
+ * there is none - no agent, or a kasl too old to send one - the row falls back
+ * to what it said before this milestone, which is still true.
+ *
+ * Icons carry the meaning alongside the colour, as the mockup requires.
  */
-function Status({ member }: { member: Member }) {
+function Status({ member, live }: { member: Member; live: LiveMember | undefined }) {
   const { t } = useTranslation()
 
   if (member.agents === 0) {
@@ -195,6 +219,25 @@ function Status({ member }: { member: Member }) {
       <span className="inline-flex items-center gap-1 text-warn">
         <TriangleAlert className="size-3" />
         {t('team.noAgent')}
+      </span>
+    )
+  }
+
+  // `unknown` is not shown as a live status: it means no pulse ever arrived,
+  // and the row below already has better words for that case - "never
+  // reported", or the date of the last data.
+  if (live && live.status !== 'unknown') {
+    const { tone, live: atWork } = statusTone(live.status)
+    return (
+      // Spelled out rather than interpolated: Tailwind scans source text for
+      // class names, and `text-${tone}` is a class it never sees and never
+      // emits.
+      <span className={`inline-flex items-center gap-1 ${TONE_CLASS[tone]}`}>
+        {atWork ? <CircleDot className="size-3" /> : <Circle className="size-3" />}
+        {t(`team.live.${live.status}`)}
+        {/* An offline row says when it went quiet: "offline" alone leaves a
+            manager wondering whether it happened a minute or a week ago. */}
+        {live.status === 'offline' && member.last_seen_at && ` · ${t('team.lastSeen', { ago: sinceText(member.last_seen_at, t) })}`}
       </span>
     )
   }
