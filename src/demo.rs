@@ -34,6 +34,7 @@ use crate::{
     audit,
     auth::hash_token,
     error::ApiError,
+    heartbeat::{self, AgentState},
     import::{self, AgentDay, AgentPause, AgentTask},
     model::UserRole,
     session::hash_password,
@@ -427,11 +428,54 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
                 .max()
                 .map(|end| import::at_offset(end, person.offset()).with_timezone(&Utc)),
         };
-        sqlx::query("UPDATE agents SET last_seen_at = $2 WHERE user_id = $1")
-            .bind(user_ids[index])
-            .bind(last_seen)
-            .execute(pool)
-            .await?;
+        // The pulse, so the demo shows a live dashboard rather than a table of
+        // "unknown". Only the people whose day is happening now get a fresh
+        // one: everyone else has stopped for the day, which on a real
+        // installation is silence, and silence is what the visitor should see
+        // it look like (ADR 0014).
+        let pulse: Option<AgentState> = match pattern {
+            // Mid-day, at the keyboard - the row that reads "working".
+            Pattern::Open => Some(AgentState::Working),
+            // Also mid-day, but away from it: the demo needs both live states
+            // on screen, or "paused" would never be seen.
+            Pattern::Breaks => Some(AgentState::Paused),
+            // Their agent is up and reporting, they are simply done for the
+            // day. This is what distinguishes `idle` from `offline` - and the
+            // reason the dashboard needs both.
+            Pattern::Steady => Some(AgentState::Idle),
+            // A pulse that is deliberately old: the agent was running this
+            // morning and has stopped answering. That is the row a manager
+            // should look at first, and it is only visible if the demo has
+            // one - "no pulse at all" reads as `unknown`, which says nothing
+            // about the person.
+            Pattern::Long | Pattern::Fading => Some(AgentState::Working),
+            // Silent and Never never sent one, which is `unknown`.
+            _ => None,
+        };
+        // How old this agent's pulse is kept. Zero for the live ones; well
+        // past the threshold for the two that have stopped answering. Recorded
+        // on the row rather than recomputed, so the refresh below knows which
+        // is which - a pulse that merely aged is indistinguishable from one
+        // seeded old.
+        let age: Option<i32> = pulse.map(|_| {
+            if matches!(pattern, Pattern::Long | Pattern::Fading) {
+                STALE_PULSE_AGE_SECONDS
+            } else {
+                0
+            }
+        });
+        sqlx::query(
+            "UPDATE agents SET last_seen_at = $2, heartbeat_state = $3, demo_pulse_age_seconds = $4,
+                    heartbeat_at = CASE WHEN $3 IS NULL THEN NULL ELSE now() - coalesce($4, 0) * interval '1 second' END,
+                    heartbeat_received_at = CASE WHEN $3 IS NULL THEN NULL ELSE now() - coalesce($4, 0) * interval '1 second' END
+             WHERE user_id = $1",
+        )
+        .bind(user_ids[index])
+        .bind(last_seen)
+        .bind(pulse)
+        .bind(age)
+        .execute(pool)
+        .await?;
     }
 
     audit::Entry::new(audit::action::DEMO_SEEDED)
@@ -440,6 +484,73 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         .await;
 
     Ok(seeded)
+}
+
+/// Re-stamps the demo's seeded pulses so they stay fresh.
+///
+/// The demo is seeded once, but a pulse is believed for three minutes - so
+/// without this every live row on the demo would turn "offline" while the
+/// first visitor was still reading the page, and the milestone would be
+/// invisible on the one installation built to show it off.
+///
+/// Only rows that already carry a state are touched: which people are working,
+/// paused or idle was decided at seed time and stays decided, and an agent
+/// seeded silent must keep looking silent. Returns how many were re-stamped.
+///
+/// Only the pulses that were fresh when they were written are pulled forward.
+/// Two of the demo's agents are seeded deliberately stale - they are the "this
+/// machine has stopped answering" row a manager should look at first - and a
+/// refresh that pulled every stamp up to `now()` would quietly heal them,
+/// leaving the dashboard with no offline row to show. They are held at a fixed
+/// age instead, so they stay offline for as long as the demo runs.
+///
+/// Nothing like this runs on a real installation - there a pulse means an
+/// agent sent one, and a server that invented them would be lying about the
+/// only thing this endpoint is for.
+pub async fn refresh_pulses(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    // Each row is re-stamped to the age the seed chose for it, read off the
+    // row itself. Only agents the demo gave an age are touched, so an agent a
+    // visitor pointed at the demo keeps whatever pulse it actually sent.
+    let updated = sqlx::query(
+        "UPDATE agents
+         SET heartbeat_at = now() - demo_pulse_age_seconds * interval '1 second',
+             heartbeat_received_at = now() - demo_pulse_age_seconds * interval '1 second'
+         WHERE heartbeat_state IS NOT NULL AND demo_pulse_age_seconds IS NOT NULL AND revoked_at IS NULL",
+    )
+    .execute(pool)
+    .await?;
+    Ok(updated.rows_affected())
+}
+
+/// How old the demo's stopped agents are kept.
+///
+/// Comfortably past the staleness threshold, and stable across refreshes, so
+/// "this machine stopped answering" stays on the dashboard rather than healing
+/// itself a minute after the visitor arrives.
+const STALE_PULSE_AGE_SECONDS: i32 = (heartbeat::STALE_AFTER_SECONDS * 4) as i32;
+
+/// Keeps the demo's pulses fresh for as long as the server runs.
+///
+/// Started only when the installation is a demo. Re-stamps at half the
+/// staleness threshold, so a slow tick cannot let the dashboard flicker
+/// through "offline" between two refreshes.
+pub fn keep_pulses_fresh(pool: PgPool) {
+    let period = std::time::Duration::from_secs((heartbeat::STALE_AFTER_SECONDS / 2).max(1) as u64);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(period);
+        // The first tick fires immediately and would re-stamp what `seed` just
+        // wrote; skipping it costs nothing and keeps the log quiet.
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            if let Err(error) = refresh_pulses(&pool).await {
+                // Worth a line, not worth stopping for: the dashboard degrades
+                // to "offline", which is at least an honest reading of a
+                // server that cannot reach its database.
+                tracing::warn!(%error, "failed to refresh the demo pulses");
+            }
+        }
+    });
 }
 
 /// Eight weeks of one person's days, ending yesterday.

@@ -228,6 +228,113 @@ async fn every_state_the_dashboard_can_show_is_on_screen() {
 }
 
 #[tokio::test]
+async fn every_live_status_the_dashboard_can_show_is_on_screen() {
+    let Some((server, _)) = demo_server().await else { return };
+
+    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
+    let (status, live) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{live}");
+
+    let (_, team) = server.get_with_cookie(&format!("/api/v1/team/days?{}", this_week()), Some(&cookie)).await;
+    let id_of = |name: &str| {
+        team["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["display_name"] == name)
+            .unwrap_or_else(|| panic!("{name} is not on the dashboard"))["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let status_of = |name: &str| {
+        let id = id_of(name);
+        live["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["user_id"] == id.as_str())
+            .unwrap_or_else(|| panic!("{name} has no live row"))["status"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // The point of seeding pulses at all: a visitor opening the demo should
+    // see the status column doing its job, not a page of "unknown" that makes
+    // the feature look broken.
+    assert_eq!(status_of("Sofia Reyes"), "working", "the open day is at the keyboard: {live}");
+    assert_eq!(status_of("Aiko Tanaka"), "paused", "someone has to be on a break: {live}");
+    // Their agent is up and reporting, they are simply done for the day - the
+    // distinction between `idle` and `offline` only shows if both are present.
+    assert_eq!(status_of("Tomas Verhoeven"), "idle", "{live}");
+    // Seeded with a deliberately old pulse: the machine was answering this
+    // morning and has stopped. That is the row a manager should look at first,
+    // and it only exists if the demo carries one - "no pulse at all" reads as
+    // `unknown`, which says nothing about the person.
+    assert_eq!(status_of("Lukas Brandt"), "offline", "{live}");
+    // Never sent one. Distinct from offline on purpose: nothing here is
+    // evidence about the person, only about the installation.
+    assert_eq!(status_of("Hana Kowalski"), "unknown", "{live}");
+}
+
+#[tokio::test]
+async fn the_demo_pulses_stay_fresh() {
+    let Some((server, _)) = demo_server().await else { return };
+
+    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
+    let statuses = |live: &serde_json::Value| -> Vec<String> {
+        live["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["status"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // A pulse is believed for three minutes and the demo is seeded once, so
+    // without a refresh the whole live column would turn "offline" while the
+    // first visitor was still reading the page - and the milestone would be
+    // invisible on the one installation built to show it off.
+    server
+        .execute("UPDATE agents SET heartbeat_received_at = now() - interval '1 day' WHERE heartbeat_state IS NOT NULL")
+        .await;
+    let (_, gone) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    assert!(!statuses(&gone).contains(&"working".to_string()), "aged out, as the fixture intends: {gone}");
+
+    let refreshed = demo::refresh_pulses(&server.pool).await.expect("the refresh should succeed");
+    assert!(refreshed > 0, "the demo seeds pulses, so some must have been re-stamped");
+
+    let (_, live) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    let after = statuses(&live);
+    assert!(after.contains(&"working".to_string()), "a refreshed pulse is believed again: {live}");
+
+    // What the refresh must not do: invent a pulse for an agent that never
+    // sent one. Which people are live was decided at seed time, and a refresh
+    // that widened it would put someone at a keyboard who is not there.
+    assert!(after.contains(&"unknown".to_string()), "silence must stay silent: {live}");
+}
+
+#[tokio::test]
+async fn refreshing_the_demo_does_not_heal_the_agent_that_stopped() {
+    let Some((server, _)) = demo_server().await else { return };
+    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
+
+    // The defect this guards, and the reason the refresh is not a plain
+    // "set everything to now()": the row a manager is meant to notice - a
+    // machine that has stopped answering - would be quietly healed on the
+    // first tick, and the demo would show a team where nothing is ever wrong.
+    for _ in 0..3 {
+        demo::refresh_pulses(&server.pool).await.expect("the refresh should succeed");
+    }
+
+    let (_, live) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    let statuses: Vec<&str> = live["members"].as_array().unwrap().iter().map(|m| m["status"].as_str().unwrap()).collect();
+    assert!(statuses.contains(&"offline"), "the stopped agent must stay stopped: {live}");
+    assert!(statuses.contains(&"working"), "and the live ones must stay live: {live}");
+}
+
+#[tokio::test]
 async fn the_employee_sees_their_own_week_in_detail() {
     let Some((server, _)) = demo_server().await else { return };
 

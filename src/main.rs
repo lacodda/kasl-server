@@ -236,8 +236,12 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
                 "seeded the demo team"
             );
             print_demo_logins();
+            demo::keep_pulses_fresh(pool.clone());
         }
-        (true, demo::Status::Demo) => print_demo_logins(),
+        (true, demo::Status::Demo) => {
+            print_demo_logins();
+            demo::keep_pulses_fresh(pool.clone());
+        }
         (true, demo::Status::Populated { accounts }) => {
             // Refused rather than seeded alongside: a flag left in a file
             // after a trial would otherwise put twelve invented people on a
