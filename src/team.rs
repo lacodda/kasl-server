@@ -36,6 +36,7 @@ use crate::{
     admin::{VISIBLE_USERS, require_manager_or_admin},
     app::AppState,
     error::ApiError,
+    heartbeat::{self, Live},
     login::CurrentUser,
     me::{self, Range},
     model::UserRole,
@@ -179,6 +180,45 @@ pub async fn user_days(
     }
 
     Ok(Json(me::days_for(&state.pool, target, &range).await?))
+}
+
+/// What the team is doing right now: `GET /api/v1/team/live`.
+///
+/// Its own endpoint rather than a field on `/team/days`, because the two are
+/// asked at completely different rates. The week's hours are a page load; the
+/// pulse is a poll every half minute, and answering it with the week's totals
+/// would make the dashboard re-run the heaviest query on the server on a timer
+/// - for numbers that did not change.
+///
+/// Keyed by user id so the caller merges it into the table it already drew.
+/// Nothing here identifies a person beyond that id: the row a manager may see
+/// was decided by `/team/days`, and this endpoint applies the same clause
+/// rather than a second reading of it.
+#[derive(Debug, Serialize)]
+pub struct LiveTeam {
+    pub members: Vec<Live>,
+    /// How often the caller should ask again, in seconds. The server owns the
+    /// cadence - it is the side that knows the staleness threshold.
+    pub poll_seconds: i64,
+    /// After how many seconds of silence a pulse stops being believed, so the
+    /// UI can explain "offline" with the same number the server used.
+    pub stale_after_seconds: i64,
+}
+
+/// Answers the live status of everyone the reader may see.
+pub async fn live(State(state): State<AppState>, user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
+    require_manager_or_admin(&user)?;
+
+    let members = heartbeat::load(&state.pool, VISIBLE_USERS, user.role == UserRole::Admin, user.user_id).await?;
+
+    Ok(Json(LiveTeam {
+        members,
+        // Half the agent's interval: a dashboard that polled at exactly the
+        // pulse rate would show every state one full interval late, having
+        // just missed each arrival.
+        poll_seconds: heartbeat::INTERVAL_SECONDS / 2,
+        stale_after_seconds: heartbeat::STALE_AFTER_SECONDS,
+    }))
 }
 
 /// Whether `reader` may see `target`'s data.

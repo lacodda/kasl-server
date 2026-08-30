@@ -175,6 +175,15 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
         detail: "your email, display name, role, department, and which machines report for you",
     });
 
+    // Listed at every level, and worded as what it is. The pulse is the one
+    // thing here that is about the present moment rather than a day already
+    // over, so a manifest that mentioned only days would be describing a
+    // quieter server than the one running (ADR 0014).
+    stored.push(Stored {
+        what: "live status",
+        detail: "whether your agent currently reports you as working, on a break, or not in a day - the latest one only, replaced each time it arrives, never kept as a history",
+    });
+
     stored
 }
 
@@ -320,6 +329,20 @@ mod tests {
         assert!(full.stored.iter().any(|s| s.what == "pause reasons"));
         assert!(!coarse.stored.iter().any(|s| s.what == "pause reasons"));
         assert_ne!(full.summary, coarse.summary);
+    }
+
+    #[test]
+    fn every_level_names_the_live_status() {
+        // The pulse is not governed by the level - narrowing to `coarse` stops
+        // the server storing when you paused, not the agent telling it you are
+        // paused right now. A manifest that left it out would be describing a
+        // server that watches less than this one does (ADR 0014).
+        for level in [PrivacyLevel::Full, PrivacyLevel::Moderate, PrivacyLevel::Coarse] {
+            assert!(
+                manifest(level, None).stored.iter().any(|s| s.what == "live status"),
+                "{level:?} does not name the pulse",
+            );
+        }
     }
 
     #[test]

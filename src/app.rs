@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, config::Config, demo, department, ingest, login, me, privacy, team, web};
+use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, ingest, login, me, privacy, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -43,6 +43,10 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
         .route("/team/days", get(team::days))
+        // What the team is doing right now, polled on a timer. Split from
+        // `/team/days` on purpose: this one is asked every half minute and
+        // must stay cheap enough to be (ADR 0014).
+        .route("/team/live", get(team::live))
         .route("/users/{id}/days", get(team::user_days))
         // Administration. Reading the team is a manager's; changing it is not,
         // until departments give a manager something to be in charge of.
@@ -69,6 +73,9 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // from the wrong place is caught by a person rather than discovered
         // in a dashboard weeks later.
         .route("/agent/whoami", get(auth::whoami))
+        // The pulse. The only route that says anything about now rather than
+        // about a day that is over (ADR 0014).
+        .route("/agent/heartbeat", post(heartbeat::beat))
         // Who a visitor may sign in as. Answered only on a demo - anywhere
         // else it is a 404, so no real installation lists its people to
         // someone who has not signed in (ADR 0013).

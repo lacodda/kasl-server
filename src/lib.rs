@@ -14,6 +14,7 @@ pub mod config;
 pub mod demo;
 pub mod department;
 pub mod error;
+pub mod heartbeat;
 pub mod import;
 pub mod ingest;
 pub mod login;

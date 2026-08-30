@@ -259,6 +259,12 @@ impl TestServer {
         self.post_to("/api/v1/days", authorization, day).await
     }
 
+    /// Posts to any path with a bearer token, for the agent routes that are
+    /// not an upload.
+    pub async fn post_with_header(&self, path: &str, authorization: Option<&str>, body: Value) -> (StatusCode, Value) {
+        self.post_to(path, authorization, body).await
+    }
+
     async fn post_to(&self, path: &str, authorization: Option<&str>, body: Value) -> (StatusCode, Value) {
         let mut request = Request::post(path).header(header::CONTENT_TYPE, "application/json");
         if let Some(value) = authorization {
