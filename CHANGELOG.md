@@ -2,7 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.17.0] - 2026-08-30
+
+### Documentation
+- Describe the pulse and cut 0.17.0
+
+### Features
+- Let an agent report what its person is doing now
+- Show who is working now on the dashboard
+- Put every live status on the fictional team
+
 ## [0.16.0] - 2026-08-29
+
+### Documentation
+- Cut 0.16.0
 
 ### Features
 - Seed a fictional team on an empty database
