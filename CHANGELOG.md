@@ -2,10 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.17.1] - 2026-08-30
+
+### Bug Fixes
+- Give a demo seeded before the pulse existed one
+
 ## [0.17.0] - 2026-08-30
 
 ### Documentation
 - Describe the pulse and cut 0.17.0
+- Cut 0.17.0
 
 ### Features
 - Let an agent report what its person is doing now
