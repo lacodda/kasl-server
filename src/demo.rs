@@ -428,42 +428,7 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
                 .max()
                 .map(|end| import::at_offset(end, person.offset()).with_timezone(&Utc)),
         };
-        // The pulse, so the demo shows a live dashboard rather than a table of
-        // "unknown". Only the people whose day is happening now get a fresh
-        // one: everyone else has stopped for the day, which on a real
-        // installation is silence, and silence is what the visitor should see
-        // it look like (ADR 0014).
-        let pulse: Option<AgentState> = match pattern {
-            // Mid-day, at the keyboard - the row that reads "working".
-            Pattern::Open => Some(AgentState::Working),
-            // Also mid-day, but away from it: the demo needs both live states
-            // on screen, or "paused" would never be seen.
-            Pattern::Breaks => Some(AgentState::Paused),
-            // Their agent is up and reporting, they are simply done for the
-            // day. This is what distinguishes `idle` from `offline` - and the
-            // reason the dashboard needs both.
-            Pattern::Steady => Some(AgentState::Idle),
-            // A pulse that is deliberately old: the agent was running this
-            // morning and has stopped answering. That is the row a manager
-            // should look at first, and it is only visible if the demo has
-            // one - "no pulse at all" reads as `unknown`, which says nothing
-            // about the person.
-            Pattern::Long | Pattern::Fading => Some(AgentState::Working),
-            // Silent and Never never sent one, which is `unknown`.
-            _ => None,
-        };
-        // How old this agent's pulse is kept. Zero for the live ones; well
-        // past the threshold for the two that have stopped answering. Recorded
-        // on the row rather than recomputed, so the refresh below knows which
-        // is which - a pulse that merely aged is indistinguishable from one
-        // seeded old.
-        let age: Option<i32> = pulse.map(|_| {
-            if matches!(pattern, Pattern::Long | Pattern::Fading) {
-                STALE_PULSE_AGE_SECONDS
-            } else {
-                0
-            }
-        });
+        let (pulse, age) = pulse_for(pattern);
         sqlx::query(
             "UPDATE agents SET last_seen_at = $2, heartbeat_state = $3, demo_pulse_age_seconds = $4,
                     heartbeat_at = CASE WHEN $3 IS NULL THEN NULL ELSE now() - coalesce($4, 0) * interval '1 second' END,
@@ -484,6 +449,79 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         .await;
 
     Ok(seeded)
+}
+
+/// The pulse a pattern gets, and how old it is kept.
+///
+/// Only the people whose day is happening now get a live one; everyone else
+/// has stopped for the day, which on a real installation is silence, and
+/// silence is what a visitor should see it look like (ADR 0014).
+fn pulse_for(pattern: Pattern) -> (Option<AgentState>, Option<i32>) {
+    let state = match pattern {
+        // Mid-day, at the keyboard - the row that reads "working".
+        Pattern::Open => Some(AgentState::Working),
+        // Also mid-day, but away from it: the demo needs both live states on
+        // screen, or "paused" would never be seen.
+        Pattern::Breaks => Some(AgentState::Paused),
+        // Their agent is up and reporting, they are simply done for the day.
+        // This is what distinguishes `idle` from `offline` - and the reason
+        // the dashboard needs both.
+        Pattern::Steady => Some(AgentState::Idle),
+        // A pulse that is deliberately old: the agent was running this morning
+        // and has stopped answering. That is the row a manager should look at
+        // first, and it is only visible if the demo carries one - "no pulse at
+        // all" reads as `unknown`, which says nothing about the person.
+        Pattern::Long | Pattern::Fading => Some(AgentState::Working),
+        // Silent and Never never sent one, which is `unknown`.
+        _ => None,
+    };
+    // Zero for the live ones; well past the threshold for the two that have
+    // stopped. Recorded on the row rather than recomputed, so the refresh
+    // knows which is which - a pulse that merely aged is indistinguishable
+    // from one seeded old.
+    let age = state.map(|_| {
+        if matches!(pattern, Pattern::Long | Pattern::Fading) {
+            STALE_PULSE_AGE_SECONDS
+        } else {
+            0
+        }
+    });
+    (state, age)
+}
+
+/// Gives the demo's agents their pulses if they have none.
+///
+/// The upgrade path. A demo seeded before this milestone has agents but no
+/// pulses, and bumping the image does not re-seed - so its dashboard would
+/// show twelve rows of "unknown" and none of the live column the version was
+/// released for. Found by deploying to the project's own demo stand, not by a
+/// test: every test seeds from empty, where the question cannot arise.
+///
+/// Idempotent, and it never overwrites a pulse that exists: an agent that has
+/// reported - including a real kasl pointed at the demo - is left alone. The
+/// people are matched by the email the generator assigns, so nothing outside
+/// the fictional team is touched.
+pub async fn ensure_pulses(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let mut given = 0;
+    for person in TEAM.iter() {
+        let Some(pattern) = person.pattern else { continue };
+        let (Some(state), age) = pulse_for(pattern) else { continue };
+        let updated = sqlx::query(
+            "UPDATE agents SET heartbeat_state = $2, demo_pulse_age_seconds = $3,
+                    heartbeat_at = now() - coalesce($3, 0) * interval '1 second',
+                    heartbeat_received_at = now() - coalesce($3, 0) * interval '1 second'
+             FROM users u
+             WHERE agents.user_id = u.id AND lower(u.email) = lower($1)
+               AND agents.heartbeat_state IS NULL AND agents.revoked_at IS NULL",
+        )
+        .bind(person.email())
+        .bind(state)
+        .bind(age)
+        .execute(pool)
+        .await?;
+        given += updated.rows_affected();
+    }
+    Ok(given)
 }
 
 /// Re-stamps the demo's seeded pulses so they stay fresh.

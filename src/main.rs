@@ -240,6 +240,15 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
         }
         (true, demo::Status::Demo) => {
             print_demo_logins();
+            // A demo seeded before the pulse existed has agents and no
+            // pulses, and bumping the image does not re-seed: without this
+            // its dashboard shows twelve rows of "unknown" and none of the
+            // live column. Never overwrites a pulse that is already there.
+            match demo::ensure_pulses(&pool).await {
+                Ok(0) => {}
+                Ok(given) => tracing::info!(given, "gave the demo's agents their pulses"),
+                Err(error) => tracing::warn!(%error, "failed to give the demo's agents their pulses"),
+            }
             demo::keep_pulses_fresh(pool.clone());
         }
         (true, demo::Status::Populated { accounts }) => {

@@ -316,6 +316,68 @@ async fn the_demo_pulses_stay_fresh() {
 }
 
 #[tokio::test]
+async fn a_demo_seeded_before_the_pulse_existed_gets_one() {
+    let Some((server, _)) = demo_server().await else { return };
+    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
+
+    // What a demo seeded on an older version looks like: agents, days, and no
+    // pulse anywhere. Bumping the image does not re-seed, so without an
+    // upgrade path the whole live column reads "unknown" - which is what the
+    // project's own demo stand actually showed after this version deployed.
+    server
+        .execute("UPDATE agents SET heartbeat_state = NULL, heartbeat_at = NULL, heartbeat_received_at = NULL, demo_pulse_age_seconds = NULL")
+        .await;
+    let (_, before) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    assert!(
+        before["members"].as_array().unwrap().iter().all(|m| m["status"] == "unknown"),
+        "the fixture should start with no pulses at all: {before}"
+    );
+
+    let given = demo::ensure_pulses(&server.pool).await.expect("the upgrade should succeed");
+    assert!(given > 0, "the demo's agents should have been given pulses");
+
+    let (_, after) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
+    let statuses: Vec<&str> = after["members"].as_array().unwrap().iter().map(|m| m["status"].as_str().unwrap()).collect();
+    for expected in ["working", "paused", "idle", "offline", "unknown"] {
+        assert!(statuses.contains(&expected), "{expected} is missing after the upgrade: {after}");
+    }
+}
+
+#[tokio::test]
+async fn giving_pulses_leaves_an_agent_that_already_reported_alone() {
+    let Some((server, _)) = demo_server().await else { return };
+
+    // A real kasl pointed at the demo is the case the upgrade path must not
+    // trample. Clear the seeded pulses first, so `ensure_pulses` has work to
+    // do and this agent is sitting in the middle of it.
+    server
+        .execute("UPDATE agents SET heartbeat_state = NULL, heartbeat_at = NULL, heartbeat_received_at = NULL, demo_pulse_age_seconds = NULL")
+        .await;
+    let (status, body) = server
+        .post_with_header(
+            "/api/v1/agent/heartbeat",
+            Some("Bearer demo-tomas"),
+            json!({ "state": "paused", "at": Utc::now().to_rfc3339() }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+
+    let given = demo::ensure_pulses(&server.pool).await.expect("the upgrade should succeed");
+    assert!(given > 0, "the other agents should still have been filled in");
+
+    // Tomas is seeded `idle`; his agent said `paused`. The upgrade fills in
+    // silence, it does not correct the record.
+    let state: String = server
+        .scalar("SELECT a.heartbeat_state::text FROM agents a JOIN users u ON u.id = a.user_id WHERE u.email = 'tomas.verhoeven@example.com'")
+        .await;
+    assert_eq!(state, "paused", "a pulse an agent actually sent must survive the upgrade");
+    let seeded: Option<i32> = server
+        .optional_scalar("SELECT a.demo_pulse_age_seconds FROM agents a JOIN users u ON u.id = a.user_id WHERE u.email = 'tomas.verhoeven@example.com'")
+        .await;
+    assert_eq!(seeded, None, "and it must not be adopted into the demo's re-stamping");
+}
+
+#[tokio::test]
 async fn refreshing_the_demo_does_not_heal_the_agent_that_stopped() {
     let Some((server, _)) = demo_server().await else { return };
     let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;

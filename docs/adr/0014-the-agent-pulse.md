@@ -92,6 +92,12 @@ described only days would be describing a quieter server than the one running.
   than inferred, because a pulse that merely aged is indistinguishable from one
   seeded old - and the same column keeps the refresh off any real agent
   pointed at the demo.
+- A demo seeded before this version has agents and no pulses, and bumping the
+  image does not re-seed, so a demo upgraded to it showed twelve rows of
+  "unknown" - the whole point of the release, missing. `ensure_pulses` fills
+  those in at startup, never overwriting a pulse that exists. Found by
+  deploying to this project's own demo stand rather than by a test: every test
+  seeds from empty, where the question cannot arise.
 - kasl's paired milestone is v3.5. Until it ships, the endpoint has no client
   in the wild: the contract is exercised by this repository's tests rather
   than by a real agent, which is a weaker check than the ingest contract got

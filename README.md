@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-08-29T18:15:19.123274Z  INFO kasl_server: kasl-server listening version="0.17.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-29T18:15:19.123274Z  INFO kasl_server: kasl-server listening version="0.17.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.17.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.17.1"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.17.0"}
+{"database":"ok","demo":true,"status":"ok","version":"0.17.1"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen
@@ -103,7 +103,8 @@ The [live status](#who-is-working-now) is on it too: somebody working, somebody
 on a break, agents idle between days, and two machines that have stopped
 answering. A demo is seeded once but a pulse is believed for three minutes, so
 the demo re-stamps its own — keeping the stopped agents stopped, and leaving
-alone any real kasl pointed at it.
+alone any real kasl pointed at it. A demo seeded before the pulse existed gets
+its own on the next start, so upgrading the image is enough.
 
 **The demo refuses a database that already holds accounts.** Twelve invented
 people alongside a real team, with nothing to say which rows are which, is the
