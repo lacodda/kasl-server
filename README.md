@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a status that says what the server actually knows, and a drill-down into anyone's days. The same binary serves all of it, and installing it is a compose file and a published image rather than a build. What is still missing is the other half of the loop: kasl cannot send on its own yet, so history is imported or posted by hand.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a drill-down into anyone's days, and a live column saying who is working, who is on a break and whose machine has gone quiet. The same binary serves all of it, and installing it is a compose file and a published image rather than a build. What is still missing is the other half of the loop: kasl cannot send on its own yet, so history is imported or posted by hand.
 
 ## Try it
 
@@ -16,7 +16,7 @@ $ docker compose up -d db
 $ export DATABASE_URL=postgres://kasl:kasl@localhost:5433/kasl
 $ export KASL_AGENTS=employee@example.com:agent-token
 $ cargo run
-2026-08-29T18:15:18.767453Z  INFO kasl_server: database schema is up to date version=20260829000001
+2026-08-29T18:15:18.767453Z  INFO kasl_server: database schema is up to date version=20260830000001
 2026-08-29T18:15:18.811231Z  INFO kasl_server::provision: provisioned agents from KASL_AGENTS agents=1
 
   An administrator account was created, because this installation had none:
@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-08-29T18:15:19.123274Z  INFO kasl_server: kasl-server listening version="0.16.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-08-29T18:15:19.123274Z  INFO kasl_server: kasl-server listening version="0.17.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.16.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.17.0"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -74,7 +74,7 @@ before an agent is installed on anybody's machine:
 ```console
 $ KASL_DEMO=true docker compose up -d        # or: KASL_DEMO=true cargo run
 $ docker compose logs server
-2026-08-29T18:14:37.667958Z  INFO kasl_server: database schema is up to date version=20260829000001
+2026-08-29T18:14:37.667958Z  INFO kasl_server: database schema is up to date version=20260830000001
 2026-08-29T18:14:39.401685Z  INFO kasl_server: seeded the demo team people=12 departments=3 days=386
 
   This is a demo: a fictional team, nothing here is real. Sign in as
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.16.0"}
+{"database":"ok","demo":true,"status":"ok","version":"0.17.0"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen
@@ -98,6 +98,12 @@ shrink week by week, a day open right now, an agent that went silent a week
 ago, one that never reported, and an administrator with no agent at all. The
 history ends yesterday whenever you start it, and two demos started on the same
 day show the same numbers, so a screenshot can be reproduced.
+
+The [live status](#who-is-working-now) is on it too: somebody working, somebody
+on a break, agents idle between days, and two machines that have stopped
+answering. A demo is seeded once but a pulse is believed for three minutes, so
+the demo re-stamps its own — keeping the stopped agents stopped, and leaving
+alone any real kasl pointed at it.
 
 **The demo refuses a database that already holds accounts.** Twelve invented
 people alongside a real team, with nothing to say which rows are which, is the
@@ -288,11 +294,10 @@ recorded.** Clara above has no agent installed and no days; she is on the list
 anyway, because an employee whose agent never reported is exactly who a manager
 needs to notice. A table that dropped her would hide the case it exists for.
 
-**`day_open` and `last_seen_at` are what the server actually knows** - whether
-a day is open on that person's own calendar, and when one of their agents last
-delivered anything. Neither says someone is at their keyboard; that needs
-heartbeats, which is a later milestone. The dashboard says "day open, last data
-20 min ago" rather than "working now", because only the first is true.
+**`day_open` and `last_seen_at` are about days, not about this moment** -
+whether a day is open on that person's own calendar, and when one of their
+agents last delivered anything. Who is at their keyboard right now is a
+separate question with a separate endpoint, below.
 
 **Who sees whom** is the rule departments established: an administrator sees
 everyone, a manager sees the departments they run plus themselves, and a person
@@ -303,6 +308,61 @@ in no department is visible to the administrator alone
 `/me/days`**, for a person the caller is entitled to see. An id they may not
 see answers `404` rather than `403` - a manager probing ids should not be able
 to tell an employee in another department from one who does not exist.
+
+## Who is working now
+
+An agent reports in every minute with what it sees:
+
+```console
+$ curl -X POST -H "Authorization: Bearer $KASL_TOKEN" -H "Content-Type: application/json" \
+    -d '{"state":"working","at":"2026-08-30T14:22:10-03:00"}' \
+    http://127.0.0.1:8080/api/v1/agent/heartbeat
+{"interval_seconds":60,"stale_after_seconds":180,"state":"working","clock_skew_seconds":0}
+```
+
+`state` is `working` (in a day, at the keyboard), `paused` (in a day, on a
+break) or `idle` (the agent is running, the person is not in a day). `at`
+carries the agent's own UTC offset. The server answers with the cadence it
+wants rather than letting each agent pick one: report every
+`interval_seconds`, and after `stale_after_seconds` of silence the pulse is no
+longer believed.
+
+A stamp more than a minute ahead of the server is refused with `400` rather
+than accepted and corrected: a machine whose clock is wrong uploads hours that
+are wrong too, and only its owner can fix that. `clock_skew_seconds` reports
+the difference on every pulse so kasl can say so before it becomes a mystery.
+
+The dashboard reads it back:
+
+```console
+$ curl -H "Cookie: kasl_session=..." http://127.0.0.1:8080/api/v1/team/live
+{"poll_seconds":30,"stale_after_seconds":180,
+ "members":[
+   {"user_id":"c49ea6a8-...","status":"working","since_received":12},
+   {"user_id":"0073460d-...","status":"offline","since_received":4210},
+   {"user_id":"9f1c2b40-...","status":"unknown","since_received":null}]}
+```
+
+**`offline` and `unknown` are different answers.** `offline` means a machine
+was reporting and stopped; `unknown` means no pulse has ever arrived - no
+agent, or a kasl too old to send one. Neither is reported as `idle`, because
+the server does not know that, and a dashboard that guessed would tell a
+manager their whole team stopped working the day they rolled out an older
+agent. Where there is no pulse, the row falls back to what `/team/days`
+knows: "day open", "last data 20 min ago", "never reported".
+
+**Its own endpoint, deliberately.** The week's hours are a page load; this is
+polled every `poll_seconds` while the tab is open, and folding the two together
+would re-run the heaviest query on the server on a timer. It applies the same
+visibility rule as the rest of the team endpoints - who is at their keyboard
+this minute is more sensitive than a week's totals, not less - and the web UI
+stops polling entirely while its tab is hidden.
+
+**Only the state is sent.** Not the task, not the reason for the break: those
+belong to the day, under the privacy level that governs it. The pulse is
+listed in [the privacy manifest](#what-the-server-stores-about-you) at every
+level, as the latest claim only - replaced each time, never kept as a history.
+The reasoning is in [ADR 0014](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0014-the-agent-pulse.md).
 
 ## Managing the team
 
@@ -446,7 +506,8 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
            {"what":"pauses","detail":"each interruption: when it began, how long it lasted, ..."},
            {"what":"tasks","detail":"what you logged: the name, your comment, and how complete you marked it"},
            {"what":"pause reasons","detail":"the text you type when you take a break by hand"},
-           {"what":"account","detail":"your email, display name, role, department, ..."}],
+           {"what":"account","detail":"your email, display name, role, department, ..."},
+           {"what":"live status","detail":"whether your agent currently reports you as working, on a break, ..."}],
  "never_collected":["keystrokes or what you type","window titles","which applications you run",
                     "screenshots or camera images","web pages you visit","file names or paths","your location"],
  "visible_to":["you, in your own account","the manager of your department","administrators of this installation"],
@@ -470,6 +531,13 @@ can recover it.
 | `full` (default) | hours | each one, timed | name and comment | kept |
 | `moderate` | hours | each one, timed | name only | dropped |
 | `coarse` | hours | how many, how long in total | not stored | dropped |
+
+The [live status](#who-is-working-now) sits outside this table on purpose. The
+levels govern what is stored about a day; the pulse is the agent saying what is
+happening right now, and the server keeps only the latest one - replaced each
+time it arrives, never accumulated into a record of when you were at your desk.
+It is named in the manifest at every level, because a manifest that listed only
+days would describe a quieter server than the one running.
 
 Under `coarse` a day still records how much of it was paused, as a count and a
 total. Without that the day would claim uninterrupted work, which is a more
@@ -712,7 +780,7 @@ UI.
 ## What it will do
 
 - Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
-- Manager dashboards: who is working right now, hours per person, trends over time *(the team's week and a drill-down into one person: done)*
+- Manager dashboards: who is working right now, hours per person, trends over time *(the team's week, a drill-down into one person, and the live status: done)*
 - Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
 - Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure *(published image, install guide and backups: done)*
