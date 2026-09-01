@@ -4,7 +4,7 @@
 
 Team server for [kasl](https://github.com/lacodda/kasl). Employees run kasl on their machines; the agents send work-time data to the server. Managers get dashboards, charts, and reports across the whole team; every employee gets a personal page.
 
-> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a drill-down into anyone's days, and a live column saying who is working, who is on a break and whose machine has gone quiet, and the month as a grid where a square is a person's day. The same binary serves all of it, and installing it is a compose file and a published image rather than a build. What is still missing is the other half of the loop: kasl cannot send on its own yet, so history is imported or posted by hand.
+> **Status: pre-alpha.** The door for kasl agents is open and survives a bad connection: a day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a task the employee deleted can be deleted here too. History from before the server arrived can be imported from an agent's own database; people sign in, and an administrator manages the team, its departments and its agent tokens without touching the host, and every such change is recorded. What the server keeps about a person is now a policy it enforces rather than a claim: an employee can ask it, and an administrator can narrow it. The loop is closed: agents deliver, employees see their own week, and a manager sees their team's - hours per person, a drill-down into anyone's days, and a live column saying who is working, who is on a break and whose machine has gone quiet, the month as a grid where a square is a person's day, and a band that names who is worth a look and why. The same binary serves all of it, and installing it is a compose file and a published image rather than a build. What is still missing is the other half of the loop: kasl cannot send on its own yet, so history is imported or posted by hand.
 
 ## Try it
 
@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-09-01T18:30:17.607689Z  INFO kasl_server: kasl-server listening version="0.18.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-09-01T21:59:49.005920Z  INFO kasl_server: kasl-server listening version="0.19.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.18.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.19.0"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.18.0"}
+{"database":"ok","demo":true,"status":"ok","version":"0.19.0"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen
@@ -353,6 +353,66 @@ norms arrive with the production calendar
 plausible answer to a question they did not ask. Visibility is the same rule as
 every other team endpoint, and a person with nothing recorded is listed anyway.
 
+## Where to look
+
+`GET /api/v1/team/signals` answers the question a manager does not know to
+ask. A three-week slide exists only across weeks; no single screen shows it,
+and nobody scrolls back through weeks hunting for one.
+
+```console
+$ curl -H "Cookie: kasl_session=..." http://127.0.0.1:8080/api/v1/team/signals
+{"from":"2026-06-08","to":"2026-08-30","people":12,
+ "signals":[
+   {"user_id":"0073460d-...","display_name":"Jonas Petit","department":"Design",
+    "kind":"no_data","days_quiet":13,
+    "weeks":null,"from_seconds":null,"to_seconds":null,"median_seconds":null},
+   {"user_id":"c49ea6a8-...","display_name":"Lukas Brandt","department":"Engineering",
+    "kind":"declining","weeks":3,"from_seconds":97200,"to_seconds":79560,
+    "median_seconds":null,"days_quiet":null}]}
+```
+
+**Everything here compares a person with themselves.** Never with a colleague
+and never with a norm - this server has none until the production calendar
+(v0.21), and a threshold invented before then would be this product asserting
+what a working day should be on somebody else's team. A dashboard that ranked
+people against each other would be a scoreboard, which this deliberately is
+not.
+
+**A signal is a question, not a verdict.** Each one carries the figures it was
+computed from, so a screen says "27 h a week down to 22 h" rather than showing
+a badge that reads "problem". Falling hours are a holiday, a hospital, or a
+project that ended, and the server knows none of that.
+
+The three:
+
+- **`declining`** — the last three weeks sit at least 15 % below the three
+  before them, comparing the median of each side. **Levels, not a run of
+  falls:** a genuinely fading person goes 33 → 24.8 → 27 → 20.9 → 23.1 → 22.1,
+  which is an unmistakable slide and never three consecutive drops. One
+  ordinary week resets a run, so counting steps stays silent on exactly the
+  case this is for ([ADR 0016](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0016-signals-and-the-weekly-trend.md)).
+- **`no_data`** — nothing recorded for ten days or more. The live status
+  ([below](#who-is-working-now)) only sees a silent machine once a pulse is
+  expected; an agent too old to send one is invisible there.
+- **`unusual_week`** — the last complete week is more than 40 % away from that
+  person's own median, in **either** direction. Both ways on purpose: flagging
+  only the short weeks would make the signal an accusation rather than a
+  question.
+
+**The current week never enters the arithmetic.** A Tuesday is not a short
+week, but that is what a partial week looks like to a sum - and including it
+would flag the whole team every Monday morning. Medians rather than means
+throughout, so one crunch week cannot hide a decline behind it.
+
+`GET /api/v1/users/{id}/trend` is what a signal links to: twelve complete
+weeks, the empty ones included, plus that person's median and the signals
+about them. A week nobody worked keeps its place — closing the gap up would
+turn an absence into continuity.
+
+Nothing is stored and nothing is sent. The signals are a function of the
+workdays already in the database, and delivery — alerts, webhooks — is its own
+milestone.
+
 ## Who is working now
 
 An agent reports in every minute with what it sees:
@@ -492,8 +552,9 @@ way for the UI to be from a different build than the API it calls.
 of gold stretches broken by the pauses in them, and any day opens to its pauses
 and the tasks logged on it. **The team** is the manager's dashboard - a row per
 person with their hours, bars that compare people with each other, and a status
-that says what the server knows; clicking a row opens that person's week in the
-same component the personal page uses. **The month** is the same team as a
+that says what the server knows, under a band naming the people the server
+thinks are worth a look; clicking a row opens that person's twelve-week chart
+and their week, in the same component the personal page uses. **The month** is the same team as a
 grid - a square per person per day, shaded by hours, with weekends marked from
 the calendar and nothing recorded drawn as an empty square rather than as a
 worked day of zero. **What is stored about me** renders the
@@ -827,7 +888,7 @@ UI.
 ## What it will do
 
 - Ingest work-time data from kasl agents: workdays, pauses, tasks, reports *(days, backfill and history import: done)*
-- Manager dashboards: who is working right now, hours per person, trends over time *(the team's week, a drill-down into one person, the live status and the month as a heatmap: done)*
+- Manager dashboards: who is working right now, hours per person, trends over time *(the team's week, a drill-down into one person, the live status, the month as a heatmap, and signals with a twelve-week trend: done)*
 - Personal pages: every employee sees their own history *(their own week, with the day timeline: done)*
 - Roles: admin, manager, employee *(done)*
 - Self-hosted: a single binary — API and web UI in one file — plus PostgreSQL, so your data stays on your infrastructure *(published image, install guide and backups: done)*
