@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.19.0] - 2026-09-01
+
+### Bug Fixes
+- Find a decline by its level, not by a run of falls
+- Say "last week" about the window's last week
+
+### Documentation
+- Describe the signals and cut 0.19.0
+
+### Features
+- Say which people are worth a look
+- Put the signals where the manager already looks
+
+
 ## [0.18.0] - 2026-09-01
 
 ### Documentation
