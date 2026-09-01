@@ -24,6 +24,7 @@ pub mod model;
 pub mod privacy;
 pub mod provision;
 pub mod session;
+pub mod signals;
 pub mod team;
 pub mod web;
 

@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, team, web};
+use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -53,7 +53,13 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // dashboard runs on every page load, for numbers it does not draw
         // (ADR 0015).
         .route("/team/heatmap", get(heatmap::month))
+        // What the manager did not know to ask about. Every other team route
+        // answers a question; this one says where to look, and a person is
+        // only ever compared with their own history (ADR 0016).
+        .route("/team/signals", get(signals::team))
         .route("/users/{id}/days", get(team::user_days))
+        // The twelve-week shape behind a signal, next to the days that made it.
+        .route("/users/{id}/trend", get(signals::user_trend))
         // Administration. Reading the team is a manager's; changing it is not,
         // until departments give a manager something to be in charge of.
         .route("/users", get(admin::list_users).post(admin::create_user))
