@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.19.1] - 2026-09-01
+
+### Bug Fixes
+- Give the trend bars a height they can be a percentage of
+
+
 ## [0.19.0] - 2026-09-01
 
 ### Bug Fixes
