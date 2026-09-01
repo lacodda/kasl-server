@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-09-01T21:59:49.005920Z  INFO kasl_server: kasl-server listening version="0.19.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-09-01T22:54:14.664542Z  INFO kasl_server: kasl-server listening version="0.19.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.19.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.19.1"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.19.0"}
+{"database":"ok","demo":true,"status":"ok","version":"0.19.1"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen

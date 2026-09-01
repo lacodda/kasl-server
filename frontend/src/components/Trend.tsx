@@ -60,7 +60,7 @@ export function Trend({ userId }: { userId: string }) {
       {worked.length === 0 ? (
         <p className="text-sm text-faint">{t('trend.nothing')}</p>
       ) : (
-        <div className="flex h-28 items-end gap-1">
+        <div className="flex items-end gap-1 border-b border-line pt-2">
           {drawn.map((bar) => {
             const label = bar.empty
               ? t('trend.emptyWeek', { week: weekLabel(bar.week_start, i18n.language || 'en') })
@@ -70,18 +70,25 @@ export function Trend({ userId }: { userId: string }) {
                 })
             return (
               <div key={bar.week_start} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-                <div className="flex w-full flex-1 items-end" role="img" aria-label={label} title={label}>
+                {/* The track carries the height itself, in pixels. A
+                    percentage height resolves against the parent's own
+                    height, and a flex item sized from its content gives the
+                    child no base to be a percentage of - so every bar
+                    computed to zero and the chart rendered as bare axis
+                    labels. Found by looking at it: the dotted empty-week
+                    rules have a fixed `h-px` and were all that showed. */}
+                <div className="flex h-28 w-full items-end" role="img" aria-label={label} title={label}>
                   {bar.empty ? (
                     // A gap, drawn as one: a dotted floor rather than a bar of
                     // no height, which would be indistinguishable from a week
                     // that has not rendered.
-                    <div className="h-px w-full border-b border-dashed border-line-2" />
+                    <div className="mx-auto h-1 w-3/5 rounded-t-[3px] border-x border-t border-dashed border-line-2" />
                   ) : (
                     <div
-                      className="w-full rounded-t-[3px] bg-accent"
+                      className="mx-auto w-3/5 rounded-t-[3px] bg-accent"
                       // Percentage of the tallest week, with a floor so a very
                       // short week is still a bar rather than nothing.
-                      style={{ height: `${Math.max(bar.height * 100, 3)}%` }}
+                      style={{ height: `${Math.max(bar.height * 90, 3)}%` }}
                     />
                   )}
                 </div>
