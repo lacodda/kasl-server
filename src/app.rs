@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, ingest, login, me, privacy, team, web};
+use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -47,6 +47,12 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // `/team/days` on purpose: this one is asked every half minute and
         // must stay cheap enough to be (ADR 0014).
         .route("/team/live", get(team::live))
+        // The month as a shape. Its own route rather than a field on
+        // `/team/days`: that one answers a period as totals, and widening it
+        // with a per-day breakdown would change the cost of the query the
+        // dashboard runs on every page load, for numbers it does not draw
+        // (ADR 0015).
+        .route("/team/heatmap", get(heatmap::month))
         .route("/users/{id}/days", get(team::user_days))
         // Administration. Reading the team is a manager's; changing it is not,
         // until departments give a manager something to be in charge of.
