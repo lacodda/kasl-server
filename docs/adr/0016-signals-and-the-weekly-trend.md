@@ -37,9 +37,20 @@ that what is stored is what the employee's own agent reported (ADR 0011).
 
 **Three signals, and each one names what the server actually knows:**
 
-* `declining` - the weekly hours fell for at least three consecutive weeks.
-  Three, not two: two weeks is one bad week followed by an ordinary one, and a
-  dashboard that flagged it would fire at everybody who took a Friday off.
+* `declining` - the recent three weeks sit at least fifteen per cent below the
+  three before them, comparing the median of each side. Three, not two: two
+  weeks is one bad week next to one ordinary one, and a dashboard that flagged
+  it would fire at everybody who took a Friday off.
+
+  **Levels, not steps** - and this was the second answer, not the first. The
+  first version asked for three weeks each lower than the last, which reads
+  well and is wrong: a live run against the demo's deliberately fading person
+  produced 33 → 24.8 → 27 → 20.9 → 23.1 → 22.1 h, an unmistakable slide that
+  is never three falls in a row. One ordinary week resets a run, so the strict
+  rule stayed silent on precisely the case this milestone exists for, while
+  the medians see the same weeks as a nineteen per cent drop. Real decline is
+  a change of level, not a monotonic sequence, and no amount of test data
+  invented alongside the code would have said so - the tests all passed.
 * `no_data` - nothing recorded for longer than this person's own usual gap.
   The employee whose agent died is the case the dashboard exists for, and the
   live status only sees it once a pulse is expected - an agent too old to
@@ -79,6 +90,9 @@ workdays already in the database, and a `signals` table would be a second copy
 of a derived fact - one that could disagree with the days it came from, and
 one somebody would eventually have to invalidate. The cost is a query over
 twelve weeks of one team, which is the same order as the heatmap's month.
+
+The fifteen per cent threshold comes from that same live run: it has to catch
+a real nineteen per cent slide without firing on the ordinary wobble of weeks.
 
 **No configuration.** Not "three weeks" as a setting, not a sensitivity slider.
 A setting instead of a choice is a debt: it moves the decision onto the

@@ -47,13 +47,23 @@ use crate::{
 /// not still being measured against who they were then.
 pub const TREND_WEEKS: i64 = 12;
 
-/// Consecutive falling weeks before the decline is worth mentioning.
+/// How many weeks each side of the comparison a decline is measured over.
 ///
-/// Three, not two. Two weeks is one bad week followed by an ordinary one, and
-/// a dashboard that fired on that would flag everybody who took a Friday off -
+/// Three, not two. Two weeks is one bad week next to one ordinary one, and a
+/// dashboard that fired on that would flag everybody who took a Friday off -
 /// which teaches people to ignore the column (the lesson `unknown` taught in
-/// ADR 0014).
+/// ADR 0014). Six weeks of history are needed before the question can be
+/// asked at all.
 const DECLINING_WEEKS: usize = 3;
+
+/// How far the recent level must sit below the earlier one to be a decline,
+/// as a fraction of the earlier level.
+///
+/// Fifteen per cent: a slide worth a manager's attention, and above the noise
+/// of one short week inside a three-week median. Taken from the demo's fading
+/// person, whose real shape comes to about nineteen per cent - the threshold
+/// has to catch that without firing on ordinary variation.
+const DECLINING_FRACTION: f64 = 0.15;
 
 /// How far from a person's own median a week must fall to be called unusual,
 /// as a fraction of that median.
@@ -73,7 +83,7 @@ const MIN_WEEKS_FOR_MEDIAN: usize = 4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SignalKind {
-    /// Weekly hours fell for at least [`DECLINING_WEEKS`] weeks running.
+    /// The recent weeks sit well below the weeks before them.
     Declining,
     /// Nothing recorded for longer than this person's own usual gap.
     NoData,
@@ -92,12 +102,12 @@ pub struct Signal {
     pub display_name: String,
     pub department: Option<String>,
     pub kind: SignalKind,
-    /// Weeks the pattern has been running, for `declining`.
+    /// Weeks on each side of the comparison, for `declining`.
     pub weeks: Option<i64>,
-    /// Where the run started, in seconds of a week. `declining` only.
+    /// The earlier level, in seconds of a typical week - the median of the
+    /// weeks before the recent ones. `declining` only.
     pub from_seconds: Option<i64>,
-    /// Where it stands now, in seconds of a week. `declining` and
-    /// `unusual_week`.
+    /// The recent level, on the same terms. `declining` and `unusual_week`.
     pub to_seconds: Option<i64>,
     /// This person's own median week, in seconds. `unusual_week` only - it is
     /// the thing being compared against, and a screen that showed the deviation
@@ -157,8 +167,8 @@ pub async fn team(State(state): State<AppState>, user: CurrentUser) -> Result<im
     let people = rows.len() as i64;
 
     let mut signals: Vec<Signal> = rows.iter().flat_map(|person| person.signals(to)).collect();
-    // Worst first: a list a manager reads top-down should start with the thing
-    // that has been going on longest, not with whoever sorts first by name.
+    // Worst first: a list a manager reads top-down should start with silence,
+    // then the declines, rather than with whoever sorts first by name.
     signals.sort_by_key(|signal| (severity(signal.kind), -signal.weeks.unwrap_or(0), -signal.days_quiet.unwrap_or(0)));
 
     Ok(Json(Signals { from, to, signals, people }))
@@ -313,38 +323,42 @@ impl Person {
         signal
     }
 
-    /// How many weeks the hours have been falling, and between which figures.
+    /// Whether the recent level of work sits well below the level before it,
+    /// and between which figures - as `(weeks compared, before, now)`.
     ///
-    /// Counted over the weeks that actually have hours. A week the database
+    /// **Levels, not steps.** An earlier version asked for three weeks each
+    /// lower than the last, and a live run against the demo showed why that is
+    /// the wrong question: a genuinely fading person went 33 → 24.8 → 27 →
+    /// 20.9 → 23.1 → 22.1, which is an unmistakable slide and never three
+    /// falls in a row. One ordinary week in the middle resets a run, so the
+    /// strict version stays silent on exactly the case the milestone exists
+    /// for. Comparing the median of the last three weeks with the median of
+    /// the three before them sees the same data as a nineteen per cent drop.
+    ///
+    /// Medians on both sides for the usual reason: one crunch week either side
+    /// would otherwise decide the answer on its own.
+    ///
+    /// Computed over the weeks that actually have hours. A week the database
     /// never grouped is simply absent; the zero that does arrive is a week
-    /// whose days were all still open, and skipping it is what keeps a slide
-    /// visible *through* it. Left in, such a week reads as a fall to nothing
-    /// followed by a rise back - which breaks the run, and a genuine
-    /// three-week decline goes unreported because one week was filed late.
-    /// A mutation proved this the way round: dropping the filter loses real
-    /// signals rather than inventing false ones.
+    /// whose days were all still open, and skipping it keeps a slide visible
+    /// *through* it rather than letting a late-filed week look like a crash.
     fn declining(&self) -> Option<(usize, i64, i64)> {
         let worked: Vec<i64> = self.weeks.iter().map(|week| week.worked_seconds).filter(|seconds| *seconds > 0).collect();
 
-        let mut run = 0;
-        for pair in worked.windows(2).rev() {
-            // `windows(2)` always yields two elements; indexing is how the
-            // pair is read, and the slice cannot be shorter.
-            if pair[1] < pair[0] {
-                run += 1;
-            } else {
-                break;
-            }
-        }
-
-        if run < DECLINING_WEEKS {
+        // Two windows' worth of weeks, or there is no "before" to fall from.
+        if worked.len() < DECLINING_WEEKS * 2 {
             return None;
         }
 
-        let last = *worked.last()?;
-        // The week the run started from: `run` steps back from the end.
-        let first = *worked.get(worked.len() - 1 - run)?;
-        Some((run, first, last))
+        let recent = median_of(&worked[worked.len() - DECLINING_WEEKS..]);
+        let before = median_of(&worked[worked.len() - DECLINING_WEEKS * 2..worked.len() - DECLINING_WEEKS]);
+
+        if before <= 0 {
+            return None;
+        }
+
+        let drop = (before - recent) as f64 / before as f64;
+        (drop >= DECLINING_FRACTION).then_some((DECLINING_WEEKS, before, recent))
     }
 
     /// Days since the last recorded day, when that is longer than this person's
@@ -379,6 +393,17 @@ impl Person {
         let deviation = (last.worked_seconds - median).abs() as f64 / median as f64;
         (deviation >= UNUSUAL_FRACTION).then_some((last.worked_seconds, median))
     }
+}
+
+/// The median of a slice in any order. Empty answers zero, which every caller
+/// guards against before it can mean anything.
+fn median_of(values: &[i64]) -> i64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    median_of_sorted(&sorted)
 }
 
 /// The middle of a sorted, non-empty slice; the mean of the two middles when
@@ -589,44 +614,60 @@ mod tests {
     }
 
     #[test]
-    fn three_falling_weeks_are_a_decline_and_two_are_not() {
-        // The boundary in both directions. Two weeks is one bad week followed
-        // by an ordinary one; firing on that would flag everybody who took a
-        // Friday off, and a column that cries wolf gets ignored.
-        let two = person_with(&[40.0, 40.0, 40.0, 40.0, 38.0, 36.0]);
-        assert_eq!(two.declining(), None, "two falling weeks are not a run");
-
-        let three = person_with(&[40.0, 40.0, 40.0, 38.0, 36.0, 34.0]);
-        let (weeks, from, to) = three.declining().expect("three falling weeks are a run");
-        assert_eq!(weeks, 3);
-        assert_eq!(from, 40 * 3600, "the week the slide started from");
-        assert_eq!(to, 34 * 3600, "where it stands now");
+    fn a_decline_compares_levels_rather_than_counting_steps() {
+        // Six weeks: a settled level, then a clearly lower one. The figures
+        // reported are the two medians, so the screen can say "40 h a week
+        // down to 30 h" without quoting a week nobody worked.
+        let slid = person_with(&[40.0, 40.0, 40.0, 30.0, 30.0, 30.0]);
+        let (weeks, before, now) = slid.declining().expect("a quarter off the level is a decline");
+        assert_eq!(weeks, DECLINING_WEEKS);
+        assert_eq!(before, 40 * 3600);
+        assert_eq!(now, 30 * 3600);
     }
 
     #[test]
-    fn a_recovery_ends_the_run() {
-        // Falling, falling, falling, then back up. The run is over, and a
-        // signal about it would be about the past rather than about now.
-        let recovered = person_with(&[40.0, 38.0, 36.0, 34.0, 39.0]);
+    fn an_uneven_slide_is_still_a_slide() {
+        // The shape that made this a levels comparison in the first place: the
+        // demo's fading person, as the seed really produces him. Never three
+        // falls in a row - one ordinary week in the middle resets a run - and
+        // unmistakably a decline to anyone looking at the chart.
+        let lukas = person_with(&[35.0, 33.0, 24.8, 27.0, 20.9, 23.1, 22.1]);
+        let (_, before, now) = lukas.declining().expect("an uneven slide must not go unreported");
+        assert!(before > now, "the direction has to survive the medians: {before} -> {now}");
+    }
+
+    #[test]
+    fn ordinary_variation_is_not_a_decline() {
+        // Weeks wobble. A signal that fired on this would fire on everybody,
+        // and a list everybody is on is not read.
+        let wobbly = person_with(&[40.0, 37.0, 41.0, 39.0, 38.0, 40.0]);
+        assert_eq!(wobbly.declining(), None);
+    }
+
+    #[test]
+    fn a_recovery_is_not_reported_as_a_decline() {
+        // Down and then back to the old level: nothing to point at now, which
+        // is the question this screen answers.
+        let recovered = person_with(&[40.0, 30.0, 30.0, 40.0, 40.0, 41.0]);
         assert_eq!(recovered.declining(), None);
     }
 
     #[test]
-    fn an_equal_week_is_not_a_fall() {
-        // Exactly the same hours twice is stability, and `<` rather than `<=`
-        // is what says so. A run that counted equality would call a flat month
-        // a decline.
-        let flat = person_with(&[40.0, 38.0, 36.0, 36.0]);
-        assert_eq!(flat.declining(), None);
+    fn too_little_history_cannot_show_a_decline() {
+        // Five weeks is not two three-week windows, so there is no "before" to
+        // have fallen from. Answering anything here would be an opinion about
+        // somebody who just arrived.
+        let short = person_with(&[40.0, 40.0, 40.0, 20.0, 20.0]);
+        assert_eq!(short.declining(), None);
     }
 
     #[test]
     fn a_missing_week_is_a_gap_not_a_crash() {
-        // A week off in the middle. Treating the absence as a zero would
-        // invent a crash to nothing and a full recovery, neither of which
-        // happened - and would report a decline that is really a holiday.
-        let holiday = person_with(&[40.0, 40.0, 0.0, 40.0, 40.0]);
-        assert_eq!(holiday.declining(), None, "the gap must not read as two falls");
+        // A fortnight off in the middle of a flat stretch. Reading the absent
+        // weeks as zeroes would drag the recent median to nothing and report a
+        // holiday as a collapse.
+        let holiday = person_with(&[40.0, 40.0, 40.0, 0.0, 0.0, 40.0, 40.0, 40.0]);
+        assert_eq!(holiday.declining(), None, "a gap is missing data, not falling hours");
     }
 
     #[test]
@@ -639,17 +680,12 @@ mod tests {
         let filing_late = person_with_open(&[40.0, 40.0, 40.0, 40.0, 0.0]);
         assert_eq!(filing_late.declining(), None, "an unfiled week is not a decline");
 
-        // And the case that decides the filter: a week of unfiled days sitting
-        // *inside* a genuine slide. Counted as a zero it breaks the run - the
-        // week after it is "higher than nothing" - and a real three-week
-        // decline goes unreported because one week had not been closed yet.
-        let interrupted = person_with_open(&[45.0, 42.0, 39.0, 0.0, 36.0, 33.0]);
-        let (weeks, from, to) = interrupted
-            .declining()
-            .expect("an unfiled week in the middle must not hide the slide around it");
-        assert_eq!(weeks, 4, "the run spans the unfiled week rather than stopping at it");
-        assert_eq!(from, (45.0 * 3600.0) as i64);
-        assert_eq!(to, (33.0 * 3600.0) as i64);
+        // And the case that decides the filter: a week of unfiled days among
+        // the recent ones. Counted as a zero it drags the recent median to the
+        // floor and reports a collapse that is really one week filed late -
+        // a signal about the agent, dressed up as one about the person.
+        let interrupted = person_with_open(&[40.0, 40.0, 40.0, 39.0, 0.0, 41.0]);
+        assert_eq!(interrupted.declining(), None, "an unfiled week must not be read as a week of no work");
 
         // And it must not drag the median down either, or every ordinary week
         // after it would start looking unusually long.

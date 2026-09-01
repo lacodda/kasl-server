@@ -147,9 +147,10 @@ async fn falling_hours_are_reported_with_the_figures_behind_them() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
 
-    // Six weeks: three steady, then three falling. The last complete week is
-    // week 1, and the run has to be found there rather than in the middle.
-    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 7), (2, 6), (1, 5)] {
+    // Six weeks: a settled level, then a lower one. The comparison is between
+    // the last three weeks and the three before them, so both sides need real
+    // weeks in them.
+    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 5), (2, 5), (1, 5)] {
         upload_week(&server, "inside-token", weeks_ago, hours).await;
     }
 
@@ -167,6 +168,33 @@ async fn falling_hours_are_reported_with_the_figures_behind_them() {
     // rather than that something is wrong: 40 h a week down to 25 h.
     assert_eq!(declining["from_seconds"], 5 * 8 * 3600, "{body}");
     assert_eq!(declining["to_seconds"], 5 * 5 * 3600, "{body}");
+}
+
+#[tokio::test]
+async fn an_uneven_slide_is_reported_the_way_a_real_one_looks() {
+    let Some(server) = TestServer::start().await else { return };
+    let team = team(&server).await;
+
+    // The shape a live run against the demo actually produced: falling, but
+    // never three weeks in a row. An earlier version of this signal counted
+    // consecutive falls and stayed silent here - on exactly the person the
+    // milestone exists to point at.
+    for (weeks_ago, hours) in [(6, 9), (5, 8), (4, 6), (3, 7), (2, 5), (1, 5)] {
+        upload_week(&server, "inside-token", weeks_ago, hours).await;
+    }
+
+    let (status, body) = server.get_with_cookie("/api/v1/team/signals", team.admin.as_deref()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let found = signals_for(&body, "inside");
+    let declining = found
+        .iter()
+        .find(|signal| signal["kind"] == "declining")
+        .unwrap_or_else(|| panic!("an uneven slide must not go unreported: {body}"));
+
+    let from = declining["from_seconds"].as_i64().expect("a figure");
+    let to = declining["to_seconds"].as_i64().expect("a figure");
+    assert!(from > to, "the direction has to survive the medians: {from} -> {to}");
 }
 
 #[tokio::test]
@@ -195,9 +223,9 @@ async fn a_gap_in_the_weeks_is_not_a_decline() {
     let team = team(&server).await;
 
     // A fortnight off in the middle of an otherwise flat stretch. Reading the
-    // absent weeks as zeroes would invent a crash and a recovery, and report
-    // a holiday as a problem.
-    for (weeks_ago, hours) in [(6, 8), (5, 8), (2, 8), (1, 8)] {
+    // absent weeks as zeroes would drag the recent level to the floor and
+    // report a holiday as a collapse.
+    for (weeks_ago, hours) in [(8, 8), (7, 8), (6, 8), (5, 8), (2, 8), (1, 8)] {
         upload_week(&server, "inside-token", weeks_ago, hours).await;
     }
 
@@ -330,7 +358,7 @@ async fn the_trend_carries_the_signals_about_that_person() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
 
-    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 7), (2, 6), (1, 5)] {
+    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 5), (2, 5), (1, 5)] {
         upload_week(&server, "inside-token", weeks_ago, hours).await;
     }
 
@@ -358,7 +386,7 @@ async fn a_manager_sees_their_department_and_an_administrator_everyone() {
 
     // Both people slide, but only one is the manager's to know about.
     for token in ["inside-token", "outside-token"] {
-        for (weeks_ago, hours) in [(4, 8), (3, 7), (2, 6), (1, 5)] {
+        for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 5), (2, 5), (1, 5)] {
             upload_week(&server, token, weeks_ago, hours).await;
         }
     }
@@ -428,7 +456,7 @@ async fn silence_outranks_a_slide_in_the_listing() {
     // One person sliding, another gone quiet. A manager reads top-down, and an
     // agent that stopped reporting means the other numbers about that person
     // are not to be trusted either.
-    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 7), (2, 6), (1, 5)] {
+    for (weeks_ago, hours) in [(6, 8), (5, 8), (4, 8), (3, 5), (2, 5), (1, 5)] {
         upload_week(&server, "inside-token", weeks_ago, hours).await;
     }
     for weeks_ago in 4..=7 {
