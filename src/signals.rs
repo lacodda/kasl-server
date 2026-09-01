@@ -296,7 +296,7 @@ impl Person {
             found.push(self.signal(SignalKind::NoData, |signal| signal.days_quiet = Some(days_quiet)));
         }
 
-        if let Some((week_seconds, median)) = self.unusual_week() {
+        if let Some((week_seconds, median)) = self.unusual_week(to) {
             found.push(self.signal(SignalKind::UnusualWeek, |signal| {
                 signal.to_seconds = Some(week_seconds);
                 signal.median_seconds = Some(median);
@@ -380,12 +380,20 @@ impl Person {
     }
 
     /// The last complete week, when it is far from this person's own median.
-    fn unusual_week(&self) -> Option<(i64, i64)> {
+    fn unusual_week(&self, to: NaiveDate) -> Option<(i64, i64)> {
         let median = self.median()?;
-        let last = self.weeks.last()?;
 
-        // An empty last week is silence, and `no_data` is the signal for that.
-        // Calling it "unusual" as well would report one fact twice.
+        // The last week of the *window*, not the last week with data in it.
+        // `weeks` holds only the weeks somebody worked, so its final entry can
+        // be a fortnight old - and calling that "last week" would describe a
+        // week nobody is thinking about. A live run found this: somebody who
+        // stopped reporting was told their last week was short, when the week
+        // in question had ended thirteen days earlier.
+        let last_monday = to - chrono::Duration::days(6);
+        let last = self.weeks.iter().find(|week| week.week_start == last_monday)?;
+
+        // A week with nothing in it is silence, and `no_data` is the signal
+        // for that. Calling it "unusual" too would report one fact twice.
         if last.worked_seconds == 0 {
             return None;
         }
@@ -722,16 +730,16 @@ mod tests {
         // worth a look, and flagging only the low one would make the signal an
         // accusation rather than a question.
         let low = person_with(&[40.0, 40.0, 40.0, 40.0, 20.0]);
-        let (week, median) = low.unusual_week().expect("half the usual week is unusual");
+        let (week, median) = low.unusual_week(window_end()).expect("half the usual week is unusual");
         assert_eq!(week, 20 * 3600);
         assert_eq!(median, 40 * 3600);
 
         let high = person_with(&[40.0, 40.0, 40.0, 40.0, 60.0]);
-        assert!(high.unusual_week().is_some(), "a week half again as long is unusual too");
+        assert!(high.unusual_week(window_end()).is_some(), "a week half again as long is unusual too");
 
         // A four-day week is about a fifth down and is nobody's business.
         let ordinary = person_with(&[40.0, 40.0, 40.0, 40.0, 32.0]);
-        assert_eq!(ordinary.unusual_week(), None);
+        assert_eq!(ordinary.unusual_week(window_end()), None);
     }
 
     #[test]
@@ -740,7 +748,7 @@ mod tests {
         // from it would be an opinion about a new hire.
         let new_hire = person_with(&[40.0, 40.0, 10.0]);
         assert_eq!(new_hire.median(), None);
-        assert_eq!(new_hire.unusual_week(), None, "no median, no comparison");
+        assert_eq!(new_hire.unusual_week(window_end()), None, "no median, no comparison");
     }
 
     #[test]
@@ -751,9 +759,38 @@ mod tests {
         let mut stopped = person_with(&[40.0, 40.0, 40.0, 40.0, 0.0]);
         stopped.last_day = Some(window_end() - chrono::Duration::days(11));
 
-        assert_eq!(stopped.unusual_week(), None);
+        assert_eq!(stopped.unusual_week(window_end()), None);
         let kinds: Vec<SignalKind> = stopped.signals(window_end()).into_iter().map(|signal| signal.kind).collect();
         assert_eq!(kinds, vec![SignalKind::NoData], "one fact, one signal");
+    }
+
+    #[test]
+    fn last_week_means_the_last_week_of_the_window() {
+        // Found by a live run, not by any of the tests above. `weeks` holds
+        // only the weeks somebody worked, so its final entry can be a
+        // fortnight old - and describing that as "last week" tells a manager
+        // about a week nobody is thinking about, alongside a `no_data` signal
+        // that says the person has been quiet since before it.
+        // A short week, and then nothing at all - the shape the demo's silent
+        // person really has. `person_with` drops the trailing zero the way the
+        // database drops a week nobody worked, so the newest week on record is
+        // the short one while the window has moved on past it.
+        let stopped = person_with(&[40.0, 40.0, 40.0, 40.0, 7.0, 0.0]);
+        assert_eq!(
+            stopped.weeks.last().map(|week| week.worked_seconds),
+            Some(7 * 3600),
+            "the fixture must leave the short week as the newest one on record,              or this test proves nothing"
+        );
+        assert!(
+            stopped.weeks.iter().all(|week| week.week_start < date(LAST_MONDAY)),
+            "and the window's own last week must be missing from the data"
+        );
+
+        assert_eq!(
+            stopped.unusual_week(window_end()),
+            None,
+            "a week that is not last week must not be reported as last week"
+        );
     }
 
     #[test]
