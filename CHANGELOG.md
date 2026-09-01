@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.18.0] - 2026-09-01
+
+### Documentation
+- Describe the month grid and cut 0.18.0
+
+### Features
+- Answer the team month a day at a time
+- Draw the month as a grid
+
+
 ## [0.17.1] - 2026-08-30
 
 ### Bug Fixes
