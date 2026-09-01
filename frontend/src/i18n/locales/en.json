@@ -87,6 +87,21 @@
       "weekend": "Weekend"
     }
   },
+  "signals": {
+    "title": "Worth a look",
+    "nothing": "Nothing stands out across {{count}} people this quarter.",
+    "declining": "Hours fell over {{weeks}} weeks - {{from}} h a week down to {{to}} h",
+    "noData": "No days recorded for {{days}} days",
+    "unusualLow": "Last week was {{week}} h, well below their usual {{median}} h",
+    "unusualHigh": "Last week was {{week}} h, well above their usual {{median}} h"
+  },
+  "trend": {
+    "title": "The last {{count}} weeks",
+    "median": "usual week {{hours}} h",
+    "nothing": "No weeks recorded in this window.",
+    "weekWorked": "Week of {{week}} - {{hours}}",
+    "emptyWeek": "Week of {{week}} - nothing recorded"
+  },
   "privacy": {
     "title": "What this server stores about you",
     "level": "Detail level",

@@ -169,6 +169,59 @@ export interface HeatmapResponse {
   busiest_seconds: number | null
 }
 
+/**
+ * What the server noticed about one person.
+ *
+ * Always about that person against their own history - never against a
+ * colleague and never against a norm, which this server does not have.
+ */
+export type SignalKind = 'declining' | 'no_data' | 'unusual_week'
+
+export interface Signal {
+  user_id: string
+  display_name: string
+  department: string | null
+  kind: SignalKind
+  /** Weeks the slide has been running. `declining` only. */
+  weeks: number | null
+  /** Where the slide started, in seconds of a week. `declining` only. */
+  from_seconds: number | null
+  /** Where it stands now. `declining` and `unusual_week`. */
+  to_seconds: number | null
+  /** The person's own median week - what `unusual_week` is unusual against. */
+  median_seconds: number | null
+  /** Days since the last recorded day. `no_data` only. */
+  days_quiet: number | null
+}
+
+export interface SignalsResponse {
+  from: string
+  to: string
+  signals: Signal[]
+  /**
+   * People examined. "Nothing found among twelve" and "nothing found because
+   * nobody was looked at" are different answers, and a screen that cannot tell
+   * them apart shows the reassuring one.
+   */
+  people: number
+}
+
+/** One week on the trend chart. */
+export interface TrendWeek {
+  week_start: string
+  worked_seconds: number
+  /** Zero says the silence is real rather than a week of very short days. */
+  days_recorded: number
+}
+
+export interface TrendResponse {
+  user_id: string
+  /** Every complete week in the window, empty ones included. */
+  weeks: TrendWeek[]
+  median_seconds: number | null
+  signals: Signal[]
+}
+
 /** A request the server refused, carrying the status so a caller can branch. */
 export class ApiError extends Error {
   readonly status: number
@@ -304,6 +357,16 @@ export const api = {
    * to a question they did not ask.
    */
   teamHeatmap: (month: string) => request<HeatmapResponse>(`/team/heatmap?month=${month}`),
+
+  /**
+   * What the server thinks is worth a look. Asked once with the dashboard
+   * rather than polled: it is about whole weeks, and whole weeks do not change
+   * while somebody has the page open.
+   */
+  teamSignals: () => request<SignalsResponse>('/team/signals'),
+
+  /** One person's twelve-week shape, and the signals about them. */
+  userTrend: (id: string) => request<TrendResponse>(`/users/${id}/trend`),
 
   /**
    * One person's days, for a manager who may see them.

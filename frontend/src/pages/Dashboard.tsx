@@ -8,6 +8,8 @@ import { statusTone, useLiveTeam, type LiveFeed } from '@/lib/live'
 import { Panel } from '@/components/ui/Panel'
 import { Button } from '@/components/ui/Button'
 import { WeekView } from '@/pages/MyDay'
+import { Signals } from '@/components/Signals'
+import { Trend } from '@/components/Trend'
 
 /**
  * The manager's dashboard: the team over a week, a row per person.
@@ -85,6 +87,11 @@ export function Dashboard() {
 
       {failed && <p className="text-sm text-bad">{t('common.error')}</p>}
       {current === null && <p className="text-sm text-dim">{t('common.loading')}</p>}
+
+      {/* Above the table and outside the week's loading state: the signals are
+          about whole weeks and do not change when the manager pages back
+          through them, so they must not blink on every arrow press. */}
+      <Signals />
 
       {answer && (
         <>
@@ -314,6 +321,9 @@ export function PersonWeek() {
         <ArrowLeft className="size-3.5" />
         {t('team.backToTeam')}
       </Link>
+      {/* The chart comes first: this page is usually arrived at from a signal,
+          and the twelve weeks are what the signal was about. */}
+      <Trend userId={id} />
       <WeekView title={name ?? t('team.person')} load={load} />
     </div>
   )
