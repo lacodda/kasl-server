@@ -148,3 +148,33 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * The heatmap's five shades of the accent.
+ *
+ * Opacity of one colour rather than five hues: the grid says "more" and
+ * "less", and a scale that changed hue would read as five different kinds of
+ * day. Five steps rather than a gradient because a reader has to be able to
+ * match a square to the legend beside it.
+ *
+ * Written as classes rather than an inline `opacity` so the grid is one
+ * paint-time value per square and the legend can wear the identical class -
+ * the two cannot drift apart. `color-mix` against the surface, not alpha:
+ * a translucent square would pick up whatever it is laid over, and the row's
+ * hover background would shift every shade under the cursor.
+ */
+.fill-1 {
+  background: color-mix(in srgb, var(--accent) 20%, var(--softer));
+}
+.fill-2 {
+  background: color-mix(in srgb, var(--accent) 40%, var(--softer));
+}
+.fill-3 {
+  background: color-mix(in srgb, var(--accent) 60%, var(--softer));
+}
+.fill-4 {
+  background: color-mix(in srgb, var(--accent) 80%, var(--softer));
+}
+.fill-5 {
+  background: var(--accent);
+}

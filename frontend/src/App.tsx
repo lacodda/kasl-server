@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { Dashboard, PersonWeek } from '@/pages/Dashboard'
+import { Heatmap } from '@/pages/Heatmap'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Privacy } from '@/pages/Privacy'
@@ -43,6 +44,7 @@ export function App() {
           {/* Guarded on the server too - these routes answer 403 to an
               employee. Hiding them here is for tidiness, not for safety. */}
           {managesPeople && <Route path="/team" element={<Dashboard />} />}
+          {managesPeople && <Route path="/month" element={<Heatmap />} />}
           {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
           <Route path="/privacy" element={<Privacy />} />
           {/* An unknown path lands on the person's own week rather than on a
@@ -86,6 +88,7 @@ function Header({ managesPeople, version }: { managesPeople: boolean; version: s
         <nav className="ml-4 flex items-center gap-1">
           <Tab to="/day">{t('nav.myDay')}</Tab>
           {managesPeople && <Tab to="/team">{t('nav.team')}</Tab>}
+          {managesPeople && <Tab to="/month">{t('nav.heatmap')}</Tab>}
           <Tab to="/privacy">{t('nav.privacy')}</Tab>
         </nav>
       </div>

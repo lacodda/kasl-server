@@ -13,6 +13,7 @@
   "nav": {
     "myDay": "My day",
     "team": "Team",
+    "heatmap": "The month",
     "privacy": "What is stored about me",
     "signOut": "Sign out"
   },
@@ -61,6 +62,30 @@
     "backToTeam": "Back to the team",
     "person": "Their week",
     "live": { "working": "Working", "paused": "On a break", "idle": "Not in a day", "offline": "Offline" }
+  },
+  "heatmap": {
+    "title": "The month",
+    "thisMonth": "This month",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "person": "Person",
+    "total": "Total",
+    "noData": "no data",
+    "caption": "Hours worked by each person on each day of {{month}}.",
+    "cell": {
+      "worked": "{{date}} - {{hours}}",
+      "open": "{{date}} - day still running",
+      "none": "{{date}} - nothing recorded",
+      "weekend": "{{date}} - weekend, nothing recorded"
+    },
+    "legend": {
+      "less": "Less",
+      "more": "More",
+      "busiest": "darkest = {{hours}}, the busiest day here",
+      "none": "Nothing recorded",
+      "open": "Day still running",
+      "weekend": "Weekend"
+    }
   },
   "privacy": {
     "title": "What this server stores about you",

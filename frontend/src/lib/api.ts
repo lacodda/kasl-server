@@ -136,6 +136,39 @@ export interface LiveTeamResponse {
   stale_after_seconds: number
 }
 
+/** One day of one person's month, as the heatmap draws it. */
+export interface HeatmapCell {
+  date: string
+  /**
+   * `null` for a day still open - it has no total yet. A cell that is absent
+   * from the row is different again: nothing was recorded on that date, and
+   * the grid must not draw the two the same way.
+   */
+  worked_seconds: number | null
+  open: boolean
+}
+
+/** One person's month. */
+export interface HeatmapRow {
+  user_id: string
+  display_name: string
+  department: string | null
+  /** Only the dates with a workday, ascending. Empty is a real answer. */
+  days: HeatmapCell[]
+  /** The longest finished day in this row; `null` when there is none. */
+  busiest_seconds: number | null
+  worked_seconds: number
+}
+
+export interface HeatmapResponse {
+  month: string
+  from: string
+  to: string
+  rows: HeatmapRow[]
+  /** The busiest day anywhere in the grid - the scale every cell shares. */
+  busiest_seconds: number | null
+}
+
 /** A request the server refused, carrying the status so a caller can branch. */
 export class ApiError extends Error {
   readonly status: number
@@ -262,6 +295,15 @@ export const api = {
    * not change.
    */
   teamLive: () => request<LiveTeamResponse>('/team/live'),
+
+  /**
+   * The team's month, a cell per person per recorded day.
+   *
+   * `month` is `YYYY-MM`. The server refuses anything else rather than
+   * guessing - a caller who sent a date would otherwise get a plausible answer
+   * to a question they did not ask.
+   */
+  teamHeatmap: (month: string) => request<HeatmapResponse>(`/team/heatmap?month=${month}`),
 
   /**
    * One person's days, for a manager who may see them.
