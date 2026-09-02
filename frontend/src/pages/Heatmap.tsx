@@ -5,8 +5,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, type HeatmapResponse, type HeatmapRow } from '@/lib/api'
 import { duration } from '@/lib/day'
 import { currentMonth, dayOfMonth, monthDates, shiftMonth, squares, step, type Square } from '@/lib/heatmap'
-import { Panel } from '@/components/ui/Panel'
-import { Button } from '@/components/ui/Button'
+import { Panel } from '@/components/ui/panel'
+import { Button } from '@/components/ui/button'
 
 /**
  * The team's month as a grid: a row per person, a square per day.
@@ -58,13 +58,13 @@ export function Heatmap() {
           <p className="mt-1 font-mono text-xs text-faint tabular">{month}</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="icon" size="iconMd" aria-label={t('heatmap.previousMonth')} onClick={() => goto(-1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('heatmap.previousMonth')} onClick={() => goto(-1)}>
             <ChevronLeft />
           </Button>
           <Button size="sm" onClick={() => setMonth(currentMonth())}>
             {t('heatmap.thisMonth')}
           </Button>
-          <Button variant="icon" size="iconMd" aria-label={t('heatmap.nextMonth')} onClick={() => goto(1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('heatmap.nextMonth')} onClick={() => goto(1)}>
             <ChevronRight />
           </Button>
         </div>

@@ -4,7 +4,7 @@ import i18n from '@/i18n'
 import { api, type TrendResponse } from '@/lib/api'
 import { duration } from '@/lib/day'
 import { bars, hours, signalPhrase, signalTone, weekLabel } from '@/lib/signals'
-import { Panel } from '@/components/ui/Panel'
+import { Panel } from '@/components/ui/panel'
 
 /**
  * One person's twelve weeks, above their week of days.

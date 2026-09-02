@@ -8,7 +8,7 @@ import { Heatmap } from '@/pages/Heatmap'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Privacy } from '@/pages/Privacy'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/button'
 
 export function App() {
   const { t } = useTranslation()

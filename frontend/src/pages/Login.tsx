@@ -2,9 +2,9 @@ import { useEffect, useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api, type DemoAccounts } from '@/lib/api'
 import { useSession } from '@/lib/session'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Panel } from '@/components/ui/Panel'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Panel } from '@/components/ui/panel'
 
 export function Login({ demo = false }: { demo?: boolean }) {
   const { t } = useTranslation()
@@ -91,7 +91,7 @@ export function Login({ demo = false }: { demo?: boolean }) {
             </p>
           )}
 
-          <Button type="submit" variant="primary" size="lg" className="w-full" disabled={submitting}>
+          <Button type="submit" variant="primary" className="h-10 w-full" disabled={submitting}>
             {submitting ? t('login.submitting') : t('login.submit')}
           </Button>
         </form>

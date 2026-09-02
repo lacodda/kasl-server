@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight, Coffee, Lock } from 'lucide-react'
 import { api, type Day, type DaysResponse, type NotStored } from '@/lib/api'
 import { bands, clock, duration, isoDate, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
-import { Panel } from '@/components/ui/Panel'
-import { Button } from '@/components/ui/Button'
+import { Panel } from '@/components/ui/panel'
+import { Button } from '@/components/ui/button'
 
 /**
  * The employee's own week: what the server holds about them, in their words.
@@ -89,13 +89,13 @@ export function WeekView({
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="icon" size="iconMd" aria-label={t('myDay.previousWeek')} onClick={() => goto(-1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('myDay.previousWeek')} onClick={() => goto(-1)}>
             <ChevronLeft />
           </Button>
           <Button size="sm" onClick={() => setMonday(startOfWeek(new Date()))}>
             {t('myDay.thisWeek')}
           </Button>
-          <Button variant="icon" size="iconMd" aria-label={t('myDay.nextWeek')} onClick={() => goto(1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('myDay.nextWeek')} onClick={() => goto(1)}>
             <ChevronRight />
           </Button>
         </div>

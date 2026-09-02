@@ -5,8 +5,8 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Circle, CircleDot, TriangleAlert 
 import { api, type LiveMember, type Member, type TeamResponse } from '@/lib/api'
 import { duration, isoDate, shiftWeeks, since, startOfWeek, weekDates } from '@/lib/day'
 import { statusTone, useLiveTeam, type LiveFeed } from '@/lib/live'
-import { Panel } from '@/components/ui/Panel'
-import { Button } from '@/components/ui/Button'
+import { Panel } from '@/components/ui/panel'
+import { Button } from '@/components/ui/button'
 import { WeekView } from '@/pages/MyDay'
 import { Signals } from '@/components/Signals'
 import { Trend } from '@/components/Trend'
@@ -73,13 +73,13 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="icon" size="iconMd" aria-label={t('myDay.previousWeek')} onClick={() => goto(-1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('myDay.previousWeek')} onClick={() => goto(-1)}>
             <ChevronLeft />
           </Button>
           <Button size="sm" onClick={() => setMonday(startOfWeek(new Date()))}>
             {t('myDay.thisWeek')}
           </Button>
-          <Button variant="icon" size="iconMd" aria-label={t('myDay.nextWeek')} onClick={() => goto(1)}>
+          <Button variant="icon" size="icon-md" aria-label={t('myDay.nextWeek')} onClick={() => goto(1)}>
             <ChevronRight />
           </Button>
         </div>

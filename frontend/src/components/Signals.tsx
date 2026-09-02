@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react'
 import { api, type Signal, type SignalsResponse } from '@/lib/api'
 import { signalPhrase, signalTone } from '@/lib/signals'
-import { Panel } from '@/components/ui/Panel'
+import { Panel } from '@/components/ui/panel'
 
 /**
  * What the server thinks is worth a look, above the team table.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type PrivacyManifest } from '@/lib/api'
-import { Panel } from '@/components/ui/Panel'
+import { Panel } from '@/components/ui/panel'
 
 /**
  * The privacy manifest, for the person it is about.
