@@ -72,3 +72,8 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 uuid = { version = "1.24.1", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
 rusqlite = { version = "0.38.0", features = ["bundled"] }
+
+# Line-table debug info keeps backtraces readable while cutting the .pdb weight
+# that dominates target/debug. Full debug info is a one-line revert when needed.
+[profile.dev]
+debug = 1
