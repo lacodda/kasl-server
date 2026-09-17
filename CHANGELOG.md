@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.20.0] - 2026-09-17
+
+### Features
+- Make every screen work on a phone
+
+### Bug Fixes
+- Put the median line where the median is
+- Take the heatmap scale from the theme, not from the accent
+
+### Refactoring
+- Leave the geometry to the components that draw it
+
+### Dependencies
+- Take dowel 0.24 and its chart primitives
+
+### Documentation
+- Cut 0.20.0
+
 ## [0.19.2] - 2026-09-09
 
 ### Dependencies

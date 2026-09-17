@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-09-09T23:01:07.420166Z  INFO kasl_server: kasl-server listening version="0.19.2" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-09-17T13:30:12.118204Z  INFO kasl_server: kasl-server listening version="0.20.0" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.19.2"}
+{"database":"ok","demo":false,"status":"ok","version":"0.20.0"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.19.2"}
+{"database":"ok","demo":true,"status":"ok","version":"0.20.0"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen
@@ -599,7 +599,11 @@ thinks are worth a look; clicking a row opens that person's twelve-week chart
 and their week, in the same component the personal page uses. **The month** is the same team as a
 grid - a square per person per day, shaded by hours, with weekends marked from
 the calendar and nothing recorded drawn as an empty square rather than as a
-worked day of zero. **What is stored about me** renders the
+worked day of zero. Its five shades come from the design system rather than
+from this product's own gold: mixed from the accent, the faintest step cleared
+the empty square by 1.49:1, which made "barely worked" and "nobody reported"
+the same square to anyone scanning the grid - and the empty square is the one
+a manager is scanning for. The system's ramp clears it by 2.1:1. **My data** renders the
 manifest from what the server actually enforces (ADR 0011) rather than
 describing it again in the page, so the two cannot disagree.
 
@@ -613,6 +617,36 @@ claim about the day that the server did not keep the evidence for.
 
 The version in the header comes from `/health` - the server's, not the
 bundle's. One product, one number.
+
+### On a phone
+
+Every screen works at 320px, and none of them is a cut-down version of itself:
+a manager reading the dashboard on the way to work sees the same rows, the same
+bars and the same signals.
+
+What changes is the arrangement. The header's tabs move to a bar along the
+bottom, where the thumb already is - a bar rather than a menu behind a button,
+because three or four destinations fit across a phone as they are and a menu
+would bring state, a focus trap and a way to be left open across a route
+change. Both navigations are drawn from one list, so a screen cannot appear in
+one and not the other.
+
+Rows stack: on the personal week a day's name and its total share the top line
+and the timeline takes the full width beneath them, because the desktop's three
+columns would leave the bar about eighty pixels wide, which is a smudge rather
+than a drawing of a day. The team's rows do the same. The month keeps its grid
+and scrolls sideways inside its own box, with the names frozen at the left -
+a month of squares is wider than a phone at any arrangement, and the alternative
+is a shape that is no longer a month.
+
+The trend chart drops the per-column week labels, which do not fit - twelve
+columns is eighteen pixels each, and `Jun 22` needs twenty-eight - and names
+the span under the chart instead. Every column still says its own week and
+hours on touch.
+
+The sign-in fields are 16px on a phone. Anything smaller and iOS Safari zooms
+the page in on focus and does not zoom back out, which leaves someone signing
+in at 130% with the password field off the side of the screen.
 
 ### Working on it
 
@@ -843,7 +877,7 @@ database seeds a fictional team — see [The demo](#the-demo).
 
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
-production (`KASL_VERSION=0.19.2`); `latest` is for a first look.
+production (`KASL_VERSION=0.20.0`); `latest` is for a first look.
 
 Two more things before this holds a team's hours:
 
