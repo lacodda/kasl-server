@@ -41,7 +41,7 @@ export function Privacy() {
         <p className="mt-2 text-sm text-dim">{manifest.summary}</p>
       </div>
 
-      <Panel className="p-5">
+      <Panel className="p-4 sm:p-5">
         <div className="flex items-baseline justify-between gap-4">
           <span className="text-xs font-medium text-dim">{t('privacy.level')}</span>
           <span className="rounded-[9px] bg-accent-soft px-2.5 py-1 font-mono text-xs text-accent-2">
@@ -99,7 +99,7 @@ export function Privacy() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Panel className="p-5">
+    <Panel className="p-4 sm:p-5">
       <h2 className="text-xs font-medium tracking-wide text-dim uppercase">{title}</h2>
       <div className="mt-3">{children}</div>
     </Panel>

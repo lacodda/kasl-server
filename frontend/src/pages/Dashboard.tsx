@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, ChevronLeft, ChevronRight, Circle, CircleDot, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, Circle, CircleDot, TriangleAlert } from 'lucide-react'
 import { api, type LiveMember, type Member, type TeamResponse } from '@/lib/api'
 import { duration, isoDate, shiftWeeks, since, startOfWeek, weekDates } from '@/lib/day'
 import { statusTone, useLiveTeam, type LiveFeed } from '@/lib/live'
 import { Panel } from '@/components/ui/panel'
-import { Button } from '@/components/ui/button'
+import { StatRow, StatTile } from '@/components/ui/stat-tile'
+import { Track } from '@/components/ui/track'
+import { PeriodPicker } from '@/components/PeriodPicker'
 import { WeekView } from '@/pages/MyDay'
 import { Signals } from '@/components/Signals'
 import { Trend } from '@/components/Trend'
@@ -65,24 +67,22 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <header className="flex items-center justify-between gap-4">
-        <div>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold">{t('team.title')}</h1>
           <p className="mt-1 font-mono text-xs text-faint tabular">
             {from} — {to}
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Button variant="icon" size="icon-md" aria-label={t('myDay.previousWeek')} onClick={() => goto(-1)}>
-            <ChevronLeft />
-          </Button>
-          <Button size="sm" onClick={() => setMonday(startOfWeek(new Date()))}>
-            {t('myDay.thisWeek')}
-          </Button>
-          <Button variant="icon" size="icon-md" aria-label={t('myDay.nextWeek')} onClick={() => goto(1)}>
-            <ChevronRight />
-          </Button>
-        </div>
+        <PeriodPicker
+          previousLabel={t('myDay.previousWeek')}
+          nextLabel={t('myDay.nextWeek')}
+          onPrevious={() => goto(-1)}
+          onNext={() => goto(1)}
+          onNow={() => setMonday(startOfWeek(new Date()))}
+        >
+          {t('myDay.thisWeek')}
+        </PeriodPicker>
       </header>
 
       {failed && <p className="text-sm text-bad">{t('common.error')}</p>}
@@ -118,22 +118,31 @@ function TeamTotals({ members, live }: { members: Member[]; live: LiveFeed }) {
   const working = members.filter((member) => live.byUser.get(member.id)?.status === 'working').length
 
   return (
-    <Panel className="flex flex-wrap items-baseline gap-x-8 gap-y-3 p-5">
-      <Figure label={t('team.workedTotal')} value={duration(worked)} accent />
-      <Figure label={t('team.people')} value={String(members.length)} />
-      {live.loaded && <Figure label={t('team.workingNow')} value={String(working)} />}
-      <Figure label={t('team.dayOpen')} value={String(open)} />
-      {silent > 0 && <Figure label={t('team.silent')} value={String(silent)} warn />}
+    <Panel className="p-4 sm:p-5">
+      <StatRow>
+        <StatTile label={t('team.workedTotal')} value={duration(worked)} tone="accent" />
+        <StatTile label={t('team.people')} value={String(members.length)} />
+        {live.loaded && <StatTile label={t('team.workingNow')} value={String(working)} />}
+        <StatTile label={t('team.dayOpen')} value={String(open)} />
+        {silent > 0 && (
+          <StatTile
+            label={t('team.silent')}
+            // The warning tone is not carrying this on its own. This product's
+            // accent is gold, and gold against the warning colour measures ΔE
+            // 3.7 - one colour, to a reader glancing at a row where the
+            // accented total sits three tiles away. The mark says which figure
+            // is the problem without depending on telling two golds apart.
+            value={
+              <span className="inline-flex items-center gap-1.5">
+                <TriangleAlert className="size-4 shrink-0" />
+                {silent}
+              </span>
+            }
+            tone="warn"
+          />
+        )}
+      </StatRow>
     </Panel>
-  )
-}
-
-function Figure({ label, value, accent = false, warn = false }: { label: string; value: string; accent?: boolean; warn?: boolean }) {
-  return (
-    <div>
-      <div className="text-xs font-medium text-dim">{label}</div>
-      <div className={`mt-1 font-mono text-lg tabular ${accent ? 'text-accent-2' : ''}${warn ? 'text-warn' : ''}`}>{value}</div>
-    </div>
   )
 }
 
@@ -165,11 +174,27 @@ function MemberRow({ member, longest, live }: { member: Member; longest: number;
   const { t } = useTranslation()
   const nothing = member.days_recorded === 0
 
+  const total = <div className="font-mono text-sm tabular">{nothing ? '—' : duration(member.worked_seconds)}</div>
+  const lastDay = member.last_day && <div className="font-mono text-[11px] text-faint tabular">{member.last_day}</div>
+
   return (
-    <Link to={`/team/${member.id}`} className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-soft">
-      <div className="min-w-0 w-52 shrink-0">
-        <div className="truncate text-sm font-medium">{member.display_name}</div>
-        <div className="truncate text-[11px] text-faint">{member.department ?? t('team.noDepartment')}</div>
+    <Link
+      to={`/team/${member.id}`}
+      className="flex flex-col gap-2 px-4 py-3.5 transition-colors hover:bg-soft sm:flex-row sm:items-center sm:gap-4 sm:px-5"
+    >
+      {/* The name and the week's total share the phone's top line; the bar
+          takes the width below them. The desktop's three columns would leave
+          the bar narrower than the name beside it, and the bar is the only
+          thing on the row that compares one person to another. */}
+      <div className="flex items-baseline justify-between gap-3 sm:contents">
+        <div className="min-w-0 sm:w-52 sm:shrink-0">
+          <div className="truncate text-sm font-medium">{member.display_name}</div>
+          <div className="truncate text-[11px] text-faint">{member.department ?? t('team.noDepartment')}</div>
+        </div>
+        <div className="shrink-0 text-right sm:hidden">
+          {total}
+          {lastDay}
+        </div>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -178,11 +203,21 @@ function MemberRow({ member, longest, live }: { member: Member; longest: number;
           // which is a claim. The words say which of the two this is.
           <p className="text-sm text-faint">{t('team.noData')}</p>
         ) : (
-          <div className="h-2.5 overflow-hidden rounded-full bg-softer">
-            <div className="h-full rounded-full bg-accent" style={{ width: `${(member.worked_seconds / longest) * 100}%` }} />
-          </div>
+          // One segment on a scale the week sets: the longest week in view is
+          // the right edge, so the bars compare people with each other rather
+          // than against a number nobody chose. `minWidth={0}` because these
+          // widths are being read against one another - a widened bar is no
+          // longer to scale, and a reader measuring by eye would be measuring
+          // the floor.
+          <Track
+            segments={[{ key: 'worked', start: 0, end: member.worked_seconds }]}
+            from={0}
+            to={longest}
+            minWidth={0}
+            label={t('team.workedBar', { name: member.display_name, hours: duration(member.worked_seconds) })}
+          />
         )}
-        <div className="mt-1.5 flex items-center gap-3 font-mono text-[11px] text-faint tabular">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-faint tabular">
           {!nothing && (
             <span>
               {member.days_recorded} {t('team.days')} · {duration(member.paused_seconds)} {t('team.pausedShort')}
@@ -192,9 +227,9 @@ function MemberRow({ member, longest, live }: { member: Member; longest: number;
         </div>
       </div>
 
-      <div className="shrink-0 text-right">
-        <div className="font-mono text-sm tabular">{nothing ? '—' : duration(member.worked_seconds)}</div>
-        {member.last_day && <div className="mt-0.5 font-mono text-[11px] text-faint tabular">{member.last_day}</div>}
+      <div className="hidden shrink-0 text-right sm:block">
+        {total}
+        {lastDay && <div className="mt-0.5">{lastDay}</div>}
       </div>
     </Link>
   )

@@ -80,14 +80,23 @@ function SignalRow({ signal }: { signal: Signal }) {
   const phrase = signalPhrase(signal)
 
   return (
-    <Link to={`/team/${signal.user_id}`} className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-soft">
-      <span className={`shrink-0 ${TONE_CLASS[tone]}`}>
+    <Link
+      to={`/team/${signal.user_id}`}
+      className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-soft sm:items-center sm:px-5"
+    >
+      <span className={`mt-0.5 shrink-0 sm:mt-0 ${TONE_CLASS[tone]}`}>
         <Icon signal={signal} />
       </span>
-      <span className="min-w-0 w-44 shrink-0 truncate text-sm font-medium">{signal.display_name}</span>
-      {/* The sentence carries the figures the server measured. Nothing here
-          says whether any of it is a problem. */}
-      <span className="min-w-0 flex-1 truncate text-sm text-dim">{t(phrase.key, phrase.values)}</span>
+      {/* The name and the sentence stack on a phone. Side by side they left
+          the sentence about eighty pixels, truncated - and the sentence is the
+          whole signal: the name alone says somebody is worth a look without
+          saying why, which is the one thing this row exists to say. */}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+        <span className="min-w-0 truncate text-sm font-medium sm:w-44 sm:shrink-0">{signal.display_name}</span>
+        {/* The sentence carries the figures the server measured. Nothing here
+            says whether any of it is a problem. */}
+        <span className="min-w-0 text-sm text-dim sm:flex-1 sm:truncate">{t(phrase.key, phrase.values)}</span>
+      </span>
       {signal.department && <span className="hidden shrink-0 text-[11px] text-faint sm:block">{signal.department}</span>}
     </Link>
   )

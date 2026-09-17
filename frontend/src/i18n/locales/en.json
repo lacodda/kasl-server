@@ -1,5 +1,7 @@
 {
-  "app": { "name": "kasl-server" },
+  "app": {
+    "name": "kasl-server"
+  },
   "login": {
     "title": "Sign in",
     "subtitle": "Your team's kasl server",
@@ -14,8 +16,9 @@
     "myDay": "My day",
     "team": "Team",
     "heatmap": "The month",
-    "privacy": "What is stored about me",
-    "signOut": "Sign out"
+    "privacy": "My data",
+    "signOut": "Sign out",
+    "sections": "Sections"
   },
   "myDay": {
     "title": "My week",
@@ -33,7 +36,12 @@
     "tasks": "Tasks",
     "noPauses": "No interruptions were recorded.",
     "noTasks": "No tasks were logged.",
-    "band": { "worked": "Worked", "break": "Break you entered", "idle": "Away from the keyboard" },
+    "band": {
+      "worked": "Worked",
+      "break": "Break you entered",
+      "idle": "Away from the keyboard"
+    },
+    "timelineLabel": "{{from}} to {{to}}, {{worked}} worked",
     "timelineWithheld": "timeline not stored",
     "timelineEmpty": "nothing recorded yet",
     "pausesWithheld": "This server does not store your pauses one by one - only that there were {{count}} of them, {{total}} in total.",
@@ -50,6 +58,7 @@
     "nobody": "Nobody is in your departments yet.",
     "noDepartment": "No department",
     "noData": "No days recorded in this week",
+    "workedBar": "{{name}} worked {{hours}} this week",
     "days": "days",
     "pausedShort": "paused",
     "open": "Day open",
@@ -61,7 +70,12 @@
     "daysAgo": "{{count}} d",
     "backToTeam": "Back to the team",
     "person": "Their week",
-    "live": { "working": "Working", "paused": "On a break", "idle": "Not in a day", "offline": "Offline" }
+    "live": {
+      "working": "Working",
+      "paused": "On a break",
+      "idle": "Not in a day",
+      "offline": "Offline"
+    }
   },
   "heatmap": {
     "title": "The month",
@@ -81,7 +95,7 @@
     "legend": {
       "less": "Less",
       "more": "More",
-      "busiest": "darkest = {{hours}}, the busiest day here",
+      "busiest": "the far end = {{hours}}, the busiest day here",
       "none": "Nothing recorded",
       "open": "Day still running",
       "weekend": "Weekend"
@@ -97,7 +111,9 @@
   },
   "trend": {
     "title": "The last {{count}} weeks",
+    "chartLabel": "Hours worked in each of the last {{count}} weeks",
     "median": "usual week {{hours}} h",
+    "medianShort": "{{hours}} h",
     "nothing": "No weeks recorded in this window.",
     "weekWorked": "Week of {{week}} - {{hours}}",
     "emptyWeek": "Week of {{week}} - nothing recorded"
@@ -105,7 +121,11 @@
   "privacy": {
     "title": "What this server stores about you",
     "level": "Detail level",
-    "levels": { "full": "Full", "moderate": "Moderate", "coarse": "Coarse" },
+    "levels": {
+      "full": "Full",
+      "moderate": "Moderate",
+      "coarse": "Coarse"
+    },
     "stored": "What is kept",
     "neverCollected": "Never collected",
     "visibleTo": "Who can see it",
@@ -116,8 +136,15 @@
   "demo": {
     "banner": "Demo - a fictional team. Nothing here is real.",
     "tryAs": "Try it as",
-    "roles": { "admin": "Administrator", "manager": "Manager", "employee": "Employee" },
+    "roles": {
+      "admin": "Administrator",
+      "manager": "Manager",
+      "employee": "Employee"
+    },
     "password": "Every account uses the password {{password}}."
   },
-  "common": { "loading": "Loading…", "error": "Something went wrong" }
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong"
+  }
 }

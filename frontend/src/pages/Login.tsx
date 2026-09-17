@@ -6,6 +6,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 
+/**
+ * What the fields wear on a phone, and why.
+ *
+ * iOS Safari zooms the page into any input whose text is under 16px, and it
+ * does not zoom back out when the field is left: the reader is dropped onto a
+ * sign-in form at 130% with the password field off the side of the screen.
+ * The primitive is `text-sm` for good reasons on a desktop, so the size is
+ * lifted here and handed back at `sm`, where no browser does this.
+ *
+ * Ordered to a wish on dowel: this belongs in the primitive, since every
+ * product of the line will meet it on its own login screen.
+ */
+const FIELD_ON_A_PHONE = 'h-11 text-base sm:h-9 sm:text-sm'
+
 export function Login({ demo = false }: { demo?: boolean }) {
   const { t } = useTranslation()
   const { signIn } = useSession()
@@ -48,8 +62,8 @@ export function Login({ demo = false }: { demo?: boolean }) {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center p-6">
-      <Panel className="w-full max-w-sm p-7 shadow-[var(--shadow-raise)]">
+    <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+      <Panel className="w-full max-w-sm p-6 shadow-[var(--shadow-raise)] sm:p-7">
         <h1 className="text-lg font-semibold">{t('login.title')}</h1>
         <p className="mt-1 text-sm text-dim">{t('login.subtitle')}</p>
 
@@ -61,6 +75,7 @@ export function Login({ demo = false }: { demo?: boolean }) {
             <Input
               id={emailId}
               type="email"
+              className={FIELD_ON_A_PHONE}
               value={email}
               autoComplete="username"
               autoFocus
@@ -76,6 +91,7 @@ export function Login({ demo = false }: { demo?: boolean }) {
             <Input
               id={passwordId}
               type="password"
+              className={FIELD_ON_A_PHONE}
               value={password}
               autoComplete="current-password"
               required

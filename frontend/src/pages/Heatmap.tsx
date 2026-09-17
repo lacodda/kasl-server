@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { api, type HeatmapResponse, type HeatmapRow } from '@/lib/api'
 import { duration } from '@/lib/day'
 import { currentMonth, dayOfMonth, monthDates, shiftMonth, squares, step, type Square } from '@/lib/heatmap'
 import { Panel } from '@/components/ui/panel'
-import { Button } from '@/components/ui/button'
+import { PeriodPicker } from '@/components/PeriodPicker'
 
 /**
  * The team's month as a grid: a row per person, a square per day.
@@ -52,22 +51,20 @@ export function Heatmap() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header className="flex items-center justify-between gap-4">
-        <div>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold">{t('heatmap.title')}</h1>
           <p className="mt-1 font-mono text-xs text-faint tabular">{month}</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Button variant="icon" size="icon-md" aria-label={t('heatmap.previousMonth')} onClick={() => goto(-1)}>
-            <ChevronLeft />
-          </Button>
-          <Button size="sm" onClick={() => setMonth(currentMonth())}>
-            {t('heatmap.thisMonth')}
-          </Button>
-          <Button variant="icon" size="icon-md" aria-label={t('heatmap.nextMonth')} onClick={() => goto(1)}>
-            <ChevronRight />
-          </Button>
-        </div>
+        <PeriodPicker
+          previousLabel={t('heatmap.previousMonth')}
+          nextLabel={t('heatmap.nextMonth')}
+          onPrevious={() => goto(-1)}
+          onNext={() => goto(1)}
+          onNow={() => setMonth(currentMonth())}
+        >
+          {t('heatmap.thisMonth')}
+        </PeriodPicker>
       </header>
 
       {failed && <p className="text-sm text-bad">{t('common.error')}</p>}
@@ -84,7 +81,7 @@ function Grid({ answer }: { answer: HeatmapResponse }) {
 
   if (answer.rows.length === 0) {
     return (
-      <Panel className="p-5">
+      <Panel className="p-4 sm:p-5">
         <p className="text-sm text-dim">{t('team.nobody')}</p>
       </Panel>
     )
@@ -92,11 +89,14 @@ function Grid({ answer }: { answer: HeatmapResponse }) {
 
   return (
     <>
-      <Panel className="p-5">
+      <Panel className="p-3 sm:p-5">
         {/* A month of squares is wider than a phone and, with a big team,
             wider than a laptop. It scrolls inside its own box rather than
-            taking the page with it. */}
-        <div className="overflow-x-auto">
+            taking the page with it - which is also what keeps the page itself
+            from scrolling sideways on a phone and taking the header with it.
+            `overscroll-x-contain` stops a swipe that reaches the end of the
+            month from turning into the browser's back gesture. */}
+        <div className="overflow-x-auto overscroll-x-contain">
           <table className="w-full border-separate border-spacing-0 text-sm">
             <caption className="sr-only">{t('heatmap.caption', { month: answer.month })}</caption>
             <thead>
@@ -134,8 +134,16 @@ function PersonRow({ row, dates, busiest }: { row: HeatmapRow; dates: string[]; 
 
   return (
     <tr className="group">
-      <th scope="row" className="sticky left-0 z-10 max-w-44 truncate bg-raise py-1 pr-3 text-left font-normal">
-        <Link to={`/team/${row.user_id}`} className="block truncate text-sm transition-colors hover:text-accent-2">
+      {/* Narrower on a phone: the frozen name column is taken out of the
+          squares' width, and at 320px a 176px column leaves room for about
+          six days of the month. */}
+      <th scope="row" className="sticky left-0 z-10 max-w-28 truncate bg-raise py-1 pr-2 text-left font-normal sm:max-w-44 sm:pr-3">
+        {/* The row of squares is not a link, so the name is the whole way
+            into a person from here. `py-2` takes it from a 16px strip to a
+            target a thumb can hit; the department beneath it stays outside,
+            since a reader aiming at the name should not land on the link by
+            way of a word that is not it. */}
+        <Link to={`/team/${row.user_id}`} className="block truncate py-2 text-sm transition-colors hover:text-accent-2">
           {row.display_name}
         </Link>
         {row.department && <span className="block truncate text-[11px] text-faint">{row.department}</span>}
@@ -166,7 +174,8 @@ const FILL = ['fill-1', 'fill-2', 'fill-3', 'fill-4', 'fill-5'] as const
  * it says "this is a Saturday", never "they were off".
  *
  * The title is the accessible label too: a colour-only grid says nothing to a
- * screen reader, and nothing to anyone who cannot separate five golds.
+ * screen reader, and nothing to anyone who cannot separate five steps of one
+ * hue.
  */
 function Cell({ square }: { square: Square }) {
   const { t } = useTranslation()
@@ -206,9 +215,12 @@ function Legend({ busiest }: { busiest: number | null }) {
           <span key={fill} className={`size-3 rounded-[3px] ${fill}`} />
         ))}
         <span>{t('heatmap.legend.more')}</span>
-        {/* The scale is relative, so it is named. Without this the darkest
-            square looks like an absolute standard for a full day - which this
-            server has no opinion about until norms arrive. */}
+        {/* The scale is relative, so its top step is named. Without this the
+            last square looks like an absolute standard for a full day - which
+            this server has no opinion about until norms arrive. Named by its
+            place in the row rather than by its colour: the theme's ramp runs
+            light-on-dark one way and dark-on-light the other, so "the darkest
+            square" is true in one theme and backwards in the other. */}
         {busiest !== null && <span className="ml-1">· {t('heatmap.legend.busiest', { hours: duration(busiest) })}</span>}
       </div>
       <div className="flex items-center gap-4">
