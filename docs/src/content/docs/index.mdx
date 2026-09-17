@@ -1,0 +1,46 @@
+---
+title: kasl-server
+description: Team server for kasl - collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages.
+template: splash
+hero:
+  tagline: Employees run kasl on their machines; managers get dashboards, charts, and reports across the whole team - and every employee gets a personal page.
+  actions:
+    - text: Get started
+      link: /kasl-server/getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/lacodda/kasl-server
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="A door that survives a bad connection" icon="rocket">
+		A day at a time on `POST /api/v1/days`, a backlog on `/days/batch`, and a
+		task the employee deleted can be deleted here too. Each day is written on
+		its own, so one the server will never accept does not block the rest.
+	</Card>
+	<Card title="A privacy policy the server enforces" icon="approve-check">
+		What the server keeps about a person is a setting it recites on request,
+		not a claim in a document. A field a level excludes is dropped before the
+		day is written and never reaches the database.
+	</Card>
+	<Card title="The whole loop, closed" icon="star">
+		Agents deliver, employees see their own week, and a manager sees the
+		team's hours, a live column of who is working right now, the month as a
+		grid, and a band naming who is worth a look and why.
+	</Card>
+	<Card title="One binary, self-hosted" icon="document">
+		The same binary serves the API and the web UI on the same port. Installing
+		it is a compose file and a published image rather than a build.
+	</Card>
+</CardGrid>
+
+## Where to go next
+
+- **[Getting Started](/kasl-server/getting-started/)** - bring up the server and post a day.
+- **[The API](/kasl-server/reference/api/)** - the ingest contract agents talk to.
+- **[The web UI](/kasl-server/guides/the-web-ui/)** - what a manager and an employee each see.
+- **[What the server stores about you](/kasl-server/concepts/what-the-server-stores-about-you/)** - the privacy manifest, at three levels.

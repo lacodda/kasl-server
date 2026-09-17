@@ -1,0 +1,28 @@
+/* Brand accent: kasl-server gold. The mark's own #D9A82E carries 8.20:1 on the
+   dark background (#15171a) - well past the floor. Against white it carries
+   only 2.19:1, so the light theme darkens the same hue to #8f6e1c at 4.76:1.
+   Measured, not eyeballed. */
+:root {
+	--sl-color-accent: #d9a82e;
+	--sl-color-accent-high: #eed8a1;
+	--sl-color-accent-low: #2d2208;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent: #8f6e1c;
+	--sl-color-accent-high: #5d4812;
+	--sl-color-accent-low: #f9f2e0;
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+/* The mark is a square hex tile: let it fill the bar height rather than the
+   2rem it was pinned to, and sit close to the wordmark it belongs with. */
+.site-title {
+	gap: 0.4rem;
+}
+
+.site-title img {
+	width: auto;
+	height: 2.5rem;
+}
