@@ -38,31 +38,31 @@ body {
 }
 
 /*
- * The heatmap's five shades of the accent.
+ * The heatmap's five shades.
  *
- * Opacity of one colour rather than five hues: the grid says "more" and
- * "less", and a scale that changed hue would read as five different kinds of
- * day. Five steps rather than a gradient because a reader has to be able to
- * match a square to the legend beside it.
+ * The scale comes from the theme rather than from this product's accent, and
+ * that is a correction rather than a preference. Mixed from gold, the faintest
+ * step cleared the empty square by 1.49:1 - which means "barely worked" and
+ * "nobody reported" were the same square to anyone glancing at the grid, and
+ * the empty square is the one a manager is actually scanning for. The theme's
+ * ramp is fixed, measured, and clears it by 2.1:1.
  *
- * Written as classes rather than an inline `opacity` so the grid is one
- * paint-time value per square and the legend can wear the identical class -
- * the two cannot drift apart. `color-mix` against the surface, not alpha:
- * a translucent square would pick up whatever it is laid over, and the row's
- * hover background would shift every shade under the cursor.
+ * Still classes rather than an inline value, for the reason they always were:
+ * the grid is one paint-time value per square and the legend wears the
+ * identical class, so the two cannot drift apart.
  */
 .fill-1 {
-  background: color-mix(in srgb, var(--accent) 20%, var(--softer));
+  background: var(--heat-1);
 }
 .fill-2 {
-  background: color-mix(in srgb, var(--accent) 40%, var(--softer));
+  background: var(--heat-2);
 }
 .fill-3 {
-  background: color-mix(in srgb, var(--accent) 60%, var(--softer));
+  background: var(--heat-3);
 }
 .fill-4 {
-  background: color-mix(in srgb, var(--accent) 80%, var(--softer));
+  background: var(--heat-4);
 }
 .fill-5 {
-  background: var(--accent);
+  background: var(--heat-5);
 }
