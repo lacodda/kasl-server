@@ -88,12 +88,12 @@ describe('signalTone', () => {
 })
 
 describe('bars', () => {
-  it('scales every bar against the tallest week', () => {
+  it('carries the hours of each week through untouched', () => {
+    // Scaling them against one another is the chart's arithmetic now, and it
+    // owns the plot's height in pixels - which is what stops the defect that
+    // cost 0.19.1 from being expressible here.
     const drawn = bars([week(40 * 3600), week(20 * 3600), week(10 * 3600)])
-    expect(drawn).toHaveLength(3)
-    expect(drawn[0]?.height).toBeCloseTo(1)
-    expect(drawn[1]?.height).toBeCloseTo(0.5)
-    expect(drawn[2]?.height).toBeCloseTo(0.25)
+    expect(drawn.map((bar) => bar.worked_seconds)).toEqual([40 * 3600, 20 * 3600, 10 * 3600])
   })
 
   it('keeps an empty week in its place and marks it', () => {
@@ -101,23 +101,17 @@ describe('bars', () => {
     // the one thing the chart exists to show.
     const drawn = bars([week(40 * 3600), week(0, 0), week(40 * 3600)])
     expect(drawn).toHaveLength(3)
-    expect(drawn[1]?.empty).toBe(true)
-    expect(drawn[1]?.height).toBe(0)
-    expect(drawn[0]?.empty).toBe(false)
-  })
-
-  it('does not divide by zero when nothing was worked at all', () => {
-    const drawn = bars([week(0, 0), week(0, 0)])
-    expect(drawn.every((bar) => Number.isFinite(bar.height))).toBe(true)
-    expect(drawn.every((bar) => bar.height === 0)).toBe(true)
+    expect(drawn[1]?.worked_seconds).toBeNull()
+    expect(drawn[0]?.worked_seconds).not.toBeNull()
   })
 
   it('separates a week of no hours from a week of no data', () => {
-    // A week with days recorded but nothing worked - every day still open -
-    // is not the same as a week nobody filed, and only `empty` says which.
+    // A week with days recorded but nothing worked - every day still open - is
+    // not the same as a week nobody filed. Zero says the first, `null` the
+    // second, and the chart draws them differently.
     const drawn = bars([week(0, 5), week(0, 0)])
-    expect(drawn[0]?.empty).toBe(false)
-    expect(drawn[1]?.empty).toBe(true)
+    expect(drawn[0]?.worked_seconds).toBe(0)
+    expect(drawn[1]?.worked_seconds).toBeNull()
   })
 })
 

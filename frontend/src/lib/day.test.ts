@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Day, Pause } from '@/lib/api'
 import { bands, duration, isoDate, shiftWeeks, since, startOfWeek, weekDates, weekdayName } from '@/lib/day'
+import { place } from '@/components/ui/track-segments'
 
 function pause(from: string, to: string | null, seconds: number, manual = false): Pause {
   return { id: from, started_at: from, ended_at: to, duration_seconds: seconds, manual, reason: null }
@@ -110,15 +111,16 @@ describe('since', () => {
 })
 
 describe('bands', () => {
+  const at = (time: string) => new Date(time).getTime()
+
   it('splits a day around its pauses', () => {
     // 12:00-21:00 with a half-hour pause at 15:00: worked, paused, worked.
-    const drawn = bands(day({ pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:30:00Z', 1800)] }))
-    expect(drawn.map((band) => band.paused)).toEqual([false, true, false])
-    const [first, paused] = drawn
-    expect(first?.left).toBeCloseTo(0)
-    // Three hours into a nine-hour day.
-    expect(paused?.left).toBeCloseTo((3 / 9) * 100)
-    expect(paused?.width).toBeCloseTo((0.5 / 9) * 100)
+    const drawn = bands(day({ pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:30:00Z', 1800)] }))!
+    expect(drawn.bands.map((band) => band.paused)).toEqual([false, true, false])
+    const [first, paused] = drawn.bands
+    expect(first?.start).toBe(drawn.from)
+    expect(paused?.start).toBe(at('2026-08-24T15:00:00Z'))
+    expect(paused?.end).toBe(at('2026-08-24T15:30:00Z'))
   })
 
   it('covers the day exactly once', () => {
@@ -126,24 +128,25 @@ describe('bands', () => {
       day({
         pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:30:00Z', 1800), pause('2026-08-24T18:00:00Z', '2026-08-24T18:10:00Z', 600)],
       }),
-    )
+    )!
     // Bands must tile the bar: a gap draws work that did not happen as a pause,
     // and an overlap hides one behind another.
-    expect(drawn.length).toBe(5)
-    drawn.slice(1).forEach((band, index) => {
-      const previous = drawn[index]!
-      expect(band.left).toBeCloseTo(previous.left + previous.width)
+    expect(drawn.bands.length).toBe(5)
+    expect(drawn.bands[0]?.start).toBe(drawn.from)
+    drawn.bands.slice(1).forEach((band, index) => {
+      expect(band.start).toBe(drawn.bands[index]!.end)
     })
-    const last = drawn.at(-1)!
-    expect(last.left + last.width).toBeCloseTo(100)
+    expect(drawn.bands.at(-1)!.end).toBe(drawn.to)
   })
 
-  it('keeps a very short pause visible', () => {
-    // Ten seconds in nine hours is 0.03% - invisible at any width, and the one
-    // thing on the bar the employee might be looking for.
-    const drawn = bands(day({ pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:00:10Z', 10)] }))
-    const paused = drawn.find((band) => band.paused)
-    expect(paused?.width).toBeGreaterThan(0.5)
+  it('keeps a very short pause, however short', () => {
+    // Ten seconds in nine hours. Widening it to something visible is the
+    // track's job now - what must survive here is that the pause is a band of
+    // its own rather than swallowed by the work around it.
+    const drawn = bands(day({ pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:00:10Z', 10)] }))!
+    const paused = drawn.bands.find((band) => band.paused)
+    expect(paused).toBeDefined()
+    expect(paused!.end - paused!.start).toBe(10_000)
   })
 
   it('orders pauses it was given out of order', () => {
@@ -151,14 +154,14 @@ describe('bands', () => {
       day({
         pauses: [pause('2026-08-24T18:00:00Z', '2026-08-24T18:10:00Z', 600), pause('2026-08-24T15:00:00Z', '2026-08-24T15:30:00Z', 1800)],
       }),
-    )
-    const positions = drawn.map((band) => band.left)
+    )!
+    const positions = drawn.bands.map((band) => band.start)
     expect([...positions].sort((a, b) => a - b)).toEqual(positions)
   })
 
   it('draws nothing for an open day with nothing in it yet', () => {
     // No end and no pauses: there is no span to lay bands out on.
-    expect(bands(day({ ended_at: null, worked_seconds: null }))).toEqual([])
+    expect(bands(day({ ended_at: null, worked_seconds: null }))).toBeNull()
   })
 
   it('draws an open day up to what is known about it', () => {
@@ -168,18 +171,32 @@ describe('bands', () => {
     // never to "now", which would grow while nobody is working.
     const drawn = bands(
       day({ ended_at: null, worked_seconds: null, pauses: [pause('2026-08-24T15:15:00Z', '2026-08-24T16:00:00Z', 2700, true)] }),
-    )
-    expect(drawn.map((band) => band.paused)).toEqual([false, true])
-    const last = drawn.at(-1)!
-    expect(last.left + last.width).toBeCloseTo(100)
+    )!
+    expect(drawn.bands.map((band) => band.paused)).toEqual([false, true])
+    expect(drawn.to).toBe(at('2026-08-24T16:00:00Z'))
+    expect(drawn.bands.at(-1)!.end).toBe(drawn.to)
   })
 
   it('clamps a pause recorded outside the day', () => {
     // The agent's business, not something to draw off the end of the bar.
-    const drawn = bands(day({ pauses: [pause('2026-08-24T11:00:00Z', '2026-08-24T22:00:00Z', 39600)] }))
-    for (const band of drawn) {
-      expect(band.left).toBeGreaterThanOrEqual(0)
-      expect(band.left + band.width).toBeLessThanOrEqual(100.01)
+    const drawn = bands(day({ pauses: [pause('2026-08-24T11:00:00Z', '2026-08-24T22:00:00Z', 39600)] }))!
+    for (const band of drawn.bands) {
+      expect(band.start).toBeGreaterThanOrEqual(drawn.from)
+      expect(band.end).toBeLessThanOrEqual(drawn.to)
     }
+  })
+
+  it('lays a short pause out wide enough to see', () => {
+    // The floor moved into the design system with the geometry, so this is
+    // where it is checked: the ten-second pause above is 0.03% of the day and
+    // would be drawn as nothing at all without it.
+    const drawn = bands(day({ pauses: [pause('2026-08-24T15:00:00Z', '2026-08-24T15:00:10Z', 10)] }))!
+    const placed = place(drawn.bands, { from: drawn.from, to: drawn.to })
+    const paused = placed[drawn.bands.findIndex((band) => band.paused)]
+    expect(paused!.width).toBeGreaterThan(0.5)
+    expect(paused!.widened).toBe(true)
+    // And the bar still ends where the day does, rather than running past it.
+    const last = placed.at(-1)!
+    expect(last.left + last.width).toBeLessThanOrEqual(100.01)
   })
 })

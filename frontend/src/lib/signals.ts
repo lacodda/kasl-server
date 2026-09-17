@@ -82,28 +82,26 @@ export function hours(seconds: number | null | undefined): string {
 /** One bar on the trend chart. */
 export interface Bar {
   week_start: string
-  worked_seconds: number
-  /** Height as a fraction of the tallest week, 0 to 1. */
-  height: number
-  /** No days recorded at all: a gap, not a short week. */
-  empty: boolean
+  /** The week's hours, or `null` for a week with no days recorded at all.
+   *
+   * The distinction is the whole point and it is not a height: a week of
+   * nothing and a week of twenty minutes are different facts, and the chart
+   * draws the first as a gap rather than as a very short bar. How tall the
+   * rest are is the chart's arithmetic, not this function's. */
+  worked_seconds: number | null
 }
 
 /**
- * The weeks as bars against their own tallest.
+ * The weeks, as the chart takes them.
  *
- * An empty week keeps its place with a height of zero and says so through
- * `empty`: a chart that dropped it would close the gap up and turn an absence
- * into continuity, which is the one thing the trend exists to show.
+ * An empty week keeps its place and says so with `null`: a chart that dropped
+ * it would close the gap up and turn an absence into continuity, which is the
+ * one thing the trend exists to show.
  */
 export function bars(weeks: TrendWeek[]): Bar[] {
-  const tallest = Math.max(...weeks.map((week) => week.worked_seconds), 1)
-
   return weeks.map((week) => ({
     week_start: week.week_start,
-    worked_seconds: week.worked_seconds,
-    height: week.worked_seconds / tallest,
-    empty: week.days_recorded === 0,
+    worked_seconds: week.days_recorded === 0 ? null : week.worked_seconds,
   }))
 }
 

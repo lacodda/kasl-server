@@ -109,36 +109,51 @@ export function since(timestamp: string, now: number = Date.now()): ['minutes' |
   return ['days', Math.round(hours / 24)]
 }
 
-/** One band on the timeline, as a percentage of the day's span. */
+/**
+ * One stretch of the day, in milliseconds since the epoch.
+ *
+ * Moments rather than percentages: laying them out along a bar is geometry,
+ * and `Track` in the design system owns it - including the floor under a
+ * sliver too narrow to see, which this file used to apply itself. Two copies
+ * of that arithmetic is one too many, and the copy here could not know how
+ * wide the bar it was drawn on would be.
+ */
 export interface Band {
-  /** Distance from the day's start, 0-100. */
-  left: number
-  /** Width, 0-100. Never zero: a moment still has to be visible. */
-  width: number
+  /** When the stretch begins. */
+  start: number
+  /** When it ends. Equal to `start` for a stretch of no duration. */
+  end: number
   paused: boolean
   /** What the band is, for the hover title. */
   label: string
 }
 
-const MIN_BAND_WIDTH = 0.6
+/** The day's own span: what the bar's two ends stand for. */
+export interface DaySpan {
+  from: number
+  to: number
+  bands: Band[]
+}
 
 /**
- * The day as alternating worked and paused bands.
+ * The day as alternating worked and paused stretches, with the span they lie
+ * on.
  *
- * Positions are relative to the day's own start and end, not to a fixed
- * 00:00-24:00 axis: a day is read against itself, and an eight-hour day drawn
- * across a third of the width wastes the space where the breaks are.
+ * The span is the day's own start and end, not a fixed 00:00-24:00 axis: a day
+ * is read against itself, and an eight-hour day drawn across a third of the
+ * width wastes the space where the breaks are. It is returned rather than
+ * inferred from the bands, because a bar has to run to the day's end even when
+ * the last thing recorded on it is a pause.
  *
  * A day whose pauses were not stored has none to draw - the caller says so in
  * words instead, rather than showing an unbroken bar that would read as
  * uninterrupted work.
  */
-export function bands(day: Day): Band[] {
+export function bands(day: Day): DaySpan | null {
   const start = new Date(day.started_at).getTime()
   const end = dayEnd(day)
-  if (end === null || end <= start) return []
+  if (end === null || end <= start) return null
 
-  const span = end - start
   const bands: Band[] = []
   let cursor = start
 
@@ -155,17 +170,17 @@ export function bands(day: Day): Band[] {
     const to = Math.max(from, Math.min(pauseEnd, end))
 
     if (from > cursor) {
-      bands.push(band(cursor - start, from - cursor, span, false, 'worked'))
+      bands.push({ start: cursor, end: from, paused: false, label: 'worked' })
     }
-    bands.push(band(from - start, to - from, span, true, pause.manual ? 'break' : 'idle'))
+    bands.push({ start: from, end: to, paused: true, label: pause.manual ? 'break' : 'idle' })
     cursor = Math.max(cursor, to)
   }
 
   if (cursor < end) {
-    bands.push(band(cursor - start, end - cursor, span, false, 'worked'))
+    bands.push({ start: cursor, end, paused: false, label: 'worked' })
   }
 
-  return bands
+  return { from: start, to: end, bands }
 }
 
 /**
@@ -188,14 +203,4 @@ function dayEnd(day: Day): number | null {
   if (known.length === 0) return null
 
   return Math.max(...known)
-}
-
-function band(offset: number, width: number, span: number, paused: boolean, label: string): Band {
-  return {
-    left: (offset / span) * 100,
-    // A ten-second pause is real and would otherwise render as nothing at all.
-    width: Math.max((width / span) * 100, MIN_BAND_WIDTH),
-    paused,
-    label,
-  }
 }
