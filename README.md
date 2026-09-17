@@ -26,10 +26,10 @@ $ cargo run
 
   This is the only time it is shown. Sign in and change it.
 
-2026-09-01T22:54:14.664542Z  INFO kasl_server: kasl-server listening version="0.19.1" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
+2026-09-09T23:01:07.420166Z  INFO kasl_server: kasl-server listening version="0.19.2" addr=0.0.0.0:8080 max_batch_days=31 max_body_bytes=4194304
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.19.1"}
+{"database":"ok","demo":false,"status":"ok","version":"0.19.2"}
 
 # The web UI is served by the same binary on the same port - open
 # http://127.0.0.1:8080 and sign in.
@@ -86,7 +86,7 @@ $ docker compose logs server
   with the password `kasl-demo`. The same password opens every account.
 
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":true,"status":"ok","version":"0.19.1"}
+{"database":"ok","demo":true,"status":"ok","version":"0.19.2"}
 ```
 
 The login screen offers the same three accounts as buttons, and every screen
@@ -843,7 +843,7 @@ database seeds a fictional team — see [The demo](#the-demo).
 
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
-production (`KASL_VERSION=0.14.1`); `latest` is for a first look.
+production (`KASL_VERSION=0.19.2`); `latest` is for a first look.
 
 Two more things before this holds a team's hours:
 

@@ -2,11 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.19.2] - 2026-09-09
+
+### Dependencies
+- Take dowel-ui 0.15.0
+
+### Documentation
+- Say which kasl works with which server
+
+### Refactoring
+- Move onto the dowel design system
+
 ## [0.19.1] - 2026-09-01
 
 ### Bug Fixes
 - Give the trend bars a height they can be a percentage of
 
+### Documentation
+- Cut 0.19.1
 
 ## [0.19.0] - 2026-09-01
 
@@ -16,26 +29,29 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Describe the signals and cut 0.19.0
+- Cut 0.19.0
 
 ### Features
 - Say which people are worth a look
 - Put the signals where the manager already looks
 
-
 ## [0.18.0] - 2026-09-01
 
 ### Documentation
 - Describe the month grid and cut 0.18.0
+- Cut 0.18.0
 
 ### Features
 - Answer the team month a day at a time
 - Draw the month as a grid
 
-
 ## [0.17.1] - 2026-08-30
 
 ### Bug Fixes
 - Give a demo seeded before the pulse existed one
+
+### Documentation
+- Cut 0.17.1
 
 ## [0.17.0] - 2026-08-30
 
