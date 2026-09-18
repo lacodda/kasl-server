@@ -197,6 +197,9 @@
       "holiday": "a working weekday that is not worked",
       "short_day": "one hour shorter than a full day",
       "working_weekend": "a weekend day moved into the working week"
-    }
+    },
+    "pickDate": "Pick a date",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month"
   }
 }

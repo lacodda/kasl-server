@@ -111,7 +111,15 @@ function TeamTotals({ answer, live }: { answer: TeamResponse; live: LiveFeed }) 
   // The team's norm is the sum of the people's, not a full week times the head
   // count: half-timers and people on leave each owe their own figure, and a
   // team total that ignored them would be a number nobody is measured by.
-  const norm = members.reduce((sum, member) => sum + member.norm_seconds, 0)
+  //
+  // And only the people this server actually measures. An account with no
+  // agent installed - the administrator's own, somebody who has not set kasl
+  // up yet - owes hours nothing will ever report, and adding them made the
+  // pair read "219h of 448h" for a team that had in fact worked most of what
+  // it owed. Seen on the demo, where two of twelve have no agent; the arithmetic
+  // was right and the sentence it formed was false.
+  const measured = members.filter((member) => member.agents > 0)
+  const norm = measured.reduce((sum, member) => sum + member.norm_seconds, 0)
   const open = members.filter((member) => member.day_open).length
   // People a manager should look at: no agent at all, or one that has never
   // delivered anything. Counted rather than buried, because this is the

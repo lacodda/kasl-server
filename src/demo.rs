@@ -709,8 +709,13 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
         // a day the person marked as sick is a row saying so, and the norm
         // excuses it (ADR 0017); a day nobody recorded at all is a gap, and
         // the dashboard has to keep showing what that looks like.
-        if rng.chance(4) {
-            if rng.chance(2) {
+        //
+        // `chance` takes a percentage, not one-in-n. Written as `chance(4)`
+        // and `chance(2)` this came to four per cent of two per cent - eight
+        // days in ten thousand - and the demo seeded no leave at all, which a
+        // count against the seeded database caught and nothing else could.
+        if rng.chance(8) {
+            if rng.chance(60) {
                 days.push(AgentDay {
                     date,
                     // A day off still has a date and a shape: the agent files

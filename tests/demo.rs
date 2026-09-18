@@ -67,6 +67,22 @@ async fn an_empty_database_becomes_the_demo_team() {
     assert!(server.count("pauses").await > seeded.days as i64, "every day has at least a lunch break");
     assert!(server.count("tasks").await > seeded.days as i64, "every day logs more than one task");
 
+    // The calendar, and the days people were away.
+    //
+    // Both are what the norm is for, and both were absent from the first
+    // version of this seed without a single test noticing: `chance` takes a
+    // percentage, and a nested `chance(4)`/`chance(2)` came to eight days in
+    // ten thousand. The dashboard drew twelve rows at a full norm and looked
+    // entirely plausible. A count is the only thing that says otherwise.
+    assert_eq!(seeded.calendar_days, 3, "a holiday, a short day and a working weekend");
+    assert_eq!(server.count("calendar_days").await, 3);
+
+    let away: i64 = server.scalar("SELECT count(*) FROM workdays WHERE kind <> 'work'").await;
+    assert!(away > 0, "the demo has to show what a day off looks like, and seeded none");
+
+    let part_time: i64 = server.scalar("SELECT count(*) FROM users WHERE work_rate <> 1").await;
+    assert_eq!(part_time, 1, "exactly one person is on part time, so the norm has something to divide");
+
     // The seeding is a thing the server did, and the audit log says so.
     let recorded: i64 = server
         .scalar("SELECT count(*) FROM audit_log WHERE action = 'demo.seeded' AND actor_id IS NULL")

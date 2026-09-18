@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { PeriodPicker } from '@/components/PeriodPicker'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { IsoDate } from '@/components/ui/calendar-math'
 
 /** The three kinds, in the order the list offers them. */
 const KINDS: CalendarDayKind[] = ['holiday', 'short_day', 'working_weekend']
@@ -295,14 +297,23 @@ function AddDay({ year, taken, onAdd }: { year: number; taken: string[]; onAdd: 
 
   return (
     <div className="flex items-center gap-2">
-      <Input
-        type="date"
-        value={date}
-        min={`${year}-01-01`}
-        max={`${year}-12-31`}
+      {/* Not a native `<input type="date">`. That control takes its format and
+          its placeholder from the browser's own language, not the document's,
+          so on a non-English Windows it renders that locale's placeholder
+          inside an English product - seen on the demo, and not something the
+          page can override. The picker spells the date out and asks the
+          product for its words. */}
+      <DatePicker
+        value={(date || undefined) as IsoDate | undefined}
+        onValueChange={(value) => setDate(value)}
+        min={`${year}-01-01` as IsoDate}
+        max={`${year}-12-31` as IsoDate}
+        placeholder={t('calendar.pickDate')}
+        previousMonthLabel={t('calendar.previousMonth')}
+        nextMonthLabel={t('calendar.nextMonth')}
+        locale="en"
         aria-label={t('calendar.date')}
-        onChange={(event) => setDate(event.target.value)}
-        className="w-44"
+        className="w-56"
       />
       <Button
         size="sm"
