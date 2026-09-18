@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
+use crate::{admin, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -70,6 +70,17 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/departments", get(department::list).post(department::create))
         .route("/departments/{id}", patch(department::update).delete(department::delete))
         .route("/users/{id}/department", put(department::assign))
+        // The production calendar and what a full day is here. Readable by
+        // anyone signed in - which days of the year are worked is not a secret
+        // from the people working them - and written by an administrator, a
+        // year at a time, because that is how a calendar is published
+        // (ADR 0017).
+        .route("/calendar", get(calendar::year).put(calendar::put_year))
+        .route("/calendar/standard-hours", put(calendar::put_standard_hours))
+        // A person's share of a full day. Its own route rather than a field on
+        // the user patch: it changes what every screen says about them, and an
+        // audit entry naming it is easier to find than "user updated".
+        .route("/users/{id}/work-rate", put(calendar::put_work_rate))
         // The record of who did what. Administrators only, and no way to
         // delete from it (ADR 0010).
         .route("/audit", get(audit::list))

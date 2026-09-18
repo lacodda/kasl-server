@@ -41,6 +41,9 @@ pub mod action {
     pub const PASSWORD_CHANGED: &str = "auth.password_changed";
     pub const SESSIONS_ENDED: &str = "auth.sessions_ended";
     pub const PRIVACY_LEVEL_CHANGED: &str = "privacy.level_changed";
+    pub const CALENDAR_YEAR_REPLACED: &str = "calendar.year_replaced";
+    pub const STANDARD_HOURS_CHANGED: &str = "calendar.standard_hours_changed";
+    pub const WORK_RATE_CHANGED: &str = "calendar.work_rate_changed";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 
