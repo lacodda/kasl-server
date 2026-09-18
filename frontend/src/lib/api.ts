@@ -119,6 +119,7 @@ export interface Member {
   display_name: string
   email: string
   department: string | null
+  /** Days worked in the range. Days away are counted separately below. */
   days_recorded: number
   worked_seconds: number
   paused_seconds: number

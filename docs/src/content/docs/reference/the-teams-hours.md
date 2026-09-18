@@ -26,6 +26,11 @@ recorded.** Clara above has no agent installed and no days; she is on the list
 anyway, because an employee whose agent never reported is exactly who a manager
 needs to notice. A table that dropped her would hide the case it exists for.
 
+**`days_recorded` and `days_away` partition the range's days**: the first
+counts days worked, the second days the person told us they were on leave or
+ill. Neither includes the other, so "four days, twenty hours" is four days of
+work rather than two days of work and two of holiday.
+
 **`norm_seconds` is what the range asked of that person** — the production
 calendar at their own `work_rate`, with the days they were on leave taken out
 (`days_away` counts them). `standard_hours` is stated once for the table: it is

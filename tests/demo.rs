@@ -252,11 +252,25 @@ async fn every_state_the_dashboard_can_show_is_on_screen() {
 
     // The one whose hours are shrinking, and the one who works too long, are
     // both visibly different from the steady ones this week.
-    let steady = find("Tomas Verhoeven")["worked_seconds"].as_i64().unwrap();
-    let fading = find("Lukas Brandt")["worked_seconds"].as_i64().unwrap();
-    let long = find("Yusuf Demir")["worked_seconds"].as_i64().unwrap();
-    assert!(fading < steady, "fading {fading} should be under steady {steady}");
-    assert!(long > steady, "long {long} should be over steady {steady}");
+    //
+    // Compared per day, not per week. A week's total is the length of a day
+    // times the days that were worked, and since the demo seeds days off the
+    // two factors move independently: the long-hours person had two days sick
+    // this week and his weekly total came out under the steady person's, which
+    // failed an assertion about how long his days are. Days recorded is the
+    // divisor the claim actually needs.
+    let per_day = |name: &str| {
+        let row = find(name);
+        let days = row["days_recorded"].as_i64().unwrap();
+        assert!(days > 0, "{name} recorded nothing this week: {row}");
+        row["worked_seconds"].as_i64().unwrap() / days
+    };
+
+    let steady = per_day("Tomas Verhoeven");
+    let fading = per_day("Lukas Brandt");
+    let long = per_day("Yusuf Demir");
+    assert!(fading < steady, "a fading day {fading} should be under a steady one {steady}");
+    assert!(long > steady, "a long day {long} should be over a steady one {steady}");
 }
 
 #[tokio::test]

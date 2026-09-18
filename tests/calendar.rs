@@ -496,6 +496,39 @@ async fn the_team_table_carries_a_norm_per_person() {
 }
 
 #[tokio::test]
+async fn days_worked_and_days_away_do_not_overlap() {
+    // Two counts that partition the range's days. Counting a day off as a day
+    // recorded made "4 days, 20 hours" describe somebody who worked two of
+    // them - and quietly broke every figure derived by dividing one by the
+    // other.
+    let Some(server) = TestServer::start().await else { return };
+    let admin = admin_cookie(&server).await;
+
+    let (status, _) = server.post_day(&server.token, day(MONDAY, 8, None)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = server.post_day(&server.token, day("2026-09-15", 0, Some("sick"))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = server.post_day(&server.token, day("2026-09-16", 0, Some("vacation"))).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = server
+        .get_with_cookie(&format!("/api/v1/team/days?from={MONDAY}&to={SUNDAY}"), Some(&admin))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let member = body["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["email"] == EMPLOYEE.0)
+        .expect("the employee is in the table");
+
+    assert_eq!(member["days_recorded"].as_i64().unwrap(), 1, "one day was worked: {member}");
+    assert_eq!(member["days_away"].as_i64().unwrap(), 2, "two were not: {member}");
+
+    server.close().await;
+}
+
+#[tokio::test]
 async fn an_agent_that_never_heard_of_a_kind_still_uploads_a_worked_day() {
     // The compatibility hinge, driven through the real route: every kasl
     // shipped before v1.35 sends no `kind`, and the installed base must not

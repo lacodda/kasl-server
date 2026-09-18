@@ -196,7 +196,10 @@ function MemberTable({ members, live }: { members: Member[]; live: LiveFeed }) {
 
 function MemberRow({ member, longest, live }: { member: Member; longest: number; live: LiveMember | undefined }) {
   const { t } = useTranslation()
-  const nothing = member.days_recorded === 0
+  // Nothing at all - not even a day off. Somebody who was away all week has
+  // told us something, and "no data recorded" would be the wrong sentence for
+  // it (the row says how many days away instead).
+  const nothing = member.days_recorded === 0 && member.days_away === 0
 
   const total = <div className="font-mono text-sm tabular">{nothing ? '—' : duration(member.worked_seconds)}</div>
   const lastDay = member.last_day && <div className="font-mono text-[11px] text-faint tabular">{member.last_day}</div>

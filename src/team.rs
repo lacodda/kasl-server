@@ -52,7 +52,12 @@ pub struct Member {
     pub display_name: String,
     pub email: String,
     pub department: Option<String>,
-    /// Days with a workday row in the range. Zero is a real answer.
+    /// Days worked in the range. Zero is a real answer.
+    ///
+    /// Days the person was away are **not** counted here - they have their own
+    /// figure below, and a field that mixed them would make "four days, twenty
+    /// hours" describe somebody who worked two of them. The pair is what the
+    /// row reads from.
     pub days_recorded: i64,
     /// Seconds worked across the range: the span of each finished day less
     /// what was paused in it. Open days contribute nothing - a day still
@@ -133,10 +138,11 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
          LEFT JOIN LATERAL (
              -- `sum()` over bigint answers `numeric`, which does not decode
              -- into an i64; the cast is outside the sum so it happens once.
-             SELECT count(*) AS days_recorded,
+             SELECT count(*) FILTER (WHERE w.kind = 'work') AS days_recorded,
                     -- Days the employee told us they were away. Counted here
                     -- rather than in a second query: the same scan already has
-                    -- the range's rows in hand.
+                    -- the range's rows in hand, and the two counts partition
+                    -- the days rather than overlapping.
                     count(*) FILTER (WHERE w.kind <> 'work') AS days_away,
                     max(w.date) AS last_day,
                     coalesce(sum(
