@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.21.1] - 2026-09-18
+
+### Bug Fixes
+- Give an upgraded demo its calendar and its part-time rate
+
 ## [0.21.0] - 2026-09-18
 
 ### Bug Fixes
@@ -17,6 +22,7 @@ All notable changes to this project are documented in this file.
 - Give kasl-server a documentation site and a shopfront readme
 - Use the line's license line
 - Name the calendar, and stop saying kasl cannot send
+- Cut 0.21.0
 - Cut 0.21.0
 
 ### Features
