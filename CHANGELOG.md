@@ -2,31 +2,51 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.20.0] - 2026-09-17
-
-### Features
-- Make every screen work on a phone
+## [0.21.0] - 2026-09-18
 
 ### Bug Fixes
-- Put the median line where the median is
-- Take the heatmap scale from the theme, not from the accent
-
-### Refactoring
-- Leave the geometry to the components that draw it
+- Point the environment check at the file the table moved to
 
 ### Dependencies
+- Take the week's updates and hold typescript at 6
+
+### Documentation
+- Give kasl-server a documentation site and a shopfront readme
+- Use the line's license line
+- Name the calendar, and stop saying kasl cannot send
+
+### Features
+- Give the server a production calendar and a norm
+- Let a day say it was not worked
+- Answer hours against what was asked for
+- Show the week against its norm
+
+## [0.20.0] - 2026-09-17
+
+### Bug Fixes
+- Take the scale from the theme, not from the accent
+- Put the median line where the median is
+
+### Build
 - Take dowel 0.24 and its chart primitives
 
 ### Documentation
 - Cut 0.20.0
 
-## [0.19.2] - 2026-09-09
+### Features
+- Make every screen work on a phone
+
+### Refactoring
+- Leave the geometry to the components that draw it
+
+## [0.19.2] - 2026-09-17
 
 ### Dependencies
 - Take dowel-ui 0.15.0
 
 ### Documentation
 - Say which kasl works with which server
+- Cut 0.19.2
 
 ### Refactoring
 - Move onto the dowel design system
