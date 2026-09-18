@@ -158,23 +158,54 @@ fn the_install_compose_names_the_image_this_repository_publishes() {
 }
 
 #[test]
-fn the_readme_documents_every_environment_variable() {
+fn the_docs_document_every_environment_variable() {
     // The configuration table is the only place an operator learns these
     // exist. A variable added to the code and not to the table is invisible
     // until someone reads the source, which is not what a self-hosted product
     // can ask of them.
+    //
+    // The table used to live in the README and moved to the documentation site
+    // when the README became a shopfront - and this check stayed pointed at
+    // the README, where it then passed by finding nothing to compare against
+    // on the way to failing on the first variable. A gate follows the text it
+    // guards.
     let config = read("src/config.rs");
-    let readme = read("README.md");
+    let reference = read("docs/src/content/docs/reference/configuration.md");
 
-    for line in config.lines() {
-        let Some(start) = line.find("lookup(\"KASL_") else { continue };
-        let rest = &line[start + "lookup(\"".len()..];
-        let Some(end) = rest.find('"') else { continue };
-        let variable = &rest[..end];
+    // Every `"KASL_*"` literal, not only the ones passed straight to `lookup`:
+    // the limits and the flags go through `positive(...)` and `boolean(...)`,
+    // and a scan anchored on `lookup(` found four of the eight - and would
+    // have gone on saying nothing about a ninth.
+    let mut checked = Vec::new();
+    let mut rest = config.as_str();
+    while let Some(at) = rest.find("\"KASL_") {
+        let name = &rest[at + 1..];
+        let Some(end) = name.find('"') else { break };
+        let variable = &name[..end];
+        rest = &name[end..];
+
+        // A variable's name, not an error message that happens to start with
+        // one: `"KASL_SERVER_ADDR is not a valid socket address: {addr}"` is a
+        // string in this file too.
+        if !variable.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_') {
+            continue;
+        }
 
         assert!(
-            readme.contains(variable),
-            "{variable} is read by the server but missing from the README's configuration table"
+            reference.contains(variable),
+            "{variable} is read by the server but missing from the configuration reference"
         );
+        if !checked.contains(&variable) {
+            checked.push(variable);
+        }
     }
+
+    // A scan that finds nothing asserts nothing. Without this the test stays
+    // green after a rename that takes every variable out of its reach - which
+    // is exactly how its predecessor came to be checking the wrong file.
+    assert!(
+        checked.len() >= 8,
+        "only {} variables were found in config.rs ({checked:?}); the scan is looking in the wrong place",
+        checked.len()
+    );
 }

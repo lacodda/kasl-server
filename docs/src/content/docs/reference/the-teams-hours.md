@@ -9,20 +9,33 @@ administrators only.
 
 ```console
 $ curl -H "Cookie: kasl_session=..."        "http://127.0.0.1:8080/api/v1/team/days?from=2026-08-24&to=2026-08-30"
-{"from":"2026-08-24","to":"2026-08-30","privacy_level":"full","not_stored":[],
+{"from":"2026-08-24","to":"2026-08-30","privacy_level":"full","not_stored":[],"standard_hours":8,
  "members":[
    {"id":"c49ea6a8-...","display_name":"Anna","email":"anna@example.com","department":"Engineering",
     "days_recorded":3,"worked_seconds":72600,"paused_seconds":8100,"last_day":"2026-08-26",
-    "day_open":false,"last_seen_at":"2026-08-26T20:31:00Z","agents":1},
+    "day_open":false,"last_seen_at":"2026-08-26T20:31:00Z","agents":1,
+    "work_rate":1,"norm_seconds":144000,"days_away":0},
    {"id":"0073460d-...","display_name":"Clara","email":"clara@example.com","department":null,
     "days_recorded":0,"worked_seconds":0,"paused_seconds":0,"last_day":null,
-    "day_open":false,"last_seen_at":null,"agents":0}]}
+    "day_open":false,"last_seen_at":null,"agents":0,
+    "work_rate":1,"norm_seconds":144000,"days_away":0}]}
 ```
 
 **Everyone the reader may see is listed, including people with nothing
 recorded.** Clara above has no agent installed and no days; she is on the list
 anyway, because an employee whose agent never reported is exactly who a manager
 needs to notice. A table that dropped her would hide the case it exists for.
+
+**`norm_seconds` is what the range asked of that person** — the production
+calendar at their own `work_rate`, with the days they were on leave taken out
+(`days_away` counts them). `standard_hours` is stated once for the table: it is
+the installation's full day, and every norm in the rows is computed from it.
+See [the calendar and the norm](/kasl-server/reference/the-calendar-and-the-norm/).
+
+A shorter week is not a verdict. A row at half the others' hours with
+`work_rate: 0.5` is somebody on half time, and a row short by two days with
+`days_away: 2` is somebody who was on holiday — the numbers are there so the
+screen can say which.
 
 **`day_open` and `last_seen_at` are about days, not about this moment** -
 whether a day is open on that person's own calendar, and when one of their

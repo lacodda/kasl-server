@@ -26,15 +26,20 @@ Two properties are worth knowing before writing a client:
   date's tasks the payload omits are deleted, which is how a task the employee
   removed in kasl disappears here too. Other dates are untouched. Leave the flag
   out - as agents written before it did - and nothing is ever deleted.
+- **A day off is a `kind`.** Send `"kind": "vacation"`, `"sick"` or `"day_off"`
+  for a day the person was away; the norm then asks nothing of that date
+  instead of reporting it as hours missing. The field is optional and defaults
+  to `"work"`, so an agent written before it exists is read exactly as it was.
+  See [the calendar and the norm](/kasl-server/reference/the-calendar-and-the-norm/).
 
 **`POST /api/v1/days/batch`** — upload a backlog. The body is `{"days": [...]}`
 with the same day objects, and the answer reports each one:
 
 ```json
 {"accepted": 2, "rejected": 1, "results": [
-  {"status": "accepted", "date": "2026-08-10", "workday_id": "...", "pauses": 1, "tasks": 3, "deleted_tasks": 0, "privacy_level": "full"},
+  {"status": "accepted", "date": "2026-08-10", "kind": "work", "workday_id": "...", "pauses": 1, "tasks": 3, "deleted_tasks": 0, "privacy_level": "full"},
   {"status": "rejected", "date": "2026-08-11", "error": "ended_at is before started_at"},
-  {"status": "accepted", "date": "2026-08-12", "workday_id": "...", "pauses": 0, "tasks": 1, "deleted_tasks": 0, "privacy_level": "full"}
+  {"status": "accepted", "date": "2026-08-12", "kind": "vacation", "workday_id": "...", "pauses": 0, "tasks": 0, "deleted_tasks": 0, "privacy_level": "full"}
 ]}
 ```
 
