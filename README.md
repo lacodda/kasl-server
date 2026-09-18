@@ -20,15 +20,15 @@ The door for agents is built to survive a bad connection: a day at a time or a
 whole backlog in one request, and a task deleted in kasl disappears here too.
 What the server keeps about a person is a policy it enforces and can recite,
 not a claim in a document - an employee can ask it, and an administrator can
-narrow it. What is still missing is the other half of the loop: kasl cannot
-send on its own yet, so history is imported or posted by hand.
+narrow it. kasl has been delivering days on its own since its v1.8, backlog
+included, so the loop is closed end to end.
 
 ## A day in the life
 
 ```console
 $ docker compose up -d
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.20.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.21.0"}
 
 # An agent back from three days offline - the middle day is impossible, and
 # the others land anyway.
@@ -55,7 +55,10 @@ can be seen before an agent is installed anywhere.
   days, a live column of who is working right now, the month as a heatmap,
   and signals naming who is worth a look.
 - **A personal page for every employee.** Their own week, drawn as a timeline
-  of work and the pauses in it.
+  of work and the pauses in it, against the hours it asked for.
+- **A production calendar and a norm.** Holidays, shortened eves and
+  transferred weekends; a full day per installation and a share of it per
+  person, so half time reads as half time rather than as half-hearted.
 - **A privacy policy the server enforces.** Three levels of detail, applied on
   the way in - a field a level excludes never reaches the database.
 - **Roles and departments.** Admins, managers and employees, with visibility
@@ -81,10 +84,11 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.20.0, in daily use on a small team's own stand. The ingest contract,
-dashboards, roles, departments, the audit log, the privacy manifest and the
-web UI - including a phone layout - all hold end to end. What landed in each
-version: [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
+v0.21.0, in daily use on a small team's own stand. The ingest contract,
+dashboards, roles, departments, the audit log, the privacy manifest, the
+production calendar and the web UI - including a phone layout - all hold end
+to end. What landed in each version:
+[CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 
 ## Documentation
 
