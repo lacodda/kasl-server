@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Bug Fixes
 - Point the environment check at the file the table moved to
+- Count the norm over the people this server measures
+- Say that the day's kind is stored too
+- Keep days worked and days away apart
 
 ### Dependencies
 - Take the week's updates and hold typescript at 6
@@ -14,6 +17,7 @@ All notable changes to this project are documented in this file.
 - Give kasl-server a documentation site and a shopfront readme
 - Use the line's license line
 - Name the calendar, and stop saying kasl cannot send
+- Cut 0.21.0
 
 ### Features
 - Give the server a production calendar and a norm
