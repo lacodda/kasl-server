@@ -54,8 +54,17 @@ export interface Task {
   recorded_at: string
 }
 
+/**
+ * What kind of day this was, as the employee's agent reported it.
+ *
+ * A day the agent said nothing about is `work` - every kasl shipped before the
+ * field exists says so by saying nothing (ADR 0017).
+ */
+export type WorkdayKind = 'work' | 'vacation' | 'sick' | 'day_off'
+
 export interface Day {
   date: string
+  kind: WorkdayKind
   started_at: string
   ended_at: string | null
   /** `null` while the day is still open - an unfinished day has no total. */
@@ -64,15 +73,37 @@ export interface Day {
   paused_seconds: number
   pauses: Pause[]
   tasks: Task[]
+  /**
+   * What this date was meant to be worked, in seconds. Zero on a weekend, a
+   * holiday, and a day the employee was away.
+   */
+  norm_seconds: number
 }
 
 /** What a privacy level withholds, in the server's own vocabulary. */
 export type NotStored = 'pauses' | 'tasks' | 'free_text'
 
+/**
+ * What a range asked of a person.
+ *
+ * A pair rather than a percentage: the server answers the two numbers a person
+ * reads, and the screen divides them if it wants to (ADR 0017).
+ */
+export interface Progress {
+  norm_seconds: number
+  /** The installation's full day, in hours. */
+  standard_hours: number
+  /** This person's share of it: `0.5` is half time. */
+  work_rate: number
+}
+
 export interface DaysResponse {
   from: string
   to: string
   days: Day[]
+  progress: Progress
+  /** Seconds worked across the range - what the norm is measured against. */
+  worked_seconds: number
   privacy_level: PrivacyLevel
   /**
    * Kinds of detail this installation does not keep. The screen must say so
@@ -102,6 +133,15 @@ export interface Member {
   last_seen_at: string | null
   /** Live agent tokens. Zero explains a silent row without guessing. */
   agents: number
+  /**
+   * This person's share of a full day. Carried so a row at half the team's
+   * hours reads as half time rather than as half-hearted.
+   */
+  work_rate: number
+  /** What the range asked of them, with days away taken out. */
+  norm_seconds: number
+  /** Days in the range they were on leave or ill. */
+  days_away: number
 }
 
 export interface TeamResponse {
@@ -110,6 +150,25 @@ export interface TeamResponse {
   members: Member[]
   privacy_level: PrivacyLevel
   not_stored: NotStored[]
+  /** The installation's full day, in hours: one figure for the whole table. */
+  standard_hours: number
+}
+
+/** What makes a date unlike the weekday it falls on. */
+export type CalendarDayKind = 'holiday' | 'short_day' | 'working_weekend'
+
+export interface CalendarDay {
+  date: string
+  kind: CalendarDayKind
+  /** What the day is called. The date and the kind are the calendar. */
+  note: string | null
+}
+
+export interface CalendarYear {
+  year: number
+  /** Only the exceptions, ascending. An empty year is a real answer. */
+  days: CalendarDay[]
+  standard_hours: number
 }
 
 /**
@@ -364,6 +423,31 @@ export const api = {
    * while somebody has the page open.
    */
   teamSignals: () => request<SignalsResponse>('/team/signals'),
+
+  /**
+   * A year of the production calendar: only the dates that differ from the
+   * weekday they fall on. Readable by anyone signed in - which days of the
+   * year are worked is not a secret from the people working them.
+   */
+  calendar: (year: number) => request<CalendarYear>(`/calendar?year=${year}`),
+
+  /**
+   * Replaces a year of the calendar. Administrators only, and a replacement
+   * rather than a merge: a corrected calendar is the document that is right.
+   */
+  putCalendar: (year: number, days: CalendarDay[]) =>
+    request<CalendarYear>(`/calendar?year=${year}`, { method: 'PUT', body: JSON.stringify({ days }) }),
+
+  /** Sets the installation's full day, in hours. Administrators only. */
+  putStandardHours: (standard_hours: number) =>
+    request<{ standard_hours: number }>('/calendar/standard-hours', {
+      method: 'PUT',
+      body: JSON.stringify({ standard_hours }),
+    }),
+
+  /** Sets one person's share of a full day. Administrators only. */
+  putWorkRate: (id: string, work_rate: number) =>
+    request<{ work_rate: number }>(`/users/${id}/work-rate`, { method: 'PUT', body: JSON.stringify({ work_rate }) }),
 
   /** One person's twelve-week shape, and the signals about them. */
   userTrend: (id: string) => request<TrendResponse>(`/users/${id}/trend`),

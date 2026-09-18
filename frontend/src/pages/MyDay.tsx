@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Coffee, Lock } from 'lucide-react'
+import { Coffee, Lock, Plane } from 'lucide-react'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { api, type Day, type DaysResponse, type NotStored } from '@/lib/api'
 import { bands, clock, duration, isoDate, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
 import { Panel } from '@/components/ui/panel'
+import { Progress } from '@/components/ui/progress'
 import { StatRow, StatTile } from '@/components/ui/stat-tile'
 import { Track, type TrackSegment } from '@/components/ui/track'
 
@@ -110,7 +111,7 @@ export function WeekView({
 
       {answer && (
         <>
-          <WeekTotal days={answer.days} />
+          <WeekTotal answer={answer} />
 
           <Panel className="divide-y divide-line">
             {dates.map((date) => (
@@ -133,21 +134,63 @@ export function WeekView({
   )
 }
 
-/** The week's worked hours, from the days the server answered. */
-function WeekTotal({ days }: { days: Day[] }) {
+/**
+ * The week's worked hours against what it asked for.
+ *
+ * The two figures sit side by side and the bar divides them - the server
+ * answers a pair rather than a percentage, because "32h of 40h" and "80%" are
+ * not the same sentence and only one of them survives a part-time week
+ * (ADR 0017).
+ */
+function WeekTotal({ answer }: { answer: DaysResponse }) {
   const { t } = useTranslation()
   // Open days contribute nothing rather than a partial figure: the total says
   // how much work is on the record, and a running day is not on it yet.
-  const worked = days.reduce((sum, day) => sum + (day.worked_seconds ?? 0), 0)
-  const paused = days.reduce((sum, day) => sum + day.paused_seconds, 0)
+  const worked = answer.worked_seconds
+  const paused = answer.days.reduce((sum, day) => sum + day.paused_seconds, 0)
+  const norm = answer.progress.norm_seconds
+  const over = worked - norm
 
   return (
-    <Panel className="p-4 sm:p-5">
+    <Panel className="space-y-4 p-4 sm:p-5">
       <StatRow>
         <StatTile label={t('myDay.worked')} value={duration(worked)} tone="accent" />
+        <StatTile label={t('myDay.norm')} value={norm > 0 ? duration(norm) : '—'} />
         <StatTile label={t('myDay.paused')} value={duration(paused)} />
-        <StatTile label={t('myDay.daysRecorded')} value={String(days.length)} />
+        <StatTile label={t('myDay.daysRecorded')} value={String(answer.days.length)} />
       </StatRow>
+
+      {norm > 0 ? (
+        <Progress
+          // Clamped at the norm so the bar stays a bar: a week worked over its
+          // norm would otherwise fill past the track and say nothing about how
+          // far over it went. The figure beside it is not clamped, and that is
+          // where the overtime is stated.
+          value={Math.min(worked, norm)}
+          max={norm}
+          label={t('myDay.progressLabel')}
+          // Over the norm is not a warning tone. Nothing on this screen calls
+          // a number good or bad - it says what happened, and how much of it
+          // was due (ADR 0017).
+          tone="accent"
+        >
+          <span className="font-mono tabular">
+            {t('myDay.progress', { worked: duration(worked), norm: duration(norm) })}
+            {over > 0 && <span className="ml-2 text-faint">{t('myDay.overNorm', { over: duration(over) })}</span>}
+          </span>
+        </Progress>
+      ) : (
+        // A week that owes nothing - a full week of leave, or a rate of zero.
+        // Said in words rather than drawn as an empty bar, which would read as
+        // "nothing done" instead of "nothing due".
+        <p className="text-xs text-faint">{t('myDay.noNorm')}</p>
+      )}
+
+      {answer.progress.work_rate !== 1 && (
+        // Why this person's norm is not the installation's full week. Without
+        // it a half-time week reads as a half-hearted one.
+        <p className="text-xs text-faint">{t('myDay.partTime', { rate: answer.progress.work_rate })}</p>
+      )}
     </Panel>
   )
 }
@@ -176,6 +219,21 @@ function DayRow({
       <div className="flex items-center gap-3 px-4 py-3.5 opacity-55 sm:gap-4 sm:px-5">
         <DayLabel date={date} weekday={weekday} today={today} />
         <span className="text-sm text-faint">{t('myDay.noData')}</span>
+      </div>
+    )
+  }
+
+  // A day the employee told us they were away. Its own row rather than a bar
+  // of nothing: an empty timeline says "worked no hours", and this day was
+  // never going to have any (ADR 0017).
+  if (day.kind !== 'work') {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5">
+        <DayLabel date={date} weekday={weekday} today={today} />
+        <span className="inline-flex items-center gap-1.5 text-sm text-dim">
+          <Plane className="size-3.5 shrink-0" />
+          {t(`myDay.dayKind.${day.kind}`)}
+        </span>
       </div>
     )
   }

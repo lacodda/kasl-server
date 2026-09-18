@@ -195,9 +195,25 @@ async fn every_state_the_dashboard_can_show_is_on_screen() {
     };
 
     // Working right now.
+    //
+    // `day_open` is deliberately not asserted here. The flag compares the
+    // employee's own local date against the server's `current_date`, and this
+    // person is three hours behind UTC: for three hours of every day her open
+    // day sits on yesterday's date as far as the server is concerned, and the
+    // flag is false while she is very much at work (ADR 0003 accepts this -
+    // the alternative needs a per-person time zone the server does not store).
+    // Asserting it made this test pass or fail by the hour of the run.
+    //
+    // What is asserted instead is what the demo actually has to produce: a day
+    // with no end on it, and a machine that was heard from.
     let open = find("Sofia Reyes");
-    assert_eq!(open["day_open"], true, "{open}");
     assert!(open["last_seen_at"].is_string(), "{open}");
+    let running: i64 = sqlx::query_scalar("SELECT count(*) FROM workdays w JOIN users u ON u.id = w.user_id WHERE u.email = $1 AND w.ended_at IS NULL")
+        .bind("sofia.reyes@example.com")
+        .fetch_one(&server.pool)
+        .await
+        .expect("the demo's open day is in the database");
+    assert_eq!(running, 1, "the demo seeds exactly one day still running");
 
     // Went quiet a week ago: nothing this week, and the server has not heard
     // from the machine in days.

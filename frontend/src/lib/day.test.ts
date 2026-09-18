@@ -10,6 +10,7 @@ function pause(from: string, to: string | null, seconds: number, manual = false)
 function day(overrides: Partial<Day> = {}): Day {
   return {
     date: '2026-08-24',
+    kind: 'work',
     started_at: '2026-08-24T12:00:00Z',
     ended_at: '2026-08-24T21:00:00Z',
     worked_seconds: 30000,
@@ -17,6 +18,7 @@ function day(overrides: Partial<Day> = {}): Day {
     paused_seconds: 0,
     pauses: [],
     tasks: [],
+    norm_seconds: 8 * 3600,
     ...overrides,
   }
 }

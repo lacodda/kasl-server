@@ -16,7 +16,7 @@ export interface Destination {
    * "What is stored a…" in a bar four cells wide. */
   label: string
   /** Named rather than imported, so this file stays free of React. */
-  icon: 'day' | 'team' | 'month' | 'privacy'
+  icon: 'day' | 'team' | 'month' | 'calendar' | 'privacy'
 }
 
 /**
@@ -35,6 +35,10 @@ export function destinations(managesPeople: boolean): Destination[] {
           { to: '/month', label: 'nav.heatmap', icon: 'month' },
         ] as const)
       : []),
+    // For everyone, not only the people who may change it: the calendar is
+    // what a person's own norm is computed from, and an employee wondering why
+    // a week asked for thirty-two hours has to be able to look (ADR 0017).
+    { to: '/calendar', label: 'nav.calendar', icon: 'calendar' },
     { to: '/privacy', label: 'nav.privacy', icon: 'privacy' },
   ]
 }

@@ -95,7 +95,7 @@ export function Dashboard() {
 
       {answer && (
         <>
-          <TeamTotals members={answer.members} live={live} />
+          <TeamTotals answer={answer} live={live} />
           <MemberTable members={answer.members} live={live} />
         </>
       )}
@@ -104,9 +104,14 @@ export function Dashboard() {
 }
 
 /** The week across everyone, so the table has something to be measured against. */
-function TeamTotals({ members, live }: { members: Member[]; live: LiveFeed }) {
+function TeamTotals({ answer, live }: { answer: TeamResponse; live: LiveFeed }) {
   const { t } = useTranslation()
+  const members = answer.members
   const worked = members.reduce((sum, member) => sum + member.worked_seconds, 0)
+  // The team's norm is the sum of the people's, not a full week times the head
+  // count: half-timers and people on leave each owe their own figure, and a
+  // team total that ignored them would be a number nobody is measured by.
+  const norm = members.reduce((sum, member) => sum + member.norm_seconds, 0)
   const open = members.filter((member) => member.day_open).length
   // People a manager should look at: no agent at all, or one that has never
   // delivered anything. Counted rather than buried, because this is the
@@ -121,6 +126,11 @@ function TeamTotals({ members, live }: { members: Member[]; live: LiveFeed }) {
     <Panel className="p-4 sm:p-5">
       <StatRow>
         <StatTile label={t('team.workedTotal')} value={duration(worked)} tone="accent" />
+        {/* The figure the hours are measured against, as its own tile rather
+            than as the accented one's delta: a delta says which way something
+            moved, and a norm is not a movement. The two side by side are the
+            pair the server answers (ADR 0017). */}
+        {norm > 0 && <StatTile label={t('team.normTotal')} value={duration(norm)} />}
         <StatTile label={t('team.people')} value={String(members.length)} />
         {live.loaded && <StatTile label={t('team.workingNow')} value={String(working)} />}
         <StatTile label={t('team.dayOpen')} value={String(open)} />
@@ -157,9 +167,15 @@ function MemberTable({ members, live }: { members: Member[]; live: LiveFeed }) {
     )
   }
 
-  // The longest week in view sets the bar scale, so the bars compare people
-  // with each other rather than against a number nobody chose.
-  const longest = Math.max(...members.map((member) => member.worked_seconds), 1)
+  // The scale the bars share. Before there was a norm this was the longest
+  // week in view - people against each other, because nothing else existed to
+  // measure them by. Now a person's own norm is the right edge where they have
+  // one: a bar that fills is a week worked in full, which is a fact about that
+  // person rather than about whoever happened to work longest.
+  //
+  // The longest week still sets the floor, so a team where everybody is over
+  // their norm does not draw seven identical full bars.
+  const longest = Math.max(...members.map((member) => Math.max(member.worked_seconds, member.norm_seconds)), 1)
 
   return (
     <Panel className="divide-y divide-line">
@@ -203,19 +219,42 @@ function MemberRow({ member, longest, live }: { member: Member; longest: number;
           // which is a claim. The words say which of the two this is.
           <p className="text-sm text-faint">{t('team.noData')}</p>
         ) : (
-          // One segment on a scale the week sets: the longest week in view is
-          // the right edge, so the bars compare people with each other rather
-          // than against a number nobody chose. `minWidth={0}` because these
-          // widths are being read against one another - a widened bar is no
-          // longer to scale, and a reader measuring by eye would be measuring
-          // the floor.
-          <Track
-            segments={[{ key: 'worked', start: 0, end: member.worked_seconds }]}
-            from={0}
-            to={longest}
-            minWidth={0}
-            label={t('team.workedBar', { name: member.display_name, hours: duration(member.worked_seconds) })}
-          />
+          // One segment on the scale the table shares, so the bars can be read
+          // against each other and against the notch that marks this person's
+          // own norm. `minWidth={0}` because these widths are being read by
+          // eye - a widened bar is no longer to scale, and a reader measuring
+          // it would be measuring the floor.
+          <div className="relative">
+            <Track
+              segments={[{ key: 'worked', start: 0, end: member.worked_seconds }]}
+              from={0}
+              to={longest}
+              minWidth={0}
+              label={
+                member.norm_seconds > 0
+                  ? t('team.normBar', {
+                      name: member.display_name,
+                      hours: duration(member.worked_seconds),
+                      norm: duration(member.norm_seconds),
+                    })
+                  : t('team.workedBar', { name: member.display_name, hours: duration(member.worked_seconds) })
+              }
+            />
+            {member.norm_seconds > 0 && member.norm_seconds < longest && (
+              // Where this person's week was due to end. A hairline rather
+              // than a second bar: the row is about the hours, and the norm is
+              // the mark they are read against.
+              //
+              // `aria-hidden` because the bar's own label already names both
+              // figures - a screen reader meeting a second, wordless element
+              // here would hear an interruption, not a fact.
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 w-px bg-dim"
+                style={{ left: `${(member.norm_seconds / longest) * 100}%` }}
+              />
+            )}
+          </div>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-faint tabular">
           {!nothing && (
@@ -223,6 +262,10 @@ function MemberRow({ member, longest, live }: { member: Member; longest: number;
               {member.days_recorded} {t('team.days')} · {duration(member.paused_seconds)} {t('team.pausedShort')}
             </span>
           )}
+          {/* Why a short week is short. Without it a fortnight of leave reads
+              as somebody who stopped working (ADR 0017). */}
+          {member.days_away > 0 && <span>{t('team.daysAway', { count: member.days_away })}</span>}
+          {member.work_rate !== 1 && <span>{t('team.partTime', { rate: member.work_rate })}</span>}
           <Status member={member} live={live} />
         </div>
       </div>

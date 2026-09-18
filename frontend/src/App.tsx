@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
+import { CalendarCheck, CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useSession } from '@/lib/session'
+import { Calendar } from '@/pages/Calendar'
 import { Dashboard, PersonWeek } from '@/pages/Dashboard'
 import { Heatmap } from '@/pages/Heatmap'
 import { Login } from '@/pages/Login'
@@ -54,6 +55,9 @@ export function App() {
           {managesPeople && <Route path="/team" element={<Dashboard />} />}
           {managesPeople && <Route path="/month" element={<Heatmap />} />}
           {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
+          {/* Readable by everyone signed in; the screen hides its controls
+              from anyone the server would refuse. */}
+          <Route path="/calendar" element={<Calendar />} />
           <Route path="/privacy" element={<Privacy />} />
           {/* An unknown path lands on the person's own week rather than on a
               blank page. The manager's screens arrive with v0.13. */}
@@ -70,6 +74,7 @@ const ICON = {
   day: CalendarDays,
   team: Users,
   month: CalendarRange,
+  calendar: CalendarCheck,
   privacy: ShieldCheck,
 } as const
 

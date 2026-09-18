@@ -18,7 +18,8 @@
     "heatmap": "The month",
     "privacy": "My data",
     "signOut": "Sign out",
-    "sections": "Sections"
+    "sections": "Sections",
+    "calendar": "Calendar"
   },
   "myDay": {
     "title": "My week",
@@ -46,7 +47,20 @@
     "timelineEmpty": "nothing recorded yet",
     "pausesWithheld": "This server does not store your pauses one by one - only that there were {{count}} of them, {{total}} in total.",
     "tasksWithheld": "This server does not store the tasks you log.",
-    "whyNotStored": "What this server stores about me"
+    "whyNotStored": "What this server stores about me",
+    "norm": "Norm",
+    "progress": "{{worked}} of {{norm}}",
+    "progressLabel": "Hours worked against the norm for this week",
+    "overNorm": "{{over}} over",
+    "noNorm": "No hours are due this week",
+    "partTime": "{{rate}} of a full day",
+    "dayKind": {
+      "vacation": "On leave",
+      "sick": "Off sick",
+      "day_off": "Day off"
+    },
+    "dayNorm": "{{hours}} due",
+    "nothingDue": "Nothing due"
   },
   "team": {
     "title": "The team",
@@ -75,7 +89,14 @@
       "paused": "On a break",
       "idle": "Not in a day",
       "offline": "Offline"
-    }
+    },
+    "normTotal": "Norm",
+    "ofNorm": "of {{norm}}",
+    "daysAway": "{{count}} day away",
+    "daysAway_other": "{{count}} days away",
+    "fullDay": "A full day here is {{hours}}h",
+    "partTime": "{{rate}}×",
+    "normBar": "{{name}} worked {{hours}} of {{norm}}"
   },
   "heatmap": {
     "title": "The month",
@@ -146,5 +167,36 @@
   "common": {
     "loading": "Loading…",
     "error": "Something went wrong"
+  },
+  "calendar": {
+    "title": "Production calendar",
+    "subtitle": "Only the dates that differ from the weekday they fall on.",
+    "year": "Year",
+    "previousYear": "Previous year",
+    "nextYear": "Next year",
+    "thisYear": "This year",
+    "empty": "Nothing entered for this year: every weekday is a full day and weekends are not worked.",
+    "standardHours": "A full day",
+    "hoursUnit": "hours",
+    "save": "Save the year",
+    "saving": "Saving",
+    "saved": "Saved",
+    "add": "Add a day",
+    "remove": "Remove",
+    "date": "Date",
+    "kind": "Kind",
+    "note": "Name",
+    "notePlaceholder": "New Year, optional",
+    "readOnly": "Only an administrator can change the calendar.",
+    "kinds": {
+      "holiday": "Holiday",
+      "short_day": "Short day",
+      "working_weekend": "Working weekend"
+    },
+    "kindDetail": {
+      "holiday": "a working weekday that is not worked",
+      "short_day": "one hour shorter than a full day",
+      "working_weekend": "a weekend day moved into the working week"
+    }
   }
 }

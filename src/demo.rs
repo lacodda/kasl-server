@@ -33,6 +33,7 @@ use crate::{
     app::AppState,
     audit,
     auth::hash_token,
+    calendar::{CalendarDayKind, WorkdayKind},
     error::ApiError,
     heartbeat::{self, AgentState},
     import::{self, AgentDay, AgentPause, AgentTask},
@@ -66,6 +67,11 @@ enum Pattern {
     Fading,
     /// Steady, but the breaks are entered by hand, with reasons.
     Breaks,
+    /// Six-tenths of a day, every weekday: what part time looks like against
+    /// a norm that knows about it. Paired with an entry in [`PART_TIME`] -
+    /// the shape of the days and the rate on the account have to agree, or
+    /// the demo draws either permanent overtime or permanent shortfall.
+    PartTime,
     /// Working right now: a day open on today's date.
     Open,
     /// Reported until a week ago, then nothing: the agent went quiet.
@@ -202,7 +208,7 @@ const TEAM: [Person; 12] = [
         role: UserRole::Employee,
         department: Some("Design"),
         offset_minutes: 2 * 60,
-        pattern: Some(Pattern::Steady),
+        pattern: Some(Pattern::PartTime),
     },
     Person {
         first: "Jonas",
@@ -319,7 +325,32 @@ pub struct Seeded {
     pub departments: usize,
     pub people: usize,
     pub days: usize,
+    /// Dated exceptions written into the production calendar.
+    pub calendar_days: usize,
 }
+
+/// Who works less than a full day, and how much less.
+///
+/// One person, deliberately: a demo where everybody is full time never shows
+/// what a norm does for part-time work, and a demo where half the team is
+/// would make it look like the common case.
+///
+/// The rate is not decoration - [`Pattern::PartTime`] shortens her days to
+/// match. A full-length day against a six-tenths norm would draw sixty per
+/// cent of overtime on every row, which is the opposite of what part time
+/// looks like.
+const PART_TIME: [(&str, &str); 1] = [("mira.halvorsen", "0.6")];
+
+/// How far ahead of the history a demo holiday is placed.
+///
+/// The calendar is seeded relative to the day of the seed, like everything
+/// else here: a fixed date would be inside the eight weeks this month and
+/// outside them in three (the same relativity the history already has).
+const HOLIDAY_WEEKS_AGO: [(i64, CalendarDayKind, &str); 3] = [
+    (5, CalendarDayKind::Holiday, "Spring holiday"),
+    (2, CalendarDayKind::ShortDay, "Holiday eve"),
+    (2, CalendarDayKind::WorkingWeekend, "Transferred working day"),
+];
 
 /// Seeds the team into an empty database.
 ///
@@ -390,6 +421,32 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         seeded.people += 1;
     }
 
+    for (email_prefix, rate) in PART_TIME {
+        // Why one row on the dashboard is shorter than the rest, and how the
+        // screen says so rather than leaving it to be read as slacking.
+        let updated = sqlx::query("UPDATE users SET work_rate = $1::numeric WHERE email LIKE $2")
+            .bind(rate)
+            .bind(format!("{email_prefix}@%"))
+            .execute(&mut *tx)
+            .await?;
+        debug_assert_eq!(updated.rows_affected(), 1, "the part-time table names a member of the team");
+    }
+
+    // A calendar with something in it, placed relative to the seed like the
+    // history is. A demo with an empty calendar would show every weekday at a
+    // full norm, which is the one case the feature does not need to exist for.
+    let today = now.date_naive();
+    for (weeks_ago, kind, note) in HOLIDAY_WEEKS_AGO {
+        let date = weekday_near(today - Duration::weeks(weeks_ago), kind);
+        sqlx::query("INSERT INTO calendar_days (date, kind, note) VALUES ($1, $2, $3) ON CONFLICT (date) DO NOTHING")
+            .bind(date)
+            .bind(kind)
+            .bind(note)
+            .execute(&mut *tx)
+            .await?;
+        seeded.calendar_days += 1;
+    }
+
     for department in &DEPARTMENTS {
         let manager = TEAM
             .iter()
@@ -444,11 +501,36 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     }
 
     audit::Entry::new(audit::action::DEMO_SEEDED)
-        .with(serde_json::json!({ "people": seeded.people, "departments": seeded.departments, "days": seeded.days }))
+        .with(serde_json::json!({
+            "people": seeded.people,
+            "departments": seeded.departments,
+            "days": seeded.days,
+            "calendar_days": seeded.calendar_days,
+        }))
         .record(pool)
         .await;
 
     Ok(seeded)
+}
+
+/// A date of the sort the kind needs, near the one asked for.
+///
+/// A holiday and a short day have to land on a weekday to mean anything - a
+/// holiday on a Sunday takes nothing away - and a working weekend has to land
+/// on a Saturday. Without this the demo's calendar would be seeded on whatever
+/// weekday the install happened to fall on, and a third of the time it would
+/// change no number on any screen.
+fn weekday_near(date: chrono::NaiveDate, kind: CalendarDayKind) -> chrono::NaiveDate {
+    let wants_weekend = kind == CalendarDayKind::WorkingWeekend;
+    let mut date = date;
+    for _ in 0..7 {
+        let weekend = matches!(date.weekday(), Weekday::Sat | Weekday::Sun);
+        if weekend == wants_weekend && (!wants_weekend || date.weekday() == Weekday::Sat) {
+            return date;
+        }
+        date += Duration::days(1);
+    }
+    date
 }
 
 /// The pulse a pattern gets, and how old it is kept.
@@ -619,11 +701,28 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
         if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
             continue;
         }
-        // A sick day now and then: the dashboard should show a gap.
-        if rng.chance(4) {
+        if pattern == Pattern::Silent && date >= today - Duration::days(7) {
             continue;
         }
-        if pattern == Pattern::Silent && date >= today - Duration::days(7) {
+
+        // A day off now and then. Two shapes, and the difference is the point:
+        // a day the person marked as sick is a row saying so, and the norm
+        // excuses it (ADR 0017); a day nobody recorded at all is a gap, and
+        // the dashboard has to keep showing what that looks like.
+        if rng.chance(4) {
+            if rng.chance(2) {
+                days.push(AgentDay {
+                    date,
+                    // A day off still has a date and a shape: the agent files
+                    // it at the hour the day would have started, with no
+                    // hours on it.
+                    start: date.and_time(minutes(9 * 60)),
+                    end: Some(date.and_time(minutes(9 * 60))),
+                    pauses: Vec::new(),
+                    tasks: Vec::new(),
+                    kind: WorkdayKind::Sick,
+                });
+            }
             continue;
         }
 
@@ -631,6 +730,9 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
         let (start_minute, span_minutes) = match pattern {
             Pattern::Long => (rng.range(8 * 60, 8 * 60 + 30), rng.range(10 * 60, 11 * 60 + 15)),
             Pattern::Fading => (rng.range(9 * 60, 9 * 60 + 45), (8.5 * 60.0 - week * 0.45 * 60.0) as i64 + rng.range(-15, 15)),
+            // Six-tenths of a full day plus the usual wobble, starting late
+            // morning: the shape that matches the rate on her account.
+            Pattern::PartTime => (rng.range(10 * 60, 10 * 60 + 30), rng.range(4 * 60 + 40, 5 * 60 + 10)),
             _ => (rng.range(8 * 60 + 45, 9 * 60 + 30), rng.range(7 * 60 + 45, 8 * 60 + 45)),
         };
         let start = date.and_time(minutes(start_minute));
@@ -645,6 +747,7 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
             end: Some(end),
             pauses,
             tasks,
+            kind: WorkdayKind::Work,
         });
     }
 
@@ -672,6 +775,7 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
             start,
             end: None,
             pauses,
+            kind: WorkdayKind::Work,
             tasks: vec![AgentTask {
                 agent_task_id: next_task_id,
                 agent_group_id: group,
@@ -689,15 +793,20 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
 /// The interruptions of one day.
 ///
 /// Placed on hourly slots so they never overlap: each starts within the first
-/// half hour of its slot and lasts under half an hour. Lunch sits on the
-/// fourth hour for everyone; whether it is a detected absence or a break the
-/// person entered depends on the pattern.
+/// half hour of its slot and lasts under half an hour. Lunch sits near the
+/// middle of the day; whether it is a detected absence or a break the person
+/// entered depends on the pattern.
 fn pauses_for(rng: &mut Rng, pattern: Pattern, start: NaiveDateTime, span_minutes: i64) -> Vec<AgentPause> {
     let manual = pattern == Pattern::Breaks;
     let hours = span_minutes / 60;
     let mut pauses = Vec::new();
 
-    let lunch = start + Duration::hours(4) + Duration::minutes(rng.range(0, 15));
+    // The fourth hour of an eight-hour day, and the middle of a shorter one.
+    // A fixed fourth hour put a part-timer's lunch forty minutes before they
+    // stopped, and a forty-minute lunch would then have run past the end of
+    // the day it was inside.
+    let lunch_hour = (hours / 2).clamp(1, 4);
+    let lunch = start + Duration::hours(lunch_hour) + Duration::minutes(rng.range(0, 15));
     pauses.push(pause(lunch, rng.range(28, 40), manual, manual.then_some("Lunch")));
 
     let idle_count = match pattern {
@@ -705,7 +814,7 @@ fn pauses_for(rng: &mut Rng, pattern: Pattern, start: NaiveDateTime, span_minute
         Pattern::Breaks => rng.range(1, 3),
         _ => rng.range(2, 3),
     };
-    let mut slots: Vec<i64> = (1..hours).filter(|slot| *slot != 4).collect();
+    let mut slots: Vec<i64> = (1..hours).filter(|slot| *slot != lunch_hour).collect();
     for _ in 0..idle_count {
         if slots.is_empty() {
             break;

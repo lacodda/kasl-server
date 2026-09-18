@@ -18,11 +18,11 @@ const resolve = (key: string): string | undefined =>
 
 describe('destinations', () => {
   it('gives an employee their own screens and nothing else', () => {
-    expect(destinations(false).map((d) => d.to)).toEqual(['/day', '/privacy'])
+    expect(destinations(false).map((d) => d.to)).toEqual(['/day', '/calendar', '/privacy'])
   })
 
   it('gives a manager the team screens as well, in reading order', () => {
-    expect(destinations(true).map((d) => d.to)).toEqual(['/day', '/team', '/month', '/privacy'])
+    expect(destinations(true).map((d) => d.to)).toEqual(['/day', '/team', '/month', '/calendar', '/privacy'])
   })
 
   it('names every destination with a string the product actually has', () => {
@@ -41,6 +41,14 @@ describe('destinations', () => {
     for (const destination of destinations(true)) {
       expect(resolve(destination.label)!.length, destination.label).toBeLessThanOrEqual(12)
     }
+  })
+
+  it('fits the phone bar', () => {
+    // The bottom bar divides the width between the destinations. At 320px -
+    // the narrowest phone this product claims to work on - five cells are
+    // 64px each, which still clears the 44px minimum target; a sixth would
+    // not, and would have to become something other than a flat bar.
+    expect(destinations(true).length).toBeLessThanOrEqual(5)
   })
 
   it('leads every destination somewhere different', () => {
