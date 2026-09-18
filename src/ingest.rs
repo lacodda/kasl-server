@@ -27,6 +27,7 @@ use uuid::Uuid;
 use crate::{
     app::AppState,
     auth::AuthenticatedAgent,
+    calendar::WorkdayKind,
     error::ApiError,
     privacy::{Dropped, Policy, PrivacyLevel},
 };
@@ -58,6 +59,15 @@ pub struct DayUpload {
     /// must never have its silence read as "delete the rest".
     #[serde(default)]
     pub tasks_are_complete: bool,
+    /// What kind of day this was: worked, or away on leave, ill, or simply
+    /// not working (`kasl day off`).
+    ///
+    /// Optional, and defaults to `work` for the same reason as the flag above:
+    /// an agent shipped before the field exists must not have its silence read
+    /// as an absence. The norm reads it - a day of leave owes no hours
+    /// (ADR 0017).
+    #[serde(default)]
+    pub kind: WorkdayKind,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +109,10 @@ pub struct TaskUpload {
 pub struct DayAccepted {
     pub workday_id: Uuid,
     pub date: NaiveDate,
+    /// Echoed back so an agent can tell a day it marked as leave from one the
+    /// server read as ordinary work - a server too old for the field answers
+    /// without it.
+    pub kind: WorkdayKind,
     pub pauses: usize,
     pub tasks: usize,
     /// Tasks dropped because the agent declared its set authoritative. Zero on
@@ -239,6 +253,7 @@ async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUplo
     Ok(DayAccepted {
         workday_id,
         date: day.date,
+        kind: day.kind,
         pauses: day.pauses.len(),
         tasks,
         deleted_tasks,
@@ -323,6 +338,11 @@ fn filter(day: &DayUpload, level: PrivacyLevel) -> (DayUpload, Dropped, Option<P
         pauses,
         tasks,
         tasks_are_complete: day.tasks_are_complete,
+        // Not a privacy level's business: which kind of day it was is a fact
+        // about the calendar, not about what the employee did at the keyboard,
+        // and a day of leave stored as a worked day would make the norm lie at
+        // every level.
+        kind: day.kind,
     };
 
     let totals = (!level.keeps_pause_times()).then(|| pause_totals(&day.pauses));
@@ -403,12 +423,13 @@ fn validate(day: &DayUpload) -> Result<(), ApiError> {
 /// flattering picture than the truth, and a false one.
 async fn upsert_workday(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, day: &DayUpload, pause_totals: Option<PauseTotals>) -> Result<Uuid, ApiError> {
     let workday_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO workdays (user_id, date, started_at, ended_at, paused_count, paused_seconds) VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO workdays (user_id, date, started_at, ended_at, paused_count, paused_seconds, kind) VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (user_id, date) DO UPDATE SET
              started_at = EXCLUDED.started_at,
              ended_at = EXCLUDED.ended_at,
              paused_count = EXCLUDED.paused_count,
-             paused_seconds = EXCLUDED.paused_seconds
+             paused_seconds = EXCLUDED.paused_seconds,
+             kind = EXCLUDED.kind
          RETURNING id",
     )
     .bind(user_id)
@@ -417,6 +438,7 @@ async fn upsert_workday(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, day: 
     .bind(day.ended_at.map(|at| at.with_timezone(&Utc)))
     .bind(pause_totals.map(|totals| totals.count))
     .bind(pause_totals.map(|totals| totals.seconds))
+    .bind(day.kind)
     .fetch_one(&mut **tx)
     .await?;
 
@@ -597,6 +619,19 @@ mod tests {
 
         let day = day_json(serde_json::json!({ "tasks_are_complete": true }));
         assert!(day.tasks_are_complete, "and an agent that opts in is heard");
+    }
+
+    #[test]
+    fn a_day_without_a_kind_is_a_worked_day() {
+        // The compatibility hinge for the second optional field this contract
+        // has gained. Every kasl shipped before v1.35 sends no `kind`, and
+        // reading that silence as anything but "worked" would put the whole
+        // installed base on permanent leave.
+        let day = day_json(serde_json::json!({}));
+        assert_eq!(day.kind, WorkdayKind::Work);
+
+        let day = day_json(serde_json::json!({ "kind": "vacation" }));
+        assert_eq!(day.kind, WorkdayKind::Vacation, "and an agent that says so is heard");
     }
 
     #[test]

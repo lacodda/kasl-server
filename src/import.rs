@@ -18,6 +18,8 @@ use rusqlite::Connection;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::calendar::WorkdayKind;
+
 /// The format kasl's `datetime()` writes: no offset, no fractional seconds.
 const AGENT_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
@@ -29,6 +31,12 @@ pub struct AgentDay {
     pub end: Option<NaiveDateTime>,
     pub pauses: Vec<AgentPause>,
     pub tasks: Vec<AgentTask>,
+    /// What kind of day it was. Always `Work` when read from an agent's
+    /// database: kasl has no such column yet (its own `day off` arrives in
+    /// v1.35), and an import must not invent one. The demo sets it, which is
+    /// how a dashboard with people on leave can be seen before any agent can
+    /// send one.
+    pub kind: WorkdayKind,
 }
 
 #[derive(Debug)]
@@ -128,6 +136,9 @@ fn read_workdays(connection: &Connection, summary: &mut ImportSummary) -> Result
             end: end.as_deref().and_then(|end| parse_time(end).ok()),
             pauses: Vec::new(),
             tasks: Vec::new(),
+            // An agent's database has no such column: kasl learns to mark a
+            // day off in v1.35, and an import must not invent one.
+            kind: WorkdayKind::Work,
         });
     }
 
@@ -326,14 +337,15 @@ pub async fn write_days(pool: &PgPool, user_id: Uuid, days: &[AgentDay], offset:
 /// the difference between a demo that opens in seconds and one that does not.
 pub async fn write_day(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: Uuid, day: &AgentDay, offset: FixedOffset) -> Result<()> {
     let workday_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO workdays (user_id, date, started_at, ended_at) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, date) DO UPDATE SET started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at
+        "INSERT INTO workdays (user_id, date, started_at, ended_at, kind) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, date) DO UPDATE SET started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at, kind = EXCLUDED.kind
          RETURNING id",
     )
     .bind(user_id)
     .bind(day.date)
     .bind(at_offset(day.start, offset))
     .bind(day.end.map(|end| at_offset(end, offset)))
+    .bind(day.kind)
     .fetch_one(&mut **tx)
     .await
     .with_context(|| format!("failed to write the workday of {}", day.date))?;
