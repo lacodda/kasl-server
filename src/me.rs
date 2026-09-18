@@ -33,6 +33,7 @@ use uuid::Uuid;
 
 use crate::{
     app::AppState,
+    calendar::{Calendar, Norm, Progress, WorkdayKind},
     error::ApiError,
     login::CurrentUser,
     privacy::{Policy, PrivacyLevel},
@@ -62,6 +63,9 @@ pub struct Range {
 #[derive(Debug, Serialize)]
 pub struct Day {
     pub date: NaiveDate,
+    /// What kind of day it was, as the agent reported it: worked, or away.
+    /// A day the agent said nothing about is `work` (ADR 0017).
+    pub kind: WorkdayKind,
     pub started_at: DateTime<Utc>,
     /// Absent while the day is still open on the agent.
     pub ended_at: Option<DateTime<Utc>>,
@@ -76,6 +80,10 @@ pub struct Day {
     pub paused_seconds: i64,
     pub pauses: Vec<Pause>,
     pub tasks: Vec<Task>,
+    /// What this date was meant to be worked, in seconds: the calendar and the
+    /// person's share of a full day, with leave excused. Zero on a weekend, a
+    /// holiday, and a day the employee was away.
+    pub norm_seconds: i64,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -113,6 +121,12 @@ pub struct Days {
     /// say "not stored" where it would otherwise show an empty section. An
     /// empty list means nothing is withheld.
     pub not_stored: Vec<&'static str>,
+    /// What the range asked for against what was worked. A pair rather than a
+    /// percentage: the screen divides (ADR 0017).
+    pub progress: Progress,
+    /// Seconds worked across the range - the same rule the days follow, so the
+    /// figure beside the norm is the sum of what is drawn.
+    pub worked_seconds: i64,
 }
 
 /// What a level withholds, in the words a screen can show as-is.
@@ -143,11 +157,37 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
 /// may read what before they get here.
 pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Days, ApiError> {
     let level = Policy::load(pool).await?.level();
-    let days = load_days(pool, user_id, range).await?;
+    let mut days = load_days(pool, user_id, range).await?;
+
+    // One calendar and one norm for the whole range, then a figure per day:
+    // asking the database per date would be a month of round trips for a
+    // handful of rows.
+    let calendar = Calendar::load(pool, range.from, range.to).await?;
+    let norm = Norm::load(pool, user_id).await?;
+
+    // The dates already stored as leave. Read from the days in hand rather
+    // than queried again - they are the same rows.
+    let away: Vec<NaiveDate> = days.iter().filter(|day| !day.kind.owes_the_norm()).map(|day| day.date).collect();
+
+    for day in &mut days {
+        day.norm_seconds = if day.kind.owes_the_norm() {
+            calendar.norm_seconds(day.date, norm.standard_hours, norm.work_rate)
+        } else {
+            0
+        };
+    }
+
+    let worked_seconds = days.iter().filter_map(|day| day.worked_seconds).sum();
 
     Ok(Days {
         from: range.from,
         to: range.to,
+        progress: Progress {
+            norm_seconds: norm.for_range(&calendar, range.from, range.to, &away),
+            standard_hours: norm.standard_hours,
+            work_rate: norm.work_rate,
+        },
+        worked_seconds,
         days,
         privacy_level: level,
         not_stored: not_stored_at(level),
@@ -181,7 +221,7 @@ pub fn validate_range(range: &Range) -> Result<(), ApiError> {
 async fn load_days(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Vec<Day>, ApiError> {
     let workdays: Vec<WorkdayRow> = sqlx::query_as(
         r#"
-        SELECT id, date, started_at, ended_at, paused_count, paused_seconds
+        SELECT id, date, kind, started_at, ended_at, paused_count, paused_seconds
         FROM workdays
         WHERE user_id = $1 AND date BETWEEN $2 AND $3
         ORDER BY date
@@ -242,6 +282,7 @@ async fn load_days(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Vec<Da
 struct WorkdayRow {
     id: Uuid,
     date: NaiveDate,
+    kind: WorkdayKind,
     started_at: DateTime<Utc>,
     ended_at: Option<DateTime<Utc>>,
     paused_count: Option<i32>,
@@ -269,6 +310,7 @@ impl WorkdayRow {
 
         Day {
             date: self.date,
+            kind: self.kind,
             started_at: self.started_at,
             ended_at: self.ended_at,
             worked_seconds,
@@ -276,6 +318,9 @@ impl WorkdayRow {
             paused_seconds,
             pauses: own_pauses,
             tasks: own_tasks,
+            // Filled by `days_for`, which holds the calendar. A day on its own
+            // cannot know what it was meant to be.
+            norm_seconds: 0,
         }
     }
 }

@@ -35,6 +35,7 @@ use uuid::Uuid;
 use crate::{
     admin::{VISIBLE_USERS, require_manager_or_admin},
     app::AppState,
+    calendar::{Calendar, Norm},
     error::ApiError,
     heartbeat::{self, Live},
     login::CurrentUser,
@@ -42,6 +43,7 @@ use crate::{
     model::UserRole,
     privacy::Policy,
 };
+use rust_decimal::Decimal;
 
 /// One person's period, as the dashboard's table shows it.
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -70,6 +72,21 @@ pub struct Member {
     pub last_seen_at: Option<DateTime<Utc>>,
     /// Live agent tokens. Zero explains a silent row without guessing.
     pub agents: i64,
+    /// This person's share of a full day. Carried so a row that is half the
+    /// team's hours can be read as half time rather than as half-hearted.
+    pub work_rate: Decimal,
+    /// What the range asked of this person, in seconds: the calendar at their
+    /// rate, with the days they were away taken out (ADR 0017).
+    ///
+    /// Not a column of the query: the calendar is one set of rows for the
+    /// whole team, so the norm is computed once per person in Rust rather than
+    /// joined per row.
+    #[sqlx(default)]
+    pub norm_seconds: i64,
+    /// Days in the range the person was on leave or ill, so a row short of its
+    /// norm can be read without opening it.
+    #[sqlx(default)]
+    pub days_away: i64,
 }
 
 /// The team's period.
@@ -82,6 +99,9 @@ pub struct Team {
     /// the personal page does.
     pub privacy_level: crate::privacy::PrivacyLevel,
     pub not_stored: Vec<&'static str>,
+    /// The installation's full day, in hours. The one figure every norm in the
+    /// table is computed from, stated once rather than per row.
+    pub standard_hours: Decimal,
 }
 
 /// Answers the team's hours over a range.
@@ -99,6 +119,8 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
     // constant in `admin`; every value from the request is bound below.
     let members: Vec<Member> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT u.id, u.display_name, u.email, d.name AS department,
+                u.work_rate,
+                coalesce(w.days_away, 0)::bigint AS days_away,
                 coalesce(w.days_recorded, 0)::bigint AS days_recorded,
                 coalesce(w.worked_seconds, 0)::bigint AS worked_seconds,
                 coalesce(w.paused_seconds, 0)::bigint AS paused_seconds,
@@ -112,6 +134,10 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
              -- `sum()` over bigint answers `numeric`, which does not decode
              -- into an i64; the cast is outside the sum so it happens once.
              SELECT count(*) AS days_recorded,
+                    -- Days the employee told us they were away. Counted here
+                    -- rather than in a second query: the same scan already has
+                    -- the range's rows in hand.
+                    count(*) FILTER (WHERE w.kind <> 'work') AS days_away,
                     max(w.date) AS last_day,
                     coalesce(sum(
                         CASE WHEN w.ended_at IS NULL THEN 0
@@ -150,13 +176,54 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
 
     let level = Policy::load(&state.pool).await?.level();
 
+    // One calendar for the whole table, and one query for the leave dates.
+    // The norm differs per person only by their rate and by the days they were
+    // away, so nothing here needs a round trip per row.
+    let calendar = Calendar::load(&state.pool, range.from, range.to).await?;
+    let standard_hours = Norm::standard_hours(&state.pool).await?;
+    let away = away_by_user(&state.pool, &members, &range).await?;
+
+    let mut members = members;
+    for member in &mut members {
+        let norm = Norm {
+            standard_hours,
+            work_rate: member.work_rate,
+        };
+        let theirs = away.iter().filter(|(id, _)| *id == member.id).map(|(_, date)| *date).collect::<Vec<_>>();
+        member.norm_seconds = norm.for_range(&calendar, range.from, range.to, &theirs);
+    }
+
     Ok(Json(Team {
         from: range.from,
         to: range.to,
         members,
         privacy_level: level,
         not_stored: me::not_stored_at(level),
+        standard_hours,
     }))
+}
+
+/// The dates in the range each listed person was away.
+///
+/// One query for the whole table rather than one per row, and scoped to the
+/// people already listed - the visibility rule was applied when they were
+/// selected, and re-deriving it here would be the second copy this module
+/// exists to avoid.
+async fn away_by_user(pool: &PgPool, members: &[Member], range: &Range) -> Result<Vec<(Uuid, NaiveDate)>, ApiError> {
+    if members.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = members.iter().map(|member| member.id).collect();
+
+    let rows: Vec<(Uuid, NaiveDate)> =
+        sqlx::query_as("SELECT user_id, date FROM workdays WHERE user_id = ANY($1) AND date BETWEEN $2 AND $3 AND kind <> 'work'")
+            .bind(&ids)
+            .bind(range.from)
+            .bind(range.to)
+            .fetch_all(pool)
+            .await?;
+
+    Ok(rows)
 }
 
 /// Answers one person's days to someone allowed to see them.
