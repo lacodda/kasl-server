@@ -606,6 +606,49 @@ pub async fn ensure_pulses(pool: &PgPool) -> Result<u64, sqlx::Error> {
     Ok(given)
 }
 
+/// Gives an already-seeded demo its calendar and its part-time rate.
+///
+/// The upgrade path, and the second time this shape has been needed: a demo
+/// seeded before this milestone has people and days but no calendar and no
+/// rate, and bumping the image does not re-seed. Without this its dashboard
+/// shows twelve rows at a flat full norm - the one thing the version exists
+/// to show, missing on the one installation built to show it.
+///
+/// Idempotent and deliberately timid: it writes nothing if the calendar has
+/// any row at all, because an administrator may have entered a real one on
+/// top of the demo, and it never moves a rate somebody set by hand.
+pub async fn ensure_calendar(pool: &PgPool, now: DateTime<Utc>) -> Result<u64, sqlx::Error> {
+    let existing: i64 = sqlx::query_scalar("SELECT count(*) FROM calendar_days").fetch_one(pool).await?;
+    let mut written = 0;
+
+    if existing == 0 {
+        let today = now.date_naive();
+        for (weeks_ago, kind, note) in HOLIDAY_WEEKS_AGO {
+            let date = weekday_near(today - Duration::weeks(weeks_ago), kind);
+            let inserted = sqlx::query("INSERT INTO calendar_days (date, kind, note) VALUES ($1, $2, $3) ON CONFLICT (date) DO NOTHING")
+                .bind(date)
+                .bind(kind)
+                .bind(note)
+                .execute(pool)
+                .await?;
+            written += inserted.rows_affected();
+        }
+    }
+
+    for (email_prefix, rate) in PART_TIME {
+        // `= 1` rather than unconditional: a rate somebody set by hand is
+        // theirs, even on a demo.
+        let updated = sqlx::query("UPDATE users SET work_rate = $1::numeric WHERE email LIKE $2 AND work_rate = 1")
+            .bind(rate)
+            .bind(format!("{email_prefix}@%"))
+            .execute(pool)
+            .await?;
+        written += updated.rows_affected();
+    }
+
+    Ok(written)
+}
+
 /// Re-stamps the demo's seeded pulses so they stay fresh.
 ///
 /// The demo is seeded once, but a pulse is believed for three minutes - so

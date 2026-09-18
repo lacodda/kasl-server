@@ -249,6 +249,15 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
                 Ok(given) => tracing::info!(given, "gave the demo's agents their pulses"),
                 Err(error) => tracing::warn!(%error, "failed to give the demo's agents their pulses"),
             }
+            // The same upgrade path for the calendar and the part-time rate:
+            // a demo seeded before v0.21 has neither, and a dashboard of
+            // twelve identical full norms is the one thing that version is
+            // about, missing.
+            match demo::ensure_calendar(&pool, chrono::Utc::now()).await {
+                Ok(0) => {}
+                Ok(written) => tracing::info!(written, "gave the demo its calendar and rates"),
+                Err(error) => tracing::warn!(%error, "failed to give the demo its calendar"),
+            }
             demo::keep_pulses_fresh(pool.clone());
         }
         (true, demo::Status::Populated { accounts }) => {

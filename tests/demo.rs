@@ -390,6 +390,54 @@ async fn a_demo_seeded_before_the_pulse_existed_gets_one() {
 }
 
 #[tokio::test]
+async fn a_demo_seeded_before_the_calendar_existed_gets_one() {
+    // The same upgrade path as the pulse above, for the same reason and found
+    // the same way: the project's own demo stand, bumped from the previous
+    // image, showed twelve rows at a flat full norm - the whole point of the
+    // version, missing on the installation built to show it.
+    let Some((server, _)) = demo_server().await else { return };
+    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
+
+    server.execute("DELETE FROM calendar_days").await;
+    server.execute("UPDATE users SET work_rate = 1").await;
+
+    let (_, before) = server.get_with_cookie("/api/v1/calendar?year=2026", Some(&cookie)).await;
+    assert!(before["days"].as_array().unwrap().is_empty(), "the fixture starts with no calendar: {before}");
+
+    let written = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
+    assert!(written > 0, "the demo should have been given a calendar and a rate");
+
+    let days: i64 = server.scalar("SELECT count(*) FROM calendar_days").await;
+    assert_eq!(days, 3, "a holiday, a short day and a working weekend");
+    let part_time: i64 = server.scalar("SELECT count(*) FROM users WHERE work_rate <> 1").await;
+    assert_eq!(part_time, 1);
+
+    // Idempotent: running it again on an upgraded demo changes nothing.
+    let again = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
+    assert_eq!(again, 0, "a second run has nothing to do");
+}
+
+#[tokio::test]
+async fn the_calendar_upgrade_leaves_a_real_one_alone() {
+    // An administrator may have entered a genuine calendar on top of the demo.
+    // The upgrade is for a demo that has none, not for one that disagrees.
+    let Some((server, _)) = demo_server().await else { return };
+
+    server.execute("DELETE FROM calendar_days").await;
+    server
+        .execute("INSERT INTO calendar_days (date, kind, note) VALUES ('2026-01-01', 'holiday', 'theirs')")
+        .await;
+
+    let written = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
+
+    let days: i64 = server.scalar("SELECT count(*) FROM calendar_days").await;
+    assert_eq!(days, 1, "the calendar that was there is the calendar that stays");
+    // The rate is still given: it is per-person and does not conflict with a
+    // calendar somebody entered.
+    assert!(written <= 1);
+}
+
+#[tokio::test]
 async fn giving_pulses_leaves_an_agent_that_already_reported_alone() {
     let Some((server, _)) = demo_server().await else { return };
 
