@@ -140,7 +140,12 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
     let mut stored = vec![
         Stored {
             what: "workdays",
-            detail: "the date, when the day started, and when it ended",
+            // The kind is named at every level. It is the one field here that
+            // says something about a person's life rather than their keyboard
+            // - "off sick" is a fact about them - so a manifest that listed
+            // the times and left it out would be describing a quieter server
+            // than the one running (ADR 0011).
+            detail: "the date, when the day started, when it ended, and whether you marked it as leave, sick or a day off",
         },
         Stored {
             what: "pauses",

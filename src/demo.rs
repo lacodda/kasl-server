@@ -1080,9 +1080,14 @@ mod tests {
         let now = at("2026-08-29", "10:00:00");
         let person = person(Pattern::Fading);
         let days = days_for(person, Pattern::Fading, 6, now);
-        let span = |day: &AgentDay| (day.end.unwrap() - day.start).num_minutes();
-        let first_week: Vec<i64> = days.iter().take(5).map(span).collect();
-        let last_week: Vec<i64> = days.iter().rev().take(5).map(span).collect();
+        // Worked days only. This is a claim about how long a working day is,
+        // and a day off is zero minutes long by construction - one landing in
+        // the first five would drag the average and fail a fade that is
+        // happening exactly as intended.
+        let worked: Vec<&AgentDay> = days.iter().filter(|day| day.kind == WorkdayKind::Work).collect();
+        let span = |day: &&AgentDay| (day.end.unwrap() - day.start).num_minutes();
+        let first_week: Vec<i64> = worked.iter().take(5).map(span).collect();
+        let last_week: Vec<i64> = worked.iter().rev().take(5).map(span).collect();
         let average = |week: &[i64]| week.iter().sum::<i64>() / week.len() as i64;
         assert!(
             average(&first_week) - average(&last_week) > 120,

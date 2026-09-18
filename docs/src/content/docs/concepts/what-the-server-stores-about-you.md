@@ -11,7 +11,7 @@ so it is an endpoint rather than a paragraph:
 $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/privacy/agent
 {"level":"full",
  "summary":"This server stores your working hours, every interruption with the reason you gave for it, and the tasks you logged with their comments.",
- "stored":[{"what":"workdays","detail":"the date, when the day started, and when it ended"},
+ "stored":[{"what":"workdays","detail":"the date, when the day started, when it ended, and whether you marked it as leave, sick or a day off"},
            {"what":"pauses","detail":"each interruption: when it began, how long it lasted, ..."},
            {"what":"tasks","detail":"what you logged: the name, your comment, and how complete you marked it"},
            {"what":"pause reasons","detail":"the text you type when you take a break by hand"},
