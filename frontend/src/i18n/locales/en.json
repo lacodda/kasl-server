@@ -129,9 +129,9 @@
     "count_other": "{{count}} open",
     "acknowledge": "I looked",
     "acknowledgeHint": "Stops this alert until the condition goes away and returns",
-    "noAgentData": "Nothing from their agent for {{hours}} h",
+    "noAgentData": "Nothing from their agent for {{span}}",
     "overwork": "Worked {{worked}} h on {{date}}, against a norm of {{norm}} h",
-    "dayNotClosed": "The day of {{date}} has been open for {{hours}} h"
+    "dayNotClosed": "The day of {{date}} has been open for {{span}}"
   },
   "signals": {
     "title": "Worth a look",

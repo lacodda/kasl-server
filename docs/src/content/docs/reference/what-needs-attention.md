@@ -53,6 +53,14 @@ would hide it.
   is simply elapsed time. Usually kasl left running overnight — and the day it
   will eventually produce is wrong in a way that quietly poisons a week.
 
+The two figures that are elapsed time - silence, and how long a day has been
+open - have no upper bound, and the screen says them in the largest unit that
+fits: `9 h`, `2 d`, `13 mo`. A real stand carried a day open since the
+previous August, which is `9460.7 h` and is a number nobody converts. The
+overwork figures stay in hours whatever their size, because they sit beside a
+norm in the same sentence and two quantities being compared have to share a
+unit.
+
 A day whose norm is zero raises no overwork: a weekend, a holiday, a day of
 leave or illness. Any work at all on such a day exceeds its norm by an
 infinite share, and "you worked on your holiday" is between an employee and

@@ -46,7 +46,7 @@ export function alertTone(rule: AlertRule): AlertTone {
 export function alertPhrase(alert: Alert): { key: string; values: Record<string, unknown> } {
   switch (alert.rule) {
     case 'no_agent_data':
-      return { key: 'alerts.noAgentData', values: { hours: hours(alert.observed_seconds) } }
+      return { key: 'alerts.noAgentData', values: { span: span(alert.observed_seconds) } }
     case 'overwork':
       return {
         key: 'alerts.overwork',
@@ -55,7 +55,7 @@ export function alertPhrase(alert: Alert): { key: string; values: Record<string,
     case 'day_not_closed':
       return {
         key: 'alerts.dayNotClosed',
-        values: { hours: hours(alert.observed_seconds), date: alert.subject_date ?? '' },
+        values: { span: span(alert.observed_seconds), date: alert.subject_date ?? '' },
       }
   }
 }
@@ -72,6 +72,43 @@ export function hours(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return '—'
   const value = seconds / 3600
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
+/**
+ * A stretch of time as a reader would say it: `9 h`, `2 d`, `13 mo`.
+ *
+ * Used where the figure is elapsed time rather than hours worked - silence,
+ * and how long a day has been open - because those have no upper bound. A
+ * real stand carried a day left open since the previous August, and the
+ * honest reading of it in hours was `9460.7 h`, which is a number nobody
+ * converts in their head. Hours are right up to a couple of days and wrong
+ * after that.
+ *
+ * Deliberately **not** used for the overwork figures. Those sit next to a
+ * norm in the same sentence - "worked 12.6 h against a norm of 8 h" - and two
+ * quantities being compared have to carry the same unit, or the comparison is
+ * the reader's job instead of the sentence's.
+ *
+ * One unit and no remainder: "2 d" rather than "2 d 4 h". The alert exists to
+ * say a threshold is well past, and the second unit is precision about
+ * something nobody is going to act on to the hour.
+ */
+export function span(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '—'
+
+  const HOUR = 3600
+  const DAY = 24 * HOUR
+  // A month of thirty days and a year of 365: these are labels on a bar that
+  // has already been cleared, not arithmetic anybody balances a timesheet
+  // with. What matters is that every span lands in exactly one bucket - steps
+  // built on different divisors leave gaps where a value belongs to neither.
+  const MONTH = 30 * DAY
+  const YEAR = 365 * DAY
+
+  if (seconds >= YEAR) return `${Math.floor(seconds / YEAR)} y`
+  if (seconds >= MONTH) return `${Math.floor(seconds / MONTH)} mo`
+  if (seconds >= 2 * DAY) return `${Math.floor(seconds / DAY)} d`
+  return `${hours(seconds)} h`
 }
 
 /**

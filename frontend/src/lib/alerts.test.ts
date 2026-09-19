@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Alert, AlertRule } from '@/lib/api'
-import { alertPhrase, alertTone, hours, isOpen } from '@/lib/alerts'
+import { alertPhrase, alertTone, hours, isOpen, span } from '@/lib/alerts'
 
 function alert(rule: AlertRule, overrides: Partial<Alert> = {}): Alert {
   return {
@@ -37,6 +37,43 @@ describe('hours', () => {
   })
 })
 
+describe('span', () => {
+  const HOUR = 3600
+  const DAY = 24 * HOUR
+
+  it('stays in hours while hours are still readable', () => {
+    expect(span(9 * HOUR)).toBe('9 h')
+    expect(span(30 * HOUR)).toBe('30 h')
+    expect(span(47 * HOUR)).toBe('47 h')
+  })
+
+  it('switches to larger units where hours stop being a number anybody reads', () => {
+    // A real stand carried a day open since the previous August. In hours
+    // that is `9460.7 h`, which is true and useless.
+    expect(span(2 * DAY)).toBe('2 d')
+    expect(span(8 * DAY)).toBe('8 d')
+    expect(span(45 * DAY)).toBe('1 mo')
+    expect(span(394 * DAY)).toBe('1 y')
+  })
+
+  it('leaves no span without a unit', () => {
+    // Steps on different divisors are how a gap appears: months of 30 days
+    // and years of 365 leave days 360-364 belonging to neither unless the
+    // thresholds are ordered so every value falls through into one. Checked
+    // by sweeping the whole range rather than by reading the branches, which
+    // is what missed it elsewhere in the line.
+    for (let h = 0; h <= 400 * 24; h += 1) {
+      const rendered = span(h * HOUR)
+      expect(rendered, `${h} h rendered as \`${rendered}\``).toMatch(/^\d+(\.\d)? (h|d|mo|y)$/)
+    }
+  })
+
+  it('never turns a missing figure into a confident zero', () => {
+    expect(span(null)).toBe('—')
+    expect(span(undefined)).toBe('—')
+  })
+})
+
 describe('alertTone', () => {
   it('reserves the louder tone for the one that is a problem with the installation', () => {
     // An agent that stopped reporting makes every other number about that
@@ -60,7 +97,7 @@ describe('alertPhrase', () => {
     expect(phrase.key).toBe('alerts.noAgentData')
     // Thirty, not twelve. A sentence that read the threshold back would be
     // grammatical, identical on every row, and wrong.
-    expect(phrase.values.hours).toBe('30')
+    expect(phrase.values.span).toBe('30 h')
   })
 
   it('puts the hours worked next to the norm they are measured against', () => {
@@ -82,7 +119,7 @@ describe('alertPhrase', () => {
   it('says how long a day has been open, and which day', () => {
     const phrase = alertPhrase(alert('day_not_closed', { observed_seconds: 32 * 3600, subject_date: '2026-09-18' }))
     expect(phrase.key).toBe('alerts.dayNotClosed')
-    expect(phrase.values).toMatchObject({ hours: '32', date: '2026-09-18' })
+    expect(phrase.values).toMatchObject({ span: '32 h', date: '2026-09-18' })
   })
 
   it('has a phrase for every rule the server can send', () => {
