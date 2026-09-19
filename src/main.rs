@@ -239,6 +239,25 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
             demo::keep_pulses_fresh(pool.clone());
         }
         (true, demo::Status::Demo) => {
+            // A stand left running shows a team that stopped working the day
+            // it was seeded - "no days recorded for 16 days" on every row,
+            // which describes the data truthfully and the product falsely.
+            // Regenerated rather than patched field by field: that was tried
+            // twice (the pulse in v0.17.1, the calendar in v0.21) and each
+            // time the next milestone brought another field to patch.
+            match demo::history_is_stale(&pool, chrono::Utc::now()).await {
+                Ok(true) => match demo::reseed(&pool, chrono::Utc::now()).await {
+                    Ok(seeded) => tracing::info!(
+                        people = seeded.people,
+                        days = seeded.days,
+                        "the demo's history had stopped reaching today; generated it again"
+                    ),
+                    Err(error) => tracing::warn!(%error, "failed to regenerate the demo"),
+                },
+                Ok(false) => {}
+                Err(error) => tracing::warn!(%error, "failed to check whether the demo's history is current"),
+            }
+
             print_demo_logins();
             // A demo seeded before the pulse existed has agents and no
             // pulses, and bumping the image does not re-seed: without this

@@ -665,3 +665,75 @@ async fn every_alert_rule_fires_on_the_demo_and_nothing_else_does() {
         .unwrap();
     assert!(open * 2 < people, "{open} alerts across {people} people is a wall, not a signal",);
 }
+
+#[tokio::test]
+async fn a_demo_whose_history_stopped_is_generated_again() {
+    let Some((server, _)) = demo_server().await else { return };
+
+    let now = Utc::now();
+    assert!(
+        !demo::history_is_stale(&server.pool, now).await.unwrap(),
+        "a demo seeded a moment ago is current",
+    );
+    // Nor is it stale over a weekend: the fictional team works weekdays, so on
+    // a Sunday its newest day is rightly Friday's. A threshold of one day
+    // would regenerate the whole stand every Sunday morning.
+    assert!(!demo::history_is_stale(&server.pool, now + Duration::days(2)).await.unwrap());
+
+    // A fortnight on, every row of the dashboard reads "no days recorded for
+    // 16 days". That is a truthful description of the data and a false one of
+    // the product, which is what this exists to prevent.
+    assert!(demo::history_is_stale(&server.pool, now + Duration::days(16)).await.unwrap());
+
+    let before: Vec<String> = sqlx::query_scalar("SELECT email FROM users ORDER BY email")
+        .fetch_all(&server.pool)
+        .await
+        .unwrap();
+    let newest_before: chrono::NaiveDate = sqlx::query_scalar("SELECT max(date) FROM workdays").fetch_one(&server.pool).await.unwrap();
+
+    // Regenerated for a "today" a fortnight from now.
+    let later = now + Duration::days(16);
+    let seeded = demo::reseed(&server.pool, later).await.expect("a demo should regenerate");
+    assert_eq!(seeded.people, 12);
+
+    let newest_after: chrono::NaiveDate = sqlx::query_scalar("SELECT max(date) FROM workdays").fetch_one(&server.pool).await.unwrap();
+    assert!(newest_after > newest_before, "the history has to reach the new today");
+    assert!(
+        !demo::history_is_stale(&server.pool, later).await.unwrap(),
+        "and it is not stale against the day it was generated for",
+    );
+
+    // The same fictional people, not a second team beside the first: the
+    // failure worth guarding is a regeneration that appends rather than
+    // replaces, which would leave a dashboard of twenty-four.
+    let after: Vec<String> = sqlx::query_scalar("SELECT email FROM users ORDER BY email")
+        .fetch_all(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(server.count("users").await, 12);
+    assert_eq!(server.count("departments").await, 3);
+
+    // And it is still a demo, so the banner keeps saying nothing here is real.
+    let demo_flag: bool = sqlx::query_scalar("SELECT demo FROM settings WHERE singleton")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert!(demo_flag);
+}
+
+#[tokio::test]
+async fn a_real_installation_is_never_regenerated() {
+    let Some(server) = support::TestServer::start().await else { return };
+
+    // The guard that matters: `KASL_DEMO` left in a file after a trial must
+    // not be able to delete a real team. `seed` already refuses a populated
+    // database; this is the same refusal on the path that deletes first.
+    let error = demo::reseed(&server.pool, Utc::now()).await.unwrap_err().to_string();
+    assert!(error.contains("not one"), "{error}");
+
+    // And the account it holds is still there.
+    assert_eq!(server.count("users").await, 1);
+
+    server.close().await;
+}

@@ -43,6 +43,22 @@ the demo re-stamps its own — keeping the stopped agents stopped, and leaving
 alone any real kasl pointed at it. A demo seeded before the pulse existed gets
 its own on the next start, so upgrading the image is enough.
 
+**The team keeps reaching today.** The history is generated from the day it
+is seeded, and nothing moves it afterwards — so a stand left running for a
+fortnight would show a team that stopped working a fortnight ago, every row
+reading "no days recorded for 16 days". That is a truthful description of the
+data and a false one of the product. When the newest day falls more than two
+days behind, the next start throws the fictional team away and generates it
+again from today. Two days rather than one, so an ordinary weekend is not
+staleness: this team works weekdays, and on a Sunday its newest day is rightly
+Friday's.
+
+Regenerating loses whatever a visitor clicked — an alert they dismissed, a
+password they changed. On a demo that is not a loss, and it is also what keeps
+the stand current for free: whatever a later version adds to the seed appears
+here by itself, because the stand is not mended field by field, it is born
+again.
+
 **The demo refuses a database that already holds accounts.** Twelve invented
 people alongside a real team, with nothing to say which rows are which, is the
 one outcome worse than no demo — so a flag left in a file after a trial stops

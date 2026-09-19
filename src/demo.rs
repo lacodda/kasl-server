@@ -666,6 +666,73 @@ pub async fn ensure_pulses(pool: &PgPool) -> Result<u64, sqlx::Error> {
     Ok(given)
 }
 
+/// How stale the demo's newest day may be before the whole team is regenerated.
+///
+/// Two days, so an ordinary weekend is not staleness: the fictional team works
+/// weekdays, and on a Sunday its newest day is rightly Friday's.
+const STALE_HISTORY_DAYS: i64 = 2;
+
+/// Whether the demo's history has stopped reaching the present.
+///
+/// The demo is generated once, anchored to the day it was seeded, and nothing
+/// has moved it since - so a stand left running for a fortnight shows a team
+/// that stopped working a fortnight ago. Every row reads "no days recorded for
+/// 16 days", which is a truthful description of the data and a false one of
+/// the product.
+pub async fn history_is_stale(pool: &PgPool, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
+    let newest: Option<chrono::NaiveDate> = sqlx::query_scalar("SELECT max(date) FROM workdays").fetch_one(pool).await?;
+    // No days at all is not staleness - it is a demo mid-seed, or one whose
+    // days somebody removed on purpose. Regenerating there would be this
+    // function inventing a reason.
+    let Some(newest) = newest else { return Ok(false) };
+    Ok((now.date_naive() - newest).num_days() > STALE_HISTORY_DAYS)
+}
+
+/// Throws the fictional team away and generates it again from today.
+///
+/// The third time this shape was needed decided its form. `ensure_pulses`
+/// (v0.17.1) and `ensure_calendar` (v0.21) each taught the demo one new field,
+/// and each time the version after brought another - because the thing being
+/// repaired was never the field. It is that the demo's history is anchored to
+/// the moment it was seeded, while the whole job of a shopfront is to show
+/// "this week".
+///
+/// Regenerating removes the class instead of the instance: whatever a later
+/// milestone adds to the seed arrives on the stand by itself, because the
+/// stand is not mended, it is born again. The generator is deterministic for a
+/// given "today" and writes through `import::write_days` - the same path a
+/// real import takes - so this exercises what ships.
+///
+/// What is lost is what a visitor clicked: an acknowledged alert, a password
+/// they changed. On a demo that is not a loss. "I dismissed this yesterday and
+/// it is back" describes the product more honestly than a team that has not
+/// worked since the third of September.
+///
+/// Refuses anything that is not already a demo, so a mistaken `KASL_DEMO` on a
+/// real installation cannot reach this.
+pub async fn reseed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
+    if !matches!(status(pool).await?, Status::Demo) {
+        bail!("only a demo installation is regenerated; this one is not one");
+    }
+
+    // Everything the seed creates, in one transaction. `users` cascades to
+    // agents, workdays, pauses, tasks and alerts; the rest are named because
+    // nothing points at them from `users`.
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM users").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM departments").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM calendar_days").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM tags").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM audit_log").execute(&mut *tx).await?;
+    // The mark comes off last inside the transaction, because `seed` refuses a
+    // database that still carries it. Either both happen or neither does: a
+    // process that dies here leaves a demo that is still a demo.
+    sqlx::query("UPDATE settings SET demo = false WHERE singleton").execute(&mut *tx).await?;
+    tx.commit().await?;
+
+    seed(pool, now).await
+}
+
 /// Gives an already-seeded demo its calendar and its part-time rate.
 ///
 /// The upgrade path, and the second time this shape has been needed: a demo
