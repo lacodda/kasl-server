@@ -84,10 +84,11 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.21.1, in daily use on a small team's own stand. The ingest contract,
+v0.22.0, in daily use on a small team's own stand. The ingest contract,
 dashboards, roles, departments, the audit log, the privacy manifest, the
-production calendar and the web UI - including a phone layout - all hold end
-to end. What landed in each version:
+production calendar, alerts that arrive without being asked for, and the web
+UI - including a phone layout - all hold end to end. What landed in each
+version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 
 ## Documentation

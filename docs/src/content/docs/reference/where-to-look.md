@@ -39,7 +39,9 @@ The three:
   which is an unmistakable slide and never three consecutive drops. One
   ordinary week resets a run, so counting steps stays silent on exactly the
   case this is for ([ADR 0016](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0016-signals-and-the-weekly-trend.md)).
-- **`no_data`** — nothing recorded for ten days or more. The live status
+- **`no_data`** — nothing recorded for ten days or more. Measured in whole
+  days against a person's own rhythm, so it cannot speak before the week is
+  out; the `no_agent_data` alert is the one that answers in hours. The live status
   ([Who is working now](/kasl-server/reference/who-is-working-now/)) only sees a silent machine once a pulse is
   expected; an agent too old to send one is invisible there.
 - **`unusual_week`** — the last complete week is more than 40 % away from that
@@ -57,6 +59,7 @@ weeks, the empty ones included, plus that person's median and the signals
 about them. A week nobody worked keeps its place — closing the gap up would
 turn an absence into continuity.
 
-Nothing is stored and nothing is sent. The signals are a function of the
-workdays already in the database, and delivery — alerts, webhooks — is its own
-milestone.
+Nothing here is stored and nothing is sent: the signals are a function of the
+workdays already in the database. What the server notices *without* being
+asked — and remembers, and lets somebody answer — is a different object, and
+it lives at [What needs attention](/kasl-server/reference/what-needs-attention/).
