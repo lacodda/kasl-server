@@ -2,10 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.22.2] - 2026-09-19
+
+### Bug Fixes
+- Generate the team again when its history stops reaching today
+
 ## [0.22.1] - 2026-09-19
 
 ### Bug Fixes
 - Say an unbounded span in a unit a reader converts
+
+### Documentation
+- Cut 0.22.1
 
 ## [0.22.0] - 2026-09-19
 
