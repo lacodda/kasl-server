@@ -6,6 +6,7 @@
 //! drifts from what ships.
 
 pub mod admin;
+pub mod alerts;
 pub mod app;
 pub mod audit;
 pub mod auth;

@@ -307,6 +307,11 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
         Err(error) => tracing::warn!(%error, "failed to sweep expired sessions"),
     }
 
+    // The sweep starts before the listener: an alert exists so that somebody
+    // does not have to be looking, and the first thing a server that was down
+    // overnight should do is notice what happened while it was.
+    kasl_server::alerts::run_sweeps(pool.clone());
+
     let listener = TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("failed to bind {}", config.addr))?;

@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
+use crate::{admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,6 +57,17 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // answers a question; this one says where to look, and a person is
         // only ever compared with their own history (ADR 0016).
         .route("/team/signals", get(signals::team))
+        // What the server noticed on its own, before anybody opened a page.
+        // A stored record rather than a computation on read, unlike the
+        // signals beside it: an alert carries when it began and what somebody
+        // decided about it, and neither is derivable from a workday.
+        .route("/alerts", get(alerts::feed))
+        .route("/alerts/{id}/acknowledge", post(alerts::acknowledge))
+        // What this installation is willing to be interrupted about. A
+        // setting, unlike the signal thresholds fixed in code (ADR 0016):
+        // an alert interrupts somebody, and how much silence is worth that
+        // differs between a team in one timezone and a team across four.
+        .route("/alerts/thresholds", put(alerts::put_thresholds))
         .route("/users/{id}/days", get(team::user_days))
         // The twelve-week shape behind a signal, next to the days that made it.
         .route("/users/{id}/trend", get(signals::user_trend))

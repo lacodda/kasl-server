@@ -44,6 +44,8 @@ pub mod action {
     pub const CALENDAR_YEAR_REPLACED: &str = "calendar.year_replaced";
     pub const STANDARD_HOURS_CHANGED: &str = "calendar.standard_hours_changed";
     pub const WORK_RATE_CHANGED: &str = "calendar.work_rate_changed";
+    pub const ALERT_ACKNOWLEDGED: &str = "alert.acknowledged";
+    pub const ALERT_THRESHOLDS_CHANGED: &str = "alert.thresholds_changed";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 
