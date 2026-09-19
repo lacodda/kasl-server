@@ -122,6 +122,17 @@
       "weekend": "Weekend"
     }
   },
+  "alerts": {
+    "title": "Needs attention",
+    "nothing": "Nothing needs attention across {{count}} people.",
+    "count_one": "{{count}} open",
+    "count_other": "{{count}} open",
+    "acknowledge": "I looked",
+    "acknowledgeHint": "Stops this alert until the condition goes away and returns",
+    "noAgentData": "Nothing from their agent for {{hours}} h",
+    "overwork": "Worked {{worked}} h on {{date}}, against a norm of {{norm}} h",
+    "dayNotClosed": "The day of {{date}} has been open for {{hours}} h"
+  },
   "signals": {
     "title": "Worth a look",
     "nothing": "Nothing stands out across {{count}} people this quarter.",

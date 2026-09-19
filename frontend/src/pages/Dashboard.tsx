@@ -10,6 +10,7 @@ import { StatRow, StatTile } from '@/components/ui/stat-tile'
 import { Track } from '@/components/ui/track'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { WeekView } from '@/pages/MyDay'
+import { Alerts } from '@/components/Alerts'
 import { Signals } from '@/components/Signals'
 import { Trend } from '@/components/Trend'
 
@@ -87,6 +88,14 @@ export function Dashboard() {
 
       {failed && <p className="text-sm text-bad">{t('common.error')}</p>}
       {current === null && <p className="text-sm text-dim">{t('common.loading')}</p>}
+
+      {/* What the server noticed on its own, first. Above the signals, and
+          that order is deliberate: a slide over three weeks will still be a
+          slide tomorrow, while a machine that has said nothing for thirty
+          hours gets less actionable the longer it waits. The thing that
+          decays goes on top. Like the signals, outside the week's loading
+          state - neither is about the week being paged through. */}
+      <Alerts />
 
       {/* Above the table and outside the week's loading state: the signals are
           about whole weeks and do not change when the manager pages back

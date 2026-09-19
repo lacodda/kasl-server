@@ -266,6 +266,60 @@ export interface SignalsResponse {
   people: number
 }
 
+/** Which rule the server noticed something with. */
+export type AlertRule = 'no_agent_data' | 'overwork' | 'day_not_closed'
+
+/** Where an alert stands. */
+export type AlertState = 'open' | 'acknowledged' | 'resolved'
+
+/**
+ * One thing the server noticed, at a moment, about one person.
+ *
+ * Unlike a `Signal`, this is a stored record rather than something computed
+ * when the page asked: it knows when the condition began and what somebody
+ * decided about it, and neither of those is derivable from a workday.
+ */
+export interface Alert {
+  id: string
+  user_id: string
+  display_name: string
+  department: string | null
+  rule: AlertRule
+  state: AlertState
+  fired_at: string
+  resolved_at: string | null
+  acknowledged_at: string | null
+  /** Who answered it, by name. Null on one the server resolved by itself. */
+  acknowledged_by: string | null
+  /** What was measured, in seconds: silence, hours worked, time open. */
+  observed_seconds: number
+  /** What it was measured against: the threshold, or the norm behind it. */
+  against_seconds: number | null
+  /** The date it is about, for the rules that are about a day. */
+  subject_date: string | null
+}
+
+/** What an installation is willing to be interrupted about. */
+export interface AlertThresholds {
+  alert_silence_hours: number
+  /** A share of the person's own norm, as a decimal string from the server. */
+  alert_overwork_factor: string
+  alert_open_day_hours: number
+}
+
+export interface AlertsResponse {
+  alerts: Alert[]
+  /** How many are open - the badge, which is not `alerts.length`. */
+  open: number
+  /**
+   * People the sweep watches. "Nothing open among twelve" and "nothing open
+   * because nobody is watched" are different answers, and a screen that cannot
+   * tell them apart shows the reassuring one.
+   */
+  people: number
+  thresholds: AlertThresholds
+}
+
 /** One week on the trend chart. */
 export interface TrendWeek {
   week_start: string
@@ -424,6 +478,28 @@ export const api = {
    * while somebody has the page open.
    */
   teamSignals: () => request<SignalsResponse>('/team/signals'),
+
+  /**
+   * What the server noticed on its own, before anybody opened this page.
+   *
+   * `state` is `open` by default; `all` brings the answered and resolved ones
+   * for a second, deliberate click. Asked once with the dashboard rather than
+   * polled: the sweep runs every five minutes on conditions measured in hours,
+   * so a timer here would ask a question whose answer cannot have changed.
+   */
+  alerts: (state?: AlertState | 'all') => request<AlertsResponse>(`/alerts${state ? `?state=${state}` : ''}`),
+
+  /**
+   * Answers an alert: somebody looked, and it needs no action.
+   *
+   * Not a delete. The condition may well still hold - the alert is answered,
+   * not gone - and it comes back only if it resolves and later returns.
+   */
+  acknowledgeAlert: (id: string) => request<{ id: string; state: AlertState }>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
+
+  /** Sets what this installation is willing to be interrupted about. */
+  putAlertThresholds: (thresholds: AlertThresholds) =>
+    request<AlertThresholds>('/alerts/thresholds', { method: 'PUT', body: JSON.stringify(thresholds) }),
 
   /**
    * A year of the production calendar: only the dates that differ from the
