@@ -33,7 +33,16 @@ use std::io::{BufRead, Write};
 /// `users` and `departments` are the exception no ordering can solve: a person
 /// belongs to a department and a department names its manager, so each points
 /// at the other. See [`DEFERRED_COLUMNS`].
-const TABLES: [&str; 11] = [
+///
+/// Kept honest by `every_table_in_the_schema_is_carried` in the integration
+/// tests, which compares this list against `information_schema` rather than
+/// against a second hand-written list. A list checked only by eye is a list
+/// that grows a hole the day somebody adds a table and reads the file they are
+/// working in: that is exactly how `calendar_days` shipped in v0.21 absent
+/// from here, so a backup of an installation's production calendar restored as
+/// an installation with no calendar at all - a full header, a plausible row
+/// count, and the norms silently wrong on every holiday.
+pub const TABLES: [&str; 13] = [
     "users",
     "departments",
     "agents",
@@ -45,6 +54,13 @@ const TABLES: [&str; 11] = [
     "task_tags",
     "reports",
     "audit_log",
+    // The production calendar. Not derivable from anything else in the file:
+    // it is an act of a government somebody typed in by hand (ADR 0017).
+    "calendar_days",
+    // What the server noticed and what people decided about it. `fired_at` and
+    // an acknowledgement are the two facts a sweep cannot reconstruct, which
+    // is the same reason they are stored at all.
+    "alerts",
 ];
 
 /// Columns held back on insert and written once every table is loaded.
@@ -63,7 +79,7 @@ const DEFERRED_COLUMNS: [(&str, &str); 2] = [("users", "department_id"), ("depar
 /// `settings` is one row created by a migration. Deleting it and inserting the
 /// backup's copy would work, but leaving the row alone and updating it keeps
 /// the `CHECK (singleton)` constraint honest at every moment.
-const SETTINGS: &str = "settings";
+pub const SETTINGS: &str = "settings";
 
 /// What the file says about itself, on its first line.
 #[derive(Debug, Serialize, Deserialize)]
@@ -328,6 +344,7 @@ mod tests {
         let position = |table: &str| TABLES.iter().position(|t| *t == table).unwrap_or_else(|| panic!("{table} is not in TABLES"));
 
         for (child, parent) in [
+            ("alerts", "users"),
             ("agents", "users"),
             ("sessions", "users"),
             ("workdays", "users"),

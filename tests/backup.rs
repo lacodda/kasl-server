@@ -316,3 +316,61 @@ async fn a_backup_names_a_table_this_server_does_not_have() {
 
     db.drop().await;
 }
+
+#[tokio::test]
+async fn every_table_in_the_schema_is_carried() {
+    let Some(db) = TestDb::create().await else { return };
+
+    // The guard the round-trip tests structurally cannot be: they fill the
+    // tables they know about and prove those come back, which says nothing
+    // about a table everybody forgot. This asks the database what exists and
+    // holds the list against it.
+    //
+    // It is not a style point. `calendar_days` shipped in v0.21 missing from
+    // `TABLES`, so `kasl-server backup` wrote a file with a full header and a
+    // plausible row count, and restoring it produced an installation whose
+    // production calendar was gone - every norm wrong on every holiday, with
+    // nothing anywhere saying so. The same omission would have been free to
+    // happen again with `alerts`.
+    let in_schema: Vec<String> = sqlx::query_scalar(
+        "SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+         ORDER BY table_name",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .expect("failed to list the schema's tables");
+
+    // What a backup deliberately does not carry, each with its reason. Listed
+    // here rather than skipped silently, so leaving a table out stays a
+    // decision somebody wrote down.
+    let carried_elsewhere = [
+        // Applied by the server on startup, never read from a file.
+        "_sqlx_migrations",
+        // One row created by a migration: updated in place rather than
+        // inserted, so it travels outside `TABLES`.
+        kasl_server::backup::SETTINGS,
+    ];
+
+    let missing: Vec<&String> = in_schema
+        .iter()
+        .filter(|table| !kasl_server::backup::TABLES.contains(&table.as_str()))
+        .filter(|table| !carried_elsewhere.contains(&table.as_str()))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "these tables exist in the schema and no backup would carry them: {missing:?}. \
+         Add each to `TABLES` in src/backup.rs, after a parent it points at, or to \
+         `carried_elsewhere` here with the reason it is exempt.",
+    );
+
+    // And the other direction: a name in `TABLES` that no longer exists would
+    // make every dump fail at the first query, which is loud - but it would
+    // fail on a customer's server rather than here.
+    for table in kasl_server::backup::TABLES {
+        assert!(in_schema.iter().any(|t| t == table), "`{table}` is in TABLES and not in the schema");
+    }
+
+    db.drop().await;
+}
