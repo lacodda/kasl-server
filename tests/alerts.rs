@@ -203,7 +203,7 @@ async fn an_acknowledgement_lasts_exactly_as_long_as_its_condition() {
     sweep(&server, now + Duration::minutes(5)).await;
 
     let later = now + Duration::days(10);
-    last_seen(&server, &"employee@example.test".to_string(), later - Duration::hours(30)).await;
+    last_seen(&server, "employee@example.test", later - Duration::hours(30)).await;
     let swept = sweep(&server, later).await;
 
     assert_eq!(swept.raised, 1, "a new silence is a new alert, dismissal or not");

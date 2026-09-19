@@ -2,10 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.22.0] - 2026-09-19
+
+### Bug Fixes
+- Carry every table in the schema, and prove it
+
+### Documentation
+- Document the feed, the rules and the thresholds
+
+### Features
+- Notice a quiet agent, a long day and an open day
+- Put what needs attention above what is worth a look
+- Show all three alert rules on the fictional team
+
 ## [0.21.1] - 2026-09-18
 
 ### Bug Fixes
 - Give an upgraded demo its calendar and its part-time rate
+
+### Documentation
+- Cut 0.21.1
 
 ## [0.21.0] - 2026-09-18
 

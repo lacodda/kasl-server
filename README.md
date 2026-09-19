@@ -28,7 +28,7 @@ included, so the loop is closed end to end.
 ```console
 $ docker compose up -d
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.21.1"}
+{"database":"ok","demo":false,"status":"ok","version":"0.22.0"}
 
 # An agent back from three days offline - the middle day is impossible, and
 # the others land anyway.
