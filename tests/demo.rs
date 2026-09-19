@@ -628,3 +628,40 @@ async fn a_backup_from_before_the_demo_existed_still_restores() {
     assert_eq!(demo::status(&target.pool).await.unwrap(), Status::Populated { accounts: 1 });
     target.drop().await;
 }
+
+#[tokio::test]
+async fn every_alert_rule_fires_on_the_demo_and_nothing_else_does() {
+    let Some((server, _)) = demo_server().await else { return };
+
+    let swept = kasl_server::alerts::sweep(&server.pool, Utc::now()).await.expect("the sweep should run");
+    assert!(swept.raised > 0, "the demo exists to show these; a demo with no alerts shows none of them");
+
+    let rules: Vec<String> = sqlx::query_scalar("SELECT DISTINCT rule::text FROM alerts WHERE state = 'open' ORDER BY rule::text")
+        .fetch_all(&server.pool)
+        .await
+        .expect("the alerts should be readable");
+
+    // All three, because a demo that shows one of them is a demo of one third
+    // of the milestone - and which ones fire is a property of the fictional
+    // days, not of the rules. The first live run of this version raised only
+    // `no_agent_data`: the longest day in the demo was 10.7 h against a 12 h
+    // bar, and the only open day was three hours old.
+    for rule in ["no_agent_data", "overwork", "day_not_closed"] {
+        assert!(rules.iter().any(|r| r == rule), "no `{rule}` on the demo: got {rules:?}");
+    }
+
+    // And the other half of the claim, which is the one a live run actually
+    // broke: the feed has to be readable. Nine of twelve people were flagged
+    // silent before the silence rule learnt to read the pulse as well as the
+    // token - true of nobody, and a wall of noise is how a manager learns to
+    // ignore the column.
+    let people: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE active")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    let open: i64 = sqlx::query_scalar("SELECT count(*) FROM alerts WHERE state = 'open'")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert!(open * 2 < people, "{open} alerts across {people} people is a wall, not a signal",);
+}

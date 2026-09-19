@@ -60,7 +60,14 @@ const WEEKS: i64 = 8;
 enum Pattern {
     /// Roughly eight hours, a couple of interruptions, every weekday.
     Steady,
-    /// Ten-hour days: the row the manager should be looking at.
+    /// Long days, the worst of them past the overwork threshold: the row the
+    /// manager should be looking at.
+    ///
+    /// The span reaches past half again the norm on purpose. At ten and a half
+    /// hours - which is what this was - the pattern was the row a manager
+    /// *would* look at and the one the alerts never mentioned, so the demo
+    /// showed one of the three rules and the milestone's own installation
+    /// could not demonstrate it.
     Long,
     /// A full week at the start, five-hour days by the end - the trend the
     /// "trends and anomalies" milestone will point at.
@@ -74,10 +81,56 @@ enum Pattern {
     PartTime,
     /// Working right now: a day open on today's date.
     Open,
+    /// Steady, and then a day left open since yesterday morning: kasl still
+    /// running on a machine nobody is at.
+    ///
+    /// The state the "day not closed" alert exists for, and one no other
+    /// pattern produces. `Open` cannot double as it - that row is somebody
+    /// working right now, which the live column needs, and a day that is both
+    /// current and stale is not a thing.
+    Stranded,
     /// Reported until a week ago, then nothing: the agent went quiet.
     Silent,
     /// Has an agent, has never sent a day.
     Never,
+}
+
+impl Pattern {
+    /// Every pattern, so a test can hold the team against the set rather than
+    /// against a second copy of it that somebody has to remember to extend.
+    ///
+    /// The `match` below is what keeps it honest: a new variant fails to
+    /// compile here until it is added, which a `[...]` literal would not.
+    const ALL: [Self; 9] = [
+        Self::Steady,
+        Self::Long,
+        Self::Fading,
+        Self::Breaks,
+        Self::PartTime,
+        Self::Open,
+        Self::Stranded,
+        Self::Silent,
+        Self::Never,
+    ];
+
+    /// Exists only to fail compilation when a variant is added without being
+    /// put in [`Pattern::ALL`]. Never called.
+    #[allow(dead_code)]
+    fn exhaustive(self) -> usize {
+        let at = match self {
+            Self::Steady => 0,
+            Self::Long => 1,
+            Self::Fading => 2,
+            Self::Breaks => 3,
+            Self::PartTime => 4,
+            Self::Open => 5,
+            Self::Stranded => 6,
+            Self::Silent => 7,
+            Self::Never => 8,
+        };
+        debug_assert!(matches!(Self::ALL[at], p if p == self), "ALL and this match have drifted apart");
+        at
+    }
 }
 
 /// One member of the fictional team.
@@ -176,7 +229,7 @@ const TEAM: [Person; 12] = [
         role: UserRole::Employee,
         department: Some("Engineering"),
         offset_minutes: 2 * 60,
-        pattern: Some(Pattern::Steady),
+        pattern: Some(Pattern::Stranded),
     },
     Person {
         first: "Aiko",
@@ -549,6 +602,13 @@ fn pulse_for(pattern: Pattern) -> (Option<AgentState>, Option<i32>) {
         // This is what distinguishes `idle` from `offline` - and the reason
         // the dashboard needs both.
         Pattern::Steady => Some(AgentState::Idle),
+        // The machine nobody is at. `idle` rather than `working`: kasl is up
+        // and reporting, and its watcher sees no activity - which is precisely
+        // why nobody closed the day. A live pulse matters here beyond the
+        // colour of one cell, because it is what keeps this row out of the
+        // silence alert: what is wrong with this person is an open day, and
+        // two alerts about it would be the server saying one thing twice.
+        Pattern::Stranded => Some(AgentState::Idle),
         // A pulse that is deliberately old: the agent was running this morning
         // and has stopped answering. That is the row a manager should look at
         // first, and it is only visible if the demo carries one - "no pulse at
@@ -776,7 +836,12 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
 
         let week = ((date - first).num_days() / 7) as f64;
         let (start_minute, span_minutes) = match pattern {
-            Pattern::Long => (rng.range(8 * 60, 8 * 60 + 30), rng.range(10 * 60, 11 * 60 + 15)),
+            // Up to thirteen and a half hours at the top of the range, so the
+            // worst days clear the 1.5x overwork bar (twelve hours against the
+            // eight-hour norm) while the ordinary ones stay under it. Both
+            // sides matter: a pattern always over the line would make the
+            // alert look like a property of the person rather than of a day.
+            Pattern::Long => (rng.range(8 * 60, 8 * 60 + 30), rng.range(10 * 60, 13 * 60 + 30)),
             Pattern::Fading => (rng.range(9 * 60, 9 * 60 + 45), (8.5 * 60.0 - week * 0.45 * 60.0) as i64 + rng.range(-15, 15)),
             // Six-tenths of a full day plus the usual wobble, starting late
             // morning: the shape that matches the rate on her account.
@@ -796,6 +861,42 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
             pauses,
             tasks,
             kind: WorkdayKind::Work,
+        });
+    }
+
+    if pattern == Pattern::Stranded {
+        // Yesterday morning, and never closed. Not "a long day": the day is
+        // still open now, which is what makes every total it will eventually
+        // produce wrong, and what the alert is about.
+        //
+        // The last finished day above lands on yesterday for a weekday run, so
+        // this replaces it rather than sitting beside it - one person has one
+        // day per date, and the second would be refused at ingest.
+        let stranded_date = today - Duration::days(1);
+        // Keeps the day's own lunch and tasks: what makes it stranded is the
+        // missing `ended_at`, not an empty day. A bare row would also be a day
+        // with no pauses and no tasks, which is a shape the employee's own
+        // screen does not otherwise produce and would be a second, accidental
+        // fiction.
+        let salvaged = days.iter().position(|day| day.date == stranded_date).map(|at| days.remove(at));
+        let (start, pauses, tasks) = match salvaged {
+            Some(day) => (
+                day.start,
+                // Pauses that ended: the ones inside the day that was actually
+                // worked. An open pause would say somebody is on a break right
+                // now, on a machine nobody has touched since yesterday.
+                day.pauses.into_iter().filter(|pause| pause.end.is_some()).collect(),
+                day.tasks,
+            ),
+            None => (stranded_date.and_time(minutes(8 * 60 + 40)), Vec::new(), Vec::new()),
+        };
+        days.push(AgentDay {
+            date: stranded_date,
+            start,
+            end: None,
+            pauses,
+            kind: WorkdayKind::Work,
+            tasks,
         });
     }
 
@@ -1018,15 +1119,13 @@ mod tests {
         for role in [UserRole::Admin, UserRole::Manager, UserRole::Employee] {
             assert!(TEAM.iter().any(|person| person.role == role), "nobody is a {role:?}");
         }
-        for pattern in [
-            Pattern::Steady,
-            Pattern::Long,
-            Pattern::Fading,
-            Pattern::Breaks,
-            Pattern::Open,
-            Pattern::Silent,
-            Pattern::Never,
-        ] {
+        // Every pattern the enum has, read off the enum rather than listed
+        // here. A hand-written list is the shape of guard that stays green
+        // while the world grows past it: `PartTime` was added and never
+        // appeared here, so nothing would have noticed if nobody carried it.
+        // `Pattern::ALL` is the one place the set is written down, and a
+        // variant added without a person to show it fails on the same day.
+        for pattern in Pattern::ALL {
             assert!(TEAM.iter().any(|person| person.pattern == Some(pattern)), "nobody is {pattern:?}");
         }
         assert_eq!(showcase().len(), 3, "one account of each role to try");
