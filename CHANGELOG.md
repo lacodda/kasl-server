@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.22.1] - 2026-09-19
+
+### Bug Fixes
+- Say an unbounded span in a unit a reader converts
+
 ## [0.22.0] - 2026-09-19
 
 ### Bug Fixes
@@ -9,6 +14,7 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 - Document the feed, the rules and the thresholds
+- Cut 0.22.0
 
 ### Features
 - Notice a quiet agent, a long day and an open day
