@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.23.1] - 2026-09-23
+
+### Bug Fixes
+- Pass every variable in .env to the server
+
 ## [0.23.0] - 2026-09-23
 
 ### Documentation

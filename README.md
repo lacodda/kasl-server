@@ -28,7 +28,7 @@ included, so the loop is closed end to end.
 ```console
 $ docker compose up -d
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.23.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.23.1"}
 
 # An agent back from three days offline - the middle day is impossible, and
 # the others land anyway.
@@ -84,7 +84,7 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.23.0, in daily use on a small team's own stand. The ingest contract,
+v0.23.1, in daily use on a small team's own stand. The ingest contract,
 dashboards, roles, departments, the audit log, the privacy manifest, the
 production calendar, alerts that arrive without being asked for - in the web
 UI and in a Slack, Mattermost or Telegram chat - and a phone layout all hold
