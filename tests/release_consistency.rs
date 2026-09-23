@@ -151,6 +151,17 @@ fn the_install_compose_names_the_image_this_repository_publishes() {
         workflow.contains("ghcr.io/${{ github.repository }}"),
         "the image workflow must publish under the repository's own name"
     );
+    // Webhook destinations have names nobody can list in advance
+    // (`KASL_WEBHOOK_<NAME>`), so an `environment:` block alone would drop
+    // every one of them on the way into the container - the guide's `.env`
+    // would configure a server that never hears it.
+    for file in ["docker-compose.install.yml", "docker-compose.prod.yml"] {
+        let text = read(file);
+        assert!(
+            text.contains("env_file:") && text.contains("path: .env"),
+            "{file} must pass .env through to the server"
+        );
+    }
     assert!(
         !compose.contains("build:"),
         "the install compose must not build from source; that is docker-compose.prod.yml"

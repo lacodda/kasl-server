@@ -39,6 +39,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Everything in .env reaches the server, not only the names listed below:
+    # webhook destinations are one variable each, KASL_WEBHOOK_<NAME>, and no
+    # list written here can know their names in advance. The entries below
+    # still win where both set a value.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgres://kasl:${POSTGRES_PASSWORD}@db:5432/kasl
       KASL_SERVER_ADDR: 0.0.0.0:8080
