@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.23.0] - 2026-09-23
+
+### Documentation
+- Connect a chat, read the payload, check the signature
+
+### Features
+- Tell a chat what the server noticed, as it notices it
+- Show where the alerts go, and send a test
+
 ## [0.22.2] - 2026-09-19
 
 ### Bug Fixes
