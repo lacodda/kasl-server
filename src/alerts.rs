@@ -44,10 +44,10 @@
 //!   Usually kasl left running overnight, and the day it will eventually
 //!   produce is wrong in a way that quietly poisons a week's total.
 //!
-//! Delivery here is in-app, and deliberately: a webhook into a chat at 3 a.m.
-//! is a different product decision with its own milestone (v0.23), and the row
-//! this module writes is precisely what that one will ship outward. Delivery
-//! gets added to the record; it does not replace it.
+//! Delivery starts in-app, and the webhooks of v0.23 take the same rows
+//! outward: every step an alert takes here - raised, acknowledged, resolved -
+//! is queued for the channels that hear it in the transaction that took it
+//! (ADR 0019). Delivery is added to the record; it does not replace it.
 
 use axum::{
     Json,
@@ -69,6 +69,7 @@ use crate::{
     error::ApiError,
     login::CurrentUser,
     model::UserRole,
+    webhooks::{self, AlertPayload, Event, EventKind, Webhooks},
 };
 
 /// Seconds in an hour.
@@ -365,7 +366,7 @@ pub struct Swept {
 /// and the server re-raising it on the next sweep is the exact behaviour that
 /// makes people stop reading alerts. It comes back only if the condition
 /// resolves and later becomes true again, which is a genuinely new event.
-pub async fn sweep(pool: &PgPool, now: DateTime<Utc>) -> Result<Swept, ApiError> {
+pub async fn sweep(pool: &PgPool, now: DateTime<Utc>, webhooks: &Webhooks) -> Result<Swept, ApiError> {
     let thresholds = Thresholds::load(pool).await?;
     let standard_hours: Decimal = sqlx::query_scalar("SELECT standard_hours FROM settings WHERE singleton")
         .fetch_one(pool)
@@ -412,10 +413,16 @@ pub async fn sweep(pool: &PgPool, now: DateTime<Utc>) -> Result<Swept, ApiError>
         // index is what makes "one open alert per person per rule" true
         // even if two sweeps overlap, and this is how the loser of that
         // race finds out without failing.
-        let inserted = sqlx::query(
+        //
+        // In a transaction with its announcement: the alert and the queued
+        // webhook commit together, so a restart between the two cannot leave
+        // a raised alert that no channel ever hears about.
+        let mut tx = pool.begin().await?;
+        let inserted: Option<AlertPayload> = sqlx::query_as(
             "INSERT INTO alerts (user_id, rule, observed_seconds, against_seconds, subject_date, fired_at)
                  VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (user_id, rule) WHERE state = 'open' DO NOTHING",
+                 ON CONFLICT (user_id, rule) WHERE state = 'open' DO NOTHING
+                 RETURNING id, rule, observed_seconds, against_seconds, subject_date, fired_at",
         )
         .bind(finding.user_id)
         .bind(finding.rule)
@@ -423,14 +430,20 @@ pub async fn sweep(pool: &PgPool, now: DateTime<Utc>) -> Result<Swept, ApiError>
         .bind(finding.against_seconds)
         .bind(finding.subject_date)
         .bind(now)
-        .execute(pool)
+        .fetch_optional(&mut *tx)
         .await?;
 
-        if inserted.rows_affected() > 0 {
-            swept.raised += 1;
-            tracing::info!(user = %finding.user_id, rule = ?finding.rule, "raised an alert");
-        } else {
-            swept.unchanged += 1;
+        match inserted {
+            Some(alert) => {
+                announce(&mut tx, webhooks, EventKind::AlertRaised, finding.user_id, alert, None, now).await?;
+                tx.commit().await?;
+                swept.raised += 1;
+                tracing::info!(user = %finding.user_id, rule = ?finding.rule, "raised an alert");
+            }
+            None => {
+                tx.commit().await?;
+                swept.unchanged += 1;
+            }
         }
     }
 
@@ -455,13 +468,19 @@ pub async fn sweep(pool: &PgPool, now: DateTime<Utc>) -> Result<Swept, ApiError>
         if still_true.contains(&(user_id, rule)) {
             continue;
         }
-        let closed = sqlx::query("UPDATE alerts SET state = 'resolved', resolved_at = $2 WHERE id = $1 AND state = 'open'")
-            .bind(id)
-            .bind(now)
-            .execute(pool)
-            .await?;
+        let mut tx = pool.begin().await?;
+        let closed: Option<AlertPayload> = sqlx::query_as(
+            "UPDATE alerts SET state = 'resolved', resolved_at = $2 WHERE id = $1 AND state = 'open'
+             RETURNING id, rule, observed_seconds, against_seconds, subject_date, fired_at",
+        )
+        .bind(id)
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
 
-        if closed.rows_affected() > 0 {
+        if let Some(alert) = closed {
+            announce(&mut tx, webhooks, EventKind::AlertResolved, user_id, alert, None, now).await?;
+            tx.commit().await?;
             swept.resolved += 1;
             tracing::info!(user = %user_id, rule = ?rule, "an alert resolved itself");
             continue;
@@ -471,14 +490,46 @@ pub async fn sweep(pool: &PgPool, now: DateTime<Utc>) -> Result<Swept, ApiError>
         // that to `resolved` would erase the fact that a person looked. Only
         // the stamp is added, which is what a later sweep reads to know the
         // suppression is spent.
-        sqlx::query("UPDATE alerts SET resolved_at = $2 WHERE id = $1 AND state = 'acknowledged' AND resolved_at IS NULL")
-            .bind(id)
-            .bind(now)
-            .execute(pool)
-            .await?;
+        //
+        // Announced all the same: the channel was told it was raised and that
+        // somebody looked, and "the condition is gone" is the message that
+        // lets it stop wondering.
+        let stamped: Option<AlertPayload> = sqlx::query_as(
+            "UPDATE alerts SET resolved_at = $2 WHERE id = $1 AND state = 'acknowledged' AND resolved_at IS NULL
+             RETURNING id, rule, observed_seconds, against_seconds, subject_date, fired_at",
+        )
+        .bind(id)
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(alert) = stamped {
+            announce(&mut tx, webhooks, EventKind::AlertResolved, user_id, alert, None, now).await?;
+        }
+        tx.commit().await?;
     }
 
     Ok(swept)
+}
+
+/// Queues a step in an alert's life for whichever destinations hear it.
+///
+/// Inside the caller's transaction, so the step and its announcement commit
+/// together. Skips the person lookup entirely when nobody listens.
+async fn announce(
+    tx: &mut sqlx::PgConnection,
+    webhooks: &Webhooks,
+    step: EventKind,
+    user_id: Uuid,
+    alert: AlertPayload,
+    by: Option<String>,
+    now: DateTime<Utc>,
+) -> Result<(), ApiError> {
+    if !webhooks.anyone_hears(step) {
+        return Ok(());
+    }
+    let person = webhooks::person(tx, user_id).await?;
+    webhooks::enqueue(tx, webhooks, &Event::alert(step, alert, person, by, webhooks, now)).await?;
+    Ok(())
 }
 
 /// Gathers what the rules need, for everyone who could have an alert.
@@ -712,21 +763,34 @@ pub async fn acknowledge(State(state): State<AppState>, user: CurrentUser, Path(
         return Err(ApiError::new(StatusCode::NOT_FOUND, "no such alert"));
     };
 
-    let updated = sqlx::query(
+    let mut tx = state.pool.begin().await?;
+    let updated: Option<AlertPayload> = sqlx::query_as(
         "UPDATE alerts SET state = 'acknowledged', acknowledged_at = now(), acknowledged_by = $2
-         WHERE id = $1 AND state = 'open'",
+         WHERE id = $1 AND state = 'open'
+         RETURNING id, rule, observed_seconds, against_seconds, subject_date, fired_at",
     )
     .bind(id)
     .bind(user.user_id)
-    .execute(&state.pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    if updated.rows_affected() == 0 {
+    let Some(alert) = updated else {
         // Already answered, or resolved itself between the page loading and
         // the click. Said plainly rather than silently succeeding: the screen
         // is about to show a state the reader did not choose.
         return Err(ApiError::new(StatusCode::CONFLICT, "that alert is no longer open"));
+    };
+
+    // The channel that was told about it hears who looked, so two managers
+    // reading the same message do not both go chasing it.
+    if state.webhooks.anyone_hears(EventKind::AlertAcknowledged) {
+        let by: String = sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+            .bind(user.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        announce(&mut tx, &state.webhooks, EventKind::AlertAcknowledged, subject, alert, Some(by), Utc::now()).await?;
     }
+    tx.commit().await?;
 
     // The target is the person the alert is about, not the alert's own id:
     // the question anybody brings to this log is "what happened to this
@@ -814,13 +878,13 @@ const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 6
 /// point of an alert is that it exists before anybody looks: an alert computed
 /// on read has no `fired_at` worth the name - it would say the condition began
 /// the moment somebody first opened the page - and could never be delivered
-/// anywhere, which is what v0.23 is for.
+/// anywhere - and the webhooks send what the sweep raises (ADR 0019).
 ///
 /// A sweep that fails is logged and the loop continues. A database blip must
 /// not leave a server running with its alerts permanently frozen, and the next
 /// sweep reconciles from scratch anyway - there is no state carried between
 /// them to be corrupted by a skipped one.
-pub fn run_sweeps(pool: PgPool) {
+pub fn run_sweeps(pool: PgPool, webhooks: std::sync::Arc<Webhooks>) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
         // The first tick is immediate: a server that has just started should
@@ -830,7 +894,7 @@ pub fn run_sweeps(pool: PgPool) {
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            match sweep(&pool, Utc::now()).await {
+            match sweep(&pool, Utc::now(), &webhooks).await {
                 Ok(swept) if swept.raised > 0 || swept.resolved > 0 => {
                     tracing::info!(raised = swept.raised, resolved = swept.resolved, open = swept.unchanged, "swept the alerts");
                 }

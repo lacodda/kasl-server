@@ -74,7 +74,9 @@ async fn open_rules(server: &TestServer) -> Vec<String> {
 }
 
 async fn sweep(server: &TestServer, now: DateTime<Utc>) -> kasl_server::alerts::Swept {
-    kasl_server::alerts::sweep(&server.pool, now).await.expect("the sweep should run")
+    kasl_server::alerts::sweep(&server.pool, now, &kasl_server::webhooks::Webhooks::default())
+        .await
+        .expect("the sweep should run")
 }
 
 #[tokio::test]

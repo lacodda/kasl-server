@@ -19,7 +19,7 @@
 //!   hours incomparable across time zones. See ADR 0003.
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -30,7 +30,16 @@ use crate::{
     calendar::WorkdayKind,
     error::ApiError,
     privacy::{Dropped, Policy, PrivacyLevel},
+    webhooks::{self, DayPayload, Event, EventKind, Webhooks},
 };
+
+/// How recently a day must have ended for its arrival to be news.
+///
+/// A day is announced when it arrives finished for the first time - and an
+/// agent back from a fortnight offline sends a fortnight of them at once. The
+/// channel should hear about yesterday evening, not receive ten messages
+/// about days everybody has long since forgotten.
+const CLOSED_DAY_IS_NEWS_FOR: TimeDelta = TimeDelta::hours(24);
 
 /// One day as the agent recorded it.
 #[derive(Debug, Deserialize)]
@@ -161,7 +170,7 @@ pub enum DayResult {
 /// Accepts one day from an authenticated agent.
 pub async fn upload_day(State(state): State<AppState>, agent: AuthenticatedAgent, Json(day): Json<DayUpload>) -> Result<impl IntoResponse, ApiError> {
     let policy = Policy::load(&state.pool).await?;
-    let accepted = store_day(&state.pool, agent, &day, policy).await?;
+    let accepted = store_day(&state.pool, agent, &day, policy, &state.webhooks, Utc::now()).await?;
     Ok((StatusCode::OK, Json(accepted)))
 }
 
@@ -182,13 +191,14 @@ pub async fn upload_batch(State(state): State<AppState>, agent: AuthenticatedAge
     // are one policy, and reading it thirty times would only add ways for the
     // days in one request to disagree with each other.
     let policy = Policy::load(&state.pool).await?;
+    let now = Utc::now();
 
     let mut results = Vec::with_capacity(batch.days.len());
     let mut accepted = 0;
     let mut rejected = 0;
 
     for day in &batch.days {
-        match store_day(&state.pool, agent, day, policy).await {
+        match store_day(&state.pool, agent, day, policy, &state.webhooks, now).await {
             Ok(stored) => {
                 accepted += 1;
                 results.push(DayResult::Accepted { day: stored });
@@ -216,8 +226,20 @@ pub async fn upload_batch(State(state): State<AppState>, agent: AuthenticatedAge
 ///
 /// Shared by the single-day route and the batch one so a backfilled day is
 /// stored by exactly the same code as a live one.
-async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUpload, policy: Policy) -> Result<DayAccepted, ApiError> {
+async fn store_day(
+    pool: &sqlx::PgPool,
+    agent: AuthenticatedAgent,
+    day: &DayUpload,
+    policy: Policy,
+    webhooks: &Webhooks,
+    now: DateTime<Utc>,
+) -> Result<DayAccepted, ApiError> {
     validate(day)?;
+
+    // From what the agent sent, before the level filters anything: the hours
+    // of a day are the same fact at every level, and a level that stores no
+    // pauses must not make a channel read a day as unpaused.
+    let paused_seconds = pause_totals(&day.pauses).seconds;
 
     // Before the transaction, deliberately: what the level excludes is never
     // handed to a statement, so it cannot be written and then filtered on the
@@ -229,6 +251,16 @@ async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUplo
     // All of it or none: a day whose pauses landed but whose tasks did not
     // would show up on a dashboard as real, and nobody would know to re-send.
     let mut tx = pool.begin().await?;
+
+    // Whether this upload is the one that closes the day. Read under a lock,
+    // so two uploads of the same day racing each other cannot both see it
+    // open; the event's id is derived from the day and its end besides, so
+    // even a close queued twice is delivered once.
+    let was_closed: Option<bool> = sqlx::query_scalar("SELECT ended_at IS NOT NULL FROM workdays WHERE user_id = $1 AND date = $2 FOR UPDATE")
+        .bind(agent.user_id)
+        .bind(day.date)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     let workday_id = upsert_workday(&mut tx, agent.user_id, day, pause_totals).await?;
     replace_pauses(&mut tx, workday_id, &day.pauses).await?;
@@ -243,6 +275,23 @@ async fn store_day(pool: &sqlx::PgPool, agent: AuthenticatedAgent, day: &DayUplo
     } else {
         0
     };
+
+    if let Some(ended_at) = day.ended_at.map(|at| at.with_timezone(&Utc))
+        && was_closed != Some(true)
+        && now - ended_at <= CLOSED_DAY_IS_NEWS_FOR
+        && webhooks.anyone_hears(EventKind::DayClosed)
+    {
+        let started_at = day.started_at.with_timezone(&Utc);
+        let closed = DayPayload {
+            date: day.date,
+            kind: day.kind,
+            started_at,
+            ended_at,
+            worked_seconds: ((ended_at - started_at).num_seconds() - i64::from(paused_seconds)).max(0),
+        };
+        let person = webhooks::person(&mut tx, agent.user_id).await?;
+        webhooks::enqueue(&mut tx, webhooks, &Event::day_closed(workday_id, closed, person, webhooks, now)).await?;
+    }
 
     tx.commit().await?;
 

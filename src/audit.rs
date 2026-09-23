@@ -46,6 +46,7 @@ pub mod action {
     pub const WORK_RATE_CHANGED: &str = "calendar.work_rate_changed";
     pub const ALERT_ACKNOWLEDGED: &str = "alert.acknowledged";
     pub const ALERT_THRESHOLDS_CHANGED: &str = "alert.thresholds_changed";
+    pub const WEBHOOK_TESTED: &str = "webhook.tested";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 

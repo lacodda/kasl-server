@@ -14,9 +14,16 @@
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgExecutor, PgPool};
+use sqlx::PgExecutor;
 
-use crate::{app::AppState, audit, auth::AuthenticatedAgent, error::ApiError, login::CurrentUser};
+use crate::{
+    app::AppState,
+    audit,
+    auth::AuthenticatedAgent,
+    error::ApiError,
+    login::CurrentUser,
+    webhooks::{EventKind, Kind, Webhooks},
+};
 
 /// How much detail the installation keeps. Mirrors the `privacy_level` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
@@ -117,6 +124,10 @@ pub struct Manifest {
     pub never_collected: Vec<&'static str>,
     /// Who can see a given person's data.
     pub visible_to: Vec<&'static str>,
+    /// What leaves this server on its own, and where to. Always present, and
+    /// empty when nothing does - an absent list and an empty one would read
+    /// the same, and only one of them is a promise (ADR 0019).
+    pub sent_elsewhere: Vec<SentElsewhere>,
     /// How long it is kept, stated plainly rather than implied.
     pub retention: &'static str,
     /// What changing the level does - and does not do - to what is already
@@ -130,6 +141,58 @@ pub struct Manifest {
 pub struct Stored {
     pub what: &'static str,
     pub detail: &'static str,
+}
+
+/// One place the server sends things about people, told in the employee's
+/// terms rather than the operator's.
+#[derive(Debug, Serialize)]
+pub struct SentElsewhere {
+    /// Where, by kind and by the name the operator gave it: "a Slack channel
+    /// (team)". Never the address.
+    pub to: String,
+    /// About whom: everyone, or the people of one department.
+    pub about: String,
+    /// What each message carries.
+    pub what: Vec<&'static str>,
+}
+
+/// The destinations, as the manifest tells them.
+///
+/// Built from the same configuration the dispatcher sends through, so the
+/// manifest cannot list a channel that is not there or miss one that is.
+fn sent_elsewhere(webhooks: &Webhooks) -> Vec<SentElsewhere> {
+    webhooks
+        .destinations()
+        .iter()
+        .map(|destination| {
+            let place = match destination.kind {
+                Kind::Slack => "a Slack channel",
+                Kind::Mattermost => "a Mattermost channel",
+                Kind::Telegram => "a Telegram chat",
+                Kind::Json => "another system the operator runs",
+            };
+            let mut what = Vec::new();
+            if destination.events.iter().any(|event| matches!(event, EventKind::AlertRaised | EventKind::AlertAcknowledged | EventKind::AlertResolved)) {
+                what.push(
+                    "alerts about you as they are raised and cleared: your name, your department, and the figure behind each one - how long your agent was quiet, how long a day ran against your norm, or how long a day stayed open",
+                );
+            }
+            if destination.hears(EventKind::AlertAcknowledged) {
+                what.push("the name of whoever answered an alert about you");
+            }
+            if destination.hears(EventKind::DayClosed) {
+                what.push("each day you finish: your name, your department, the date, when it started and ended, and the hours worked - or that you marked it as leave, sick or a day off");
+            }
+            SentElsewhere {
+                to: format!("{place} ({})", destination.name),
+                about: match &destination.department {
+                    Some(department) => format!("people in {department}"),
+                    None => "everyone".to_string(),
+                },
+                what,
+            }
+        })
+        .collect()
 }
 
 /// Everything the agent could send, and what each level does with it.
@@ -216,7 +279,7 @@ fn summary_for(level: PrivacyLevel) -> &'static str {
 }
 
 /// Builds the manifest for a level.
-pub fn manifest(level: PrivacyLevel, updated_at: Option<DateTime<Utc>>) -> Manifest {
+pub fn manifest(level: PrivacyLevel, updated_at: Option<DateTime<Utc>>, webhooks: &Webhooks) -> Manifest {
     Manifest {
         level,
         summary: summary_for(level),
@@ -227,6 +290,7 @@ pub fn manifest(level: PrivacyLevel, updated_at: Option<DateTime<Utc>>) -> Manif
             "the manager of your department",
             "administrators of this installation",
         ],
+        sent_elsewhere: sent_elsewhere(webhooks),
         retention: "Kept for as long as the installation keeps it: there is no automatic deletion. A deactivated account keeps its history rather than losing it.",
         on_change: "Changing this setting affects what arrives from now on. Narrowing it does not erase what is already stored, and widening it does not bring back what was dropped.",
         updated_at,
@@ -241,7 +305,7 @@ pub struct LevelUpdate {
 
 /// Answers the manifest to a signed-in person.
 pub async fn show(State(state): State<AppState>, _user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(current(&state.pool).await?))
+    Ok(Json(current(&state).await?))
 }
 
 /// Answers the manifest to an authenticated agent.
@@ -250,14 +314,14 @@ pub async fn show(State(state): State<AppState>, _user: CurrentUser) -> Result<i
 /// the employee already is, instead of asking them to sign into the server
 /// that watches them in order to find out what it watches.
 pub async fn show_to_agent(State(state): State<AppState>, _agent: AuthenticatedAgent) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(current(&state.pool).await?))
+    Ok(Json(current(&state).await?))
 }
 
-async fn current(pool: &PgPool) -> Result<Manifest, ApiError> {
+async fn current(state: &AppState) -> Result<Manifest, ApiError> {
     let row: (PrivacyLevel, DateTime<Utc>) = sqlx::query_as("SELECT privacy_level, updated_at FROM settings WHERE singleton")
-        .fetch_one(pool)
+        .fetch_one(&state.pool)
         .await?;
-    Ok(manifest(row.0, Some(row.1)))
+    Ok(manifest(row.0, Some(row.1), &state.webhooks))
 }
 
 /// Sets the level. Administrators only, and recorded.
@@ -282,12 +346,43 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, Json(updat
         .record(&state.pool)
         .await;
 
-    Ok((StatusCode::OK, Json(current(&state.pool).await?)))
+    Ok((StatusCode::OK, Json(current(&state).await?)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_leaves_the_server_is_listed_from_the_configuration() {
+        // The failure this guards is a manifest that says less than the
+        // server does: a channel that hears about somebody's days, missing
+        // from the one page that promises to say what happens to them.
+        let none = manifest(PrivacyLevel::Full, None, &Webhooks::default());
+        assert!(none.sent_elsewhere.is_empty());
+
+        let webhooks = Webhooks::new(
+            vec![
+                crate::webhooks::Destination::parse("KASL_WEBHOOK_TEAM", "slack https://hooks.slack.com/services/T/B/X").unwrap(),
+                crate::webhooks::Destination::parse("KASL_WEBHOOK_PAY", "json https://pay.example/in secret=s events=day.closed department=Design").unwrap(),
+            ],
+            None,
+        );
+        let sent = manifest(PrivacyLevel::Full, None, &webhooks).sent_elsewhere;
+        assert_eq!(sent.len(), 2);
+
+        let pay = sent.iter().find(|s| s.to.contains("(pay)")).expect("the json destination is listed");
+        assert_eq!(pay.about, "people in Design");
+        assert_eq!(pay.what.len(), 1, "a destination hearing only days is not said to hear alerts");
+        assert!(pay.what[0].contains("hours worked"));
+
+        let team = sent.iter().find(|s| s.to.contains("(team)")).expect("the slack destination is listed");
+        assert_eq!(team.to, "a Slack channel (team)");
+        assert_eq!(team.about, "everyone");
+        assert!(team.what.iter().any(|w| w.contains("alerts about you")));
+        assert!(!team.what.iter().any(|w| w.contains("each day you finish")), "days are opt-in");
+        assert!(!format!("{sent:?}").contains("hooks.slack.com"), "the manifest never carries an address");
+    }
 
     #[test]
     fn the_default_level_keeps_everything() {
@@ -326,8 +421,8 @@ mod tests {
         // The manifest is generated from the level, so this is really a test
         // that generation is wired to the level at all - a hand-written
         // manifest that ignored its argument would pass every other test here.
-        let full = manifest(PrivacyLevel::Full, None);
-        let coarse = manifest(PrivacyLevel::Coarse, None);
+        let full = manifest(PrivacyLevel::Full, None, &Webhooks::default());
+        let coarse = manifest(PrivacyLevel::Coarse, None, &Webhooks::default());
 
         assert!(full.stored.iter().any(|s| s.what == "tasks"), "full stores tasks");
         assert!(!coarse.stored.iter().any(|s| s.what == "tasks"), "coarse stores no tasks");
@@ -344,7 +439,7 @@ mod tests {
         // server that watches less than this one does (ADR 0014).
         for level in [PrivacyLevel::Full, PrivacyLevel::Moderate, PrivacyLevel::Coarse] {
             assert!(
-                manifest(level, None).stored.iter().any(|s| s.what == "live status"),
+                manifest(level, None, &Webhooks::default()).stored.iter().any(|s| s.what == "live status"),
                 "{level:?} does not name the pulse",
             );
         }
@@ -355,7 +450,7 @@ mod tests {
         // The list does not depend on the level: no level of this product
         // watches keystrokes, and a reader at `full` needs to know that most.
         for level in [PrivacyLevel::Full, PrivacyLevel::Moderate, PrivacyLevel::Coarse] {
-            let manifest = manifest(level, None);
+            let manifest = manifest(level, None, &Webhooks::default());
             assert_eq!(manifest.never_collected.len(), NEVER_COLLECTED.len());
             assert!(manifest.never_collected.contains(&"keystrokes or what you type"));
         }

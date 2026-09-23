@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -9,7 +11,9 @@ use serde_json::json;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
-use crate::{admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web};
+use crate::{
+    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web, webhooks,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -18,6 +22,9 @@ pub struct AppState {
     pub max_batch_days: usize,
     /// Whether session cookies carry `Secure`.
     pub secure_cookies: bool,
+    /// Where events are sent. Shared rather than cloned per request: it is
+    /// read on every upload and never changes while the server runs.
+    pub webhooks: Arc<webhooks::Webhooks>,
 }
 
 /// Builds the router with the operator's limits applied.
@@ -68,6 +75,12 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // an alert interrupts somebody, and how much silence is worth that
         // differs between a team in one timezone and a team across four.
         .route("/alerts/thresholds", put(alerts::put_thresholds))
+        // Where the server says things outward, and how the last ones went.
+        // Read-only: the destinations are declared in the environment, where
+        // the credentials they carry belong (ADR 0019). An administrator can
+        // look, and can ask for a test message - not add a hook.
+        .route("/webhooks", get(webhooks::overview))
+        .route("/webhooks/{name}/test", post(webhooks::send_test))
         .route("/users/{id}/days", get(team::user_days))
         // The twelve-week shape behind a signal, next to the days that made it.
         .route("/users/{id}/trend", get(signals::user_trend))
@@ -130,6 +143,7 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
             pool,
             max_batch_days: config.max_batch_days,
             secure_cookies: config.secure_cookies,
+            webhooks: Arc::new(config.webhooks.clone()),
         })
         // A body larger than this is refused before it is buffered: backfilling
         // a year and attacking the server look identical up to the size.

@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 
+use crate::webhooks::Webhooks;
+
 /// Default bind address when `KASL_SERVER_ADDR` is not set.
 const DEFAULT_ADDR: &str = "0.0.0.0:8080";
 
@@ -53,11 +55,20 @@ pub struct Config {
     /// Off by default. On, the server fills an empty database with the demo
     /// team and refuses to start on one that holds anybody real (ADR 0013).
     pub demo: bool,
+    /// Where events are sent (`KASL_WEBHOOK_<NAME>`, one variable each), and
+    /// the address messages link back to (`KASL_PUBLIC_URL`). Read from the
+    /// environment and never from the database: a hook is a credential
+    /// (ADR 0019).
+    pub webhooks: Webhooks,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        Self::from_lookup(|key| std::env::var(key).ok())
+        let mut config = Self::from_lookup(|key| std::env::var(key).ok())?;
+        // Read apart from the lookup: the destinations are every variable
+        // under a prefix, and a lookup answers only names it is asked for.
+        config.webhooks = Webhooks::from_vars(std::env::vars(), std::env::var("KASL_PUBLIC_URL").ok()).map_err(anyhow::Error::msg)?;
+        Ok(config)
     }
 
     /// A configuration with every limit at its default. Used where the limits
@@ -74,6 +85,7 @@ impl Config {
             admin_email: DEFAULT_ADMIN_EMAIL.to_string(),
             secure_cookies: true,
             demo: false,
+            webhooks: Webhooks::default(),
         }
     }
 
@@ -101,6 +113,7 @@ impl Config {
             admin_email,
             secure_cookies,
             demo,
+            webhooks: Webhooks::default(),
         })
     }
 }

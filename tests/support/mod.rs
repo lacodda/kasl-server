@@ -163,6 +163,9 @@ pub struct TestServer {
     /// A working token for the seeded agent.
     pub token: String,
     db: Option<TestDb>,
+    /// The configuration the router is built with. The defaults, unless a
+    /// test gives it destinations to send to.
+    config: kasl_server::config::Config,
 }
 
 impl TestServer {
@@ -182,6 +185,7 @@ impl TestServer {
             pool,
             token: "test-agent-token".to_string(),
             db: Some(db),
+            config: kasl_server::config::Config::defaults_for_database(String::new()),
         };
         server.provision("employee@example.test", &server.token).await;
         Some(server)
@@ -195,6 +199,7 @@ impl TestServer {
             pool: db.pool.clone(),
             token: String::new(),
             db: Some(db),
+            config: kasl_server::config::Config::defaults_for_database(String::new()),
         }
     }
 
@@ -210,6 +215,21 @@ impl TestServer {
         if let Some(db) = self.db.take() {
             db.drop().await;
         }
+    }
+
+    /// The same server, sending events to these destinations.
+    pub fn with_webhooks(mut self, webhooks: kasl_server::webhooks::Webhooks) -> Self {
+        self.config.webhooks = webhooks;
+        self
+    }
+
+    /// The destinations this server sends to.
+    pub fn webhooks(&self) -> &kasl_server::webhooks::Webhooks {
+        &self.config.webhooks
+    }
+
+    fn router(&self) -> axum::Router {
+        kasl_server::app::router_with(self.pool.clone(), &self.config)
     }
 
     /// Adds another agent and returns its token.
@@ -272,10 +292,7 @@ impl TestServer {
         }
         let request = request.body(Body::from(body.to_string())).expect("the request should build");
 
-        let response = kasl_server::app::router(self.pool.clone())
-            .oneshot(request)
-            .await
-            .expect("the router should answer");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
         read_response(response).await
     }
 
@@ -304,10 +321,7 @@ impl TestServer {
             .body(Body::from(serde_json::json!({"email": email, "password": password}).to_string()))
             .expect("the request should build");
 
-        let response = kasl_server::app::router(self.pool.clone())
-            .oneshot(request)
-            .await
-            .expect("the router should answer");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
         let cookie = response
             .headers()
             .get(header::SET_COOKIE)
@@ -325,13 +339,7 @@ impl TestServer {
             request = request.header(header::COOKIE, cookie_pair(cookie));
         }
         let request = request.body(Body::empty()).expect("the request should build");
-        read_response(
-            kasl_server::app::router(self.pool.clone())
-                .oneshot(request)
-                .await
-                .expect("the router should answer"),
-        )
-        .await
+        read_response(self.router().oneshot(request).await.expect("the router should answer")).await
     }
 
     /// GETs a path with an arbitrary Authorization header.
@@ -341,13 +349,7 @@ impl TestServer {
             request = request.header(header::AUTHORIZATION, value);
         }
         let request = request.body(Body::empty()).expect("the request should build");
-        read_response(
-            kasl_server::app::router(self.pool.clone())
-                .oneshot(request)
-                .await
-                .expect("the router should answer"),
-        )
-        .await
+        read_response(self.router().oneshot(request).await.expect("the router should answer")).await
     }
 
     /// POSTs carrying a cookie, returning the status, any `Set-Cookie`, and the body.
@@ -358,10 +360,7 @@ impl TestServer {
         }
         let request = request.body(Body::from(body.to_string())).expect("the request should build");
 
-        let response = kasl_server::app::router(self.pool.clone())
-            .oneshot(request)
-            .await
-            .expect("the router should answer");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
         let set_cookie = response
             .headers()
             .get(header::SET_COOKIE)
@@ -395,10 +394,7 @@ impl TestServer {
             .body(body.map(|body| Body::from(body.to_string())).unwrap_or_else(Body::empty))
             .expect("the request should build");
 
-        let response = kasl_server::app::router(self.pool.clone())
-            .oneshot(request)
-            .await
-            .expect("the router should answer");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
         let set_cookie = response
             .headers()
             .get(header::SET_COOKIE)
@@ -415,13 +411,7 @@ impl TestServer {
             request = request.header(header::COOKIE, cookie_pair(cookie));
         }
         let request = request.body(Body::from(day.to_string())).expect("the request should build");
-        read_response(
-            kasl_server::app::router(self.pool.clone())
-                .oneshot(request)
-                .await
-                .expect("the router should answer"),
-        )
-        .await
+        read_response(self.router().oneshot(request).await.expect("the router should answer")).await
     }
 
     pub async fn count(&self, table: &str) -> i64 {

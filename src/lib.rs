@@ -29,6 +29,7 @@ pub mod session;
 pub mod signals;
 pub mod team;
 pub mod web;
+pub mod webhooks;
 
 /// The embedded migrations, applied on startup and by the tests.
 ///

@@ -42,7 +42,7 @@ use std::io::{BufRead, Write};
 /// from here, so a backup of an installation's production calendar restored as
 /// an installation with no calendar at all - a full header, a plausible row
 /// count, and the norms silently wrong on every holiday.
-pub const TABLES: [&str; 13] = [
+pub const TABLES: [&str; 14] = [
     "users",
     "departments",
     "agents",
@@ -61,6 +61,10 @@ pub const TABLES: [&str; 13] = [
     // an acknowledgement are the two facts a sweep cannot reconstruct, which
     // is the same reason they are stored at all.
     "alerts",
+    // What the server said outward and whether it arrived. Names destinations
+    // by label only - their addresses live in the environment, not here, so a
+    // backup file carries no credential to post as anybody (ADR 0019).
+    "webhook_deliveries",
 ];
 
 /// Columns held back on insert and written once every table is loaded.

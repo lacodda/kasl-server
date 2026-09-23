@@ -633,7 +633,9 @@ async fn a_backup_from_before_the_demo_existed_still_restores() {
 async fn every_alert_rule_fires_on_the_demo_and_nothing_else_does() {
     let Some((server, _)) = demo_server().await else { return };
 
-    let swept = kasl_server::alerts::sweep(&server.pool, Utc::now()).await.expect("the sweep should run");
+    let swept = kasl_server::alerts::sweep(&server.pool, Utc::now(), &kasl_server::webhooks::Webhooks::default())
+        .await
+        .expect("the sweep should run");
     assert!(swept.raised > 0, "the demo exists to show these; a demo with no alerts shows none of them");
 
     let rules: Vec<String> = sqlx::query_scalar("SELECT DISTINCT rule::text FROM alerts WHERE state = 'open' ORDER BY rule::text")

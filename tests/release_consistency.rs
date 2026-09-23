@@ -169,7 +169,17 @@ fn the_docs_document_every_environment_variable() {
     // the README, where it then passed by finding nothing to compare against
     // on the way to failing on the first variable. A gate follows the text it
     // guards.
-    let config = read("src/config.rs");
+    // The destinations are read by prefix in their own module rather than by
+    // name in `config.rs`, and a scan of one file would never see the prefix.
+    // Only the module's code, not its tests: those name example destinations
+    // (`KASL_WEBHOOK_TEAM_CHAT`) that no operator is meant to set.
+    let destinations = read("src/webhooks/destination.rs");
+    let destinations = destinations.split("#[cfg(test)]").next().unwrap_or_default().to_string();
+    assert!(
+        destinations.contains("\"KASL_WEBHOOK_\""),
+        "the webhook prefix moved; point this scan at where it lives now"
+    );
+    let config = read("src/config.rs") + &destinations;
     let reference = read("docs/src/content/docs/reference/configuration.md");
 
     // Every `"KASL_*"` literal, not only the ones passed straight to `lookup`:

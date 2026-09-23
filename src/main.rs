@@ -329,7 +329,26 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     // The sweep starts before the listener: an alert exists so that somebody
     // does not have to be looking, and the first thing a server that was down
     // overnight should do is notice what happened while it was.
-    kasl_server::alerts::run_sweeps(pool.clone());
+    let webhooks = std::sync::Arc::new(config.webhooks.clone());
+    kasl_server::alerts::run_sweeps(pool.clone(), webhooks.clone());
+
+    // Named at startup, by label and kind and never by address: "is the
+    // design channel wired up" should be answerable from the log, and the
+    // log is not where a hook belongs.
+    for destination in webhooks.destinations() {
+        let events: Vec<&str> = destination.events.iter().map(|event| event.name()).collect();
+        tracing::info!(
+            destination = %destination.name,
+            kind = ?destination.kind,
+            target = %destination.shown_target(),
+            events = %events.join(","),
+            department = destination.department.as_deref().unwrap_or("everyone"),
+            "webhook destination"
+        );
+    }
+    // Always started, even with no destinations: a delivery queued before a
+    // variable was removed still has to be given up on in writing.
+    kasl_server::webhooks::run_dispatcher(pool.clone(), webhooks);
 
     let listener = TcpListener::bind(config.addr)
         .await
