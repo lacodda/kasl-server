@@ -131,7 +131,8 @@
     "acknowledgeHint": "Stops this alert until the condition goes away and returns",
     "noAgentData": "Nothing from their agent for {{span}}",
     "overwork": "Worked {{worked}} h on {{date}}, against a norm of {{norm}} h",
-    "dayNotClosed": "The day of {{date}} has been open for {{span}}"
+    "dayNotClosed": "The day of {{date}} has been open for {{span}}",
+    "delivery": "Where these go"
   },
   "signals": {
     "title": "Worth a look",
@@ -163,7 +164,37 @@
     "visibleTo": "Who can see it",
     "retention": "How long",
     "onChange": "If this setting changes",
-    "updatedAt": "Policy last changed"
+    "updatedAt": "Policy last changed",
+    "sentElsewhere": "Sent outside this server",
+    "sentNowhere": "Nothing about you is sent anywhere else. What is kept stays on this server.",
+    "about": "About {{about}}"
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "subtitle": "Where the server sends what it notices. Destinations are set in the server's environment, next to its other secrets - this screen shows them and can send a test.",
+    "none": "Nothing is sent anywhere yet.",
+    "noneHint": "Add one variable per chat to the server's environment and restart it:",
+    "guide": "How to connect Slack, Mattermost, Telegram or your own system",
+    "noLinks": "Messages carry no link back, because the server does not know its own address. Set KASL_PUBLIC_URL to add one.",
+    "sendTest": "Send a test",
+    "testQueued": "Queued. It goes out within a few seconds - this card updates when it has.",
+    "hears": "Hears",
+    "about": "About",
+    "everyone": "Everyone",
+    "sofar": "So far",
+    "counts": "{{delivered}} delivered, {{pending}} waiting, {{abandoned}} given up",
+    "lastDelivered": "last at {{at}}",
+    "lastError": "Last failure, {{at}}:",
+    "departmentMissing": "No department is called \"{{department}}\", so this destination hears nothing. Fix the name in the environment, or create the department.",
+    "recent": "Recent deliveries",
+    "refresh": "Refresh",
+    "nothingSent": "Nothing has been sent yet.",
+    "state": {
+      "delivered": "Delivered",
+      "queued": "Waiting",
+      "retrying": "Failed {{attempts}}×, next try {{at}}",
+      "abandoned": "Given up"
+    }
   },
   "demo": {
     "banner": "Demo - a fictional team. Nothing here is real.",

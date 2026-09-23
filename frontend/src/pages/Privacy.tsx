@@ -81,6 +81,31 @@ export function Privacy() {
         </ul>
       </Section>
 
+      {/* Always shown, including when empty: "nothing leaves this server" is a
+          statement the employee is owed, and a section that appears only when
+          something does would make its absence say nothing (ADR 0019). */}
+      <Section title={t('privacy.sentElsewhere')}>
+        {manifest.sent_elsewhere.length === 0 ? (
+          <p className="text-sm text-dim">{t('privacy.sentNowhere')}</p>
+        ) : (
+          <div className="space-y-4">
+            {manifest.sent_elsewhere.map((place) => (
+              <div key={place.to}>
+                <p className="text-sm">{place.to}</p>
+                <p className="mt-0.5 text-xs text-faint">{t('privacy.about', { about: place.about })}</p>
+                <ul className="mt-1.5 space-y-1">
+                  {place.what.map((item) => (
+                    <li key={item} className="text-sm text-dim">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       <Section title={t('privacy.retention')}>
         <p className="text-sm text-dim">{manifest.retention}</p>
       </Section>

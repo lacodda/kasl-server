@@ -34,6 +34,20 @@ export interface PrivacyManifest {
   retention: string
   on_change: string
   updated_at: string | null
+  /**
+   * What leaves the server about people, and where to. Empty rather than
+   * absent when nothing does - an empty list is a promise.
+   */
+  sent_elsewhere: SentElsewhere[]
+}
+
+/** One place the server sends messages about people. Never an address. */
+export interface SentElsewhere {
+  /** "a Slack channel (team)" */
+  to: string
+  /** "everyone", or "people in Design" */
+  about: string
+  what: string[]
 }
 
 export interface Pause {
@@ -320,6 +334,51 @@ export interface AlertsResponse {
   thresholds: AlertThresholds
 }
 
+export type WebhookEvent = 'alert.raised' | 'alert.acknowledged' | 'alert.resolved' | 'day.closed' | 'test'
+export type WebhookKind = 'slack' | 'mattermost' | 'telegram' | 'json'
+
+/** One destination, as `GET /webhooks` shows it: by label, never by address. */
+export interface WebhookDestination {
+  name: string
+  kind: WebhookKind
+  /** The host of a hook or the chat of a bot - enough to tell two apart. */
+  target: string
+  events: WebhookEvent[]
+  department: string | null
+  /** False for a department nobody has: a destination that hears nothing. */
+  department_exists: boolean | null
+  pending: number
+  delivered: number
+  abandoned: number
+  last_delivered_at: string | null
+  last_error: string | null
+  last_error_at: string | null
+}
+
+/** One event for one destination, and how it went. */
+export interface WebhookDelivery {
+  id: string
+  event_id: string
+  destination: string
+  event: WebhookEvent
+  person: string | null
+  created_at: string
+  attempts: number
+  next_attempt_at: string
+  delivered_at: string | null
+  abandoned_at: string | null
+  last_status: number | null
+  last_error: string | null
+}
+
+export interface WebhooksOverview {
+  destinations: WebhookDestination[]
+  /** The last fifty, newest first. */
+  recent: WebhookDelivery[]
+  /** Whether messages link back - whether `KASL_PUBLIC_URL` is set. */
+  links: boolean
+}
+
 /** One week on the trend chart. */
 export interface TrendWeek {
   week_start: string
@@ -496,6 +555,17 @@ export const api = {
    * not gone - and it comes back only if it resolves and later returns.
    */
   acknowledgeAlert: (id: string) => request<{ id: string; state: AlertState }>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
+
+  /**
+   * Where the server sends what it notices, and how the last ones went.
+   * Administrators only. Read-only: destinations live in the environment,
+   * where the credentials they carry belong (ADR 0019).
+   */
+  webhooks: () => request<WebhooksOverview>('/webhooks'),
+
+  /** Queues a test message for one destination. Administrators only. */
+  testWebhook: (name: string) =>
+    request<{ event_id: string; destination: string }>(`/webhooks/${encodeURIComponent(name)}/test`, { method: 'POST' }),
 
   /** Sets what this installation is willing to be interrupted about. */
   putAlertThresholds: (thresholds: AlertThresholds) =>

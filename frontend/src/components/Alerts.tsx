@@ -6,6 +6,7 @@ import { api, type Alert, type AlertRule, type AlertsResponse } from '@/lib/api'
 import { alertPhrase, alertTone, isOpen } from '@/lib/alerts'
 import { Panel } from '@/components/ui/panel'
 import { Button } from '@/components/ui/button'
+import { useSession } from '@/lib/session'
 
 /**
  * What the server noticed on its own, at the top of the dashboard.
@@ -27,6 +28,15 @@ export function Alerts() {
   const [loaded, setLoaded] = useState<AlertsResponse | null>(null)
   const [failed, setFailed] = useState(false)
   const [answering, setAnswering] = useState<string | null>(null)
+  const { user } = useSession()
+  // Where these alerts are sent, for the one role that can see it. The way
+  // into the webhooks screen: it has no tab, and this band is what it is about.
+  const delivery =
+    user?.role === 'admin' ? (
+      <Link to="/webhooks" className="shrink-0 text-2xs text-faint underline-offset-2 hover:text-text hover:underline">
+        {t('alerts.delivery')}
+      </Link>
+    ) : null
 
   useEffect(() => {
     let cancelled = false
@@ -80,6 +90,7 @@ export function Alerts() {
               those is good news - the same rule the signals band follows. */}
           {t('alerts.nothing', { count: loaded.people })}
         </p>
+        {delivery && <span className="ml-auto">{delivery}</span>}
       </Panel>
     )
   }
@@ -95,7 +106,10 @@ export function Alerts() {
             quoting one of them states something false about three of them.
             Each row already carries the figure it was measured against, in
             its own sentence, where it belongs. */}
-        <span className="text-2xs text-faint tabular">{t('alerts.count', { count: open.length })}</span>
+        <span className="flex items-baseline gap-3">
+          {delivery}
+          <span className="text-2xs text-faint tabular">{t('alerts.count', { count: open.length })}</span>
+        </span>
       </div>
       {open.map((alert) => (
         <AlertRow key={alert.id} alert={alert} onAcknowledge={acknowledge} answering={answering === alert.id} />

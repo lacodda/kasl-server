@@ -10,6 +10,7 @@ import { Heatmap } from '@/pages/Heatmap'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Privacy } from '@/pages/Privacy'
+import { Webhooks } from '@/pages/Webhooks'
 import { Button } from '@/components/ui/button'
 import { destinations, type Destination } from '@/lib/navigation'
 
@@ -55,6 +56,9 @@ export function App() {
           {managesPeople && <Route path="/team" element={<Dashboard />} />}
           {managesPeople && <Route path="/month" element={<Heatmap />} />}
           {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
+          {/* No tab: the phone's bar holds five screens and has five. Reached
+              from the alerts band, next to what it delivers. */}
+          {user.role === 'admin' && <Route path="/webhooks" element={<Webhooks />} />}
           {/* Readable by everyone signed in; the screen hides its controls
               from anyone the server would refuse. */}
           <Route path="/calendar" element={<Calendar />} />
