@@ -122,6 +122,8 @@ over differs between a team in one timezone and a team across four. What is
 **not** configurable is the set of rules: which things this server will speak
 about is a choice, not an operator's to invent.
 
-Nothing is sent anywhere yet. Delivery outside the browser — chat webhooks,
-and notifications back to the employee's own kasl — is its own milestone, and
-the row described here is what it will ship.
+Every step an alert takes - raised, acknowledged, resolved - can also be sent
+to a Slack, Mattermost or Telegram chat, or to a system of your own, in the
+same transaction that took it. See
+[Sending alerts to a chat](/kasl-server/guides/sending-alerts-to-a-chat/).
+Notifications back to the employee's own kasl are a later milestone.

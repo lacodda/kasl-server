@@ -20,6 +20,9 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
  "never_collected":["keystrokes or what you type","window titles","which applications you run",
                     "screenshots or camera images","web pages you visit","file names or paths","your location"],
  "visible_to":["you, in your own account","the manager of your department","administrators of this installation"],
+ "sent_elsewhere":[{"to":"a Slack channel (team)","about":"everyone",
+                    "what":["alerts about you as they are raised and cleared: your name, your department, and the figure behind each one - ...",
+                            "the name of whoever answered an alert about you"]}],
  "retention":"Kept for as long as the installation keeps it: there is no automatic deletion. ...",
  "on_change":"Changing this setting affects what arrives from now on. ..."}
 ```
@@ -27,6 +30,15 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
 An agent reads it with its own token, so kasl can show it in the CLI - where the
 employee already is - instead of requiring a login to the server that watches
 them. Anyone signed in reads the same manifest at `GET /api/v1/privacy`.
+
+**What leaves the server is listed too.** `sent_elsewhere` names every chat or
+system the installation sends messages about people to - by the label the
+operator gave it, never by its address - with whom it is about and what each
+message carries. It is built from the same configuration the server sends
+through, so it cannot list a channel that is not there or miss one that is.
+Nothing configured, and the list is empty rather than absent: an empty list is
+a promise, a missing one is not. See
+[Sending alerts to a chat](/kasl-server/guides/sending-alerts-to-a-chat/).
 
 ## Three levels
 

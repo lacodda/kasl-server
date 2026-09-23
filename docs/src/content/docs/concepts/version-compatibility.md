@@ -13,6 +13,7 @@ answered it.
 | v1.7.0 | `kasl server connect`, `status` | `GET /health`, `GET /api/v1/agent/whoami` | **0.14.1** |
 | v1.8.0 | `kasl server push` — one day | `POST /api/v1/days` | **0.14.1** |
 | v1.9.0 | `queue`, `flush`, `backfill` — a backlog in one request | `POST /api/v1/days/batch` | **0.14.1** |
+| v1.13.0 | `manifest` — what the server keeps about you | `GET /api/v1/privacy/agent` | **0.14.1** |
 
 The floor is 0.14.1 across the board, and it is set by `whoami` rather than by
 uploading: ingest has answered since 0.3.0 and batch since 0.4.0, but every
@@ -31,8 +32,10 @@ will never take them.
 meaning for as long as agents call it, and anything that would change that
 meaning becomes `/api/v2` with a migration written for agents. Everything the
 server has added since — departments, the audit log, the privacy manifest,
-signals, the heatmap — is read by people through the web UI and changes nothing
-an agent sends. The one addition an agent could use, `POST /api/v1/agent/heartbeat`
+signals, the heatmap, the webhooks — is read by people through the web UI and
+changes nothing an agent sends. The manifest an agent reads grew a
+`sent_elsewhere` list in 0.23.0; an agent that does not know the field shows
+the rest of the manifest exactly as before. The one addition an agent could use, `POST /api/v1/agent/heartbeat`
 (0.17.0), has no client yet: it is paired with a kasl version that has not
 shipped.
 

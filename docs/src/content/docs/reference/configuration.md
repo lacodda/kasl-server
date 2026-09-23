@@ -16,9 +16,17 @@ Everything comes from the environment:
 | `KASL_DEMO` | Seed a fictional team on an empty database, and refuse to start on one that holds real accounts. See [The demo](/kasl-server/guides/the-demo/) | `false` |
 | `KASL_MAX_BATCH_DAYS` | Days one `/days/batch` request may carry | `31` |
 | `KASL_MAX_BODY_BYTES` | Largest request body accepted | `4194304` |
+| `KASL_WEBHOOK_<NAME>` | One destination for events - a Slack, Mattermost or Telegram chat, or a signed JSON receiver. One variable each; `<NAME>` becomes its label. See [Sending alerts to a chat](/kasl-server/guides/sending-alerts-to-a-chat/) | none |
+| `KASL_PUBLIC_URL` | The address people open the web UI at. When set, a chat message links to the person it is about | none |
 | `RUST_LOG` | Log filter (tracing syntax) | `kasl_server=info,tower_http=info` |
 
 Database migrations are embedded in the binary and applied on startup.
+
+A webhook destination is here and not in the web UI on purpose. A Slack hook
+or a Telegram bot token is a working credential to post as somebody; it belongs
+next to the database password, not in the database that `kasl-server backup`
+writes to a file. A value that does not parse stops the server from starting,
+naming the variable and never repeating its value.
 
 The privacy level is deliberately not here. It is set through the API and the
 change is audited; an operator editing a file and restarting leaves nothing
