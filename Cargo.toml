@@ -23,6 +23,7 @@ include = [
     "assets/**",
     "tools/**",
     "frontend/dist/**",
+    "build.rs",
     "Cargo.toml",
     "Cargo.lock",
     "README.md",
