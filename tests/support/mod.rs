@@ -27,6 +27,37 @@ impl TestDb {
     /// Creates and migrates a database, or returns `None` when the environment
     /// offers no server to create one on.
     pub async fn create() -> Option<Self> {
+        Self::create_with(kasl_server::migrator()).await
+    }
+
+    /// A database migrated up to, but not including, `version`: an
+    /// installation the moment before it upgrades. `upgrade` then applies the
+    /// rest.
+    ///
+    /// Every other test starts from an empty schema, where a migration that
+    /// has to act on existing rows has nothing to act on - which is how 0.24.0
+    /// shipped a notifications table that knew nothing of the alerts already
+    /// standing when it arrived. This is the shape of test that sees it.
+    ///
+    /// Filters `Migrator::migrations`, a field sqlx documents as hidden: it is
+    /// public so `migrate!()` can build the struct, and there is no other way
+    /// to stop part-way.
+    pub async fn create_before(version: i64) -> Option<Self> {
+        let mut migrator = kasl_server::migrator();
+        assert!(
+            migrator.migrations.iter().any(|migration| migration.version == version),
+            "no migration {version} to stop before"
+        );
+        migrator.migrations = migrator.migrations.iter().filter(|migration| migration.version < version).cloned().collect();
+        Self::create_with(migrator).await
+    }
+
+    /// Applies every migration this build carries.
+    pub async fn upgrade(&self) {
+        kasl_server::migrator().run(&self.pool).await.expect("the upgrade should apply");
+    }
+
+    async fn create_with(migrator: sqlx::migrate::Migrator) -> Option<Self> {
         let admin_url = std::env::var("DATABASE_URL").ok()?;
         let name = format!("kasl_test_{}", Uuid::new_v4().simple());
 
@@ -46,7 +77,7 @@ impl TestDb {
             .connect(&replace_database(&admin_url, &name))
             .await
             .expect("failed to connect to the test database");
-        kasl_server::migrator().run(&pool).await.expect("migrations failed");
+        migrator.run(&pool).await.expect("migrations failed");
 
         Some(Self { admin_url, name, pool })
     }

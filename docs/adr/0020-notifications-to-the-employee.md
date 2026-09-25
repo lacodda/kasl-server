@@ -123,6 +123,15 @@ A privacy change writes one row per active person. An installation of a
 thousand people writes a thousand rows once, when an administrator changes one
 setting; that is not a load worth designing around.
 
+Alerts standing when notifications arrived are told once, by a migration
+(0.24.1). A notice is written as its alert is raised, and an alert raised
+before the table existed would otherwise never be told - the sweep does not
+raise an open alert twice (ADR 0018). The first installation upgraded to
+0.24.0 had exactly that: an open day, the case this milestone exists for, and
+nobody told. Found by deploying rather than by a test, because every test
+started from an empty schema; the suite now builds a database on the previous
+migration, fills it, and upgrades it.
+
 The table is in the backup and in the privacy manifest: "the notices this
 server sent you, so you can read them again" is something stored about a
 person, and a manifest that left it out would describe a quieter server than

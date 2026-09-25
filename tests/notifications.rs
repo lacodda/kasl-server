@@ -489,3 +489,104 @@ async fn a_long_queue_arrives_a_page_at_a_time() {
 
     server.close().await;
 }
+
+/// The first migration that knows about notifications. An installation on
+/// 0.23.1 stands just before it.
+const NOTIFICATIONS: i64 = 20260925000001;
+/// The one that tells the alerts already standing when notifications arrived.
+const STANDING: i64 = 20260925000002;
+
+/// A person with one agent, written as rows: the schema here is an older one,
+/// and the API that would make them is the new one.
+async fn person_with_agent(db: &support::TestDb, email: &str, token: &str) -> Uuid {
+    let user: Uuid = sqlx::query_scalar("INSERT INTO users (email, display_name) VALUES ($1, 'Upgraded') RETURNING id")
+        .bind(email)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agents (user_id, name, token_hash) VALUES ($1, 'desktop', $2)")
+        .bind(user)
+        .bind(kasl_server::auth::hash_token(token))
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    user
+}
+
+#[tokio::test]
+async fn alerts_standing_at_the_upgrade_are_told() {
+    // An installation on 0.23.1 with alerts already raised - an open day, a
+    // long day a manager has answered while it still holds, and a silence
+    // that has since ended. 0.24.0 wrote notices only as alerts were raised,
+    // so these three were never told: the open day, on this project's own
+    // stand, was the very case the milestone exists for.
+    let Some(db) = support::TestDb::create_before(NOTIFICATIONS).await else {
+        return;
+    };
+    let user = person_with_agent(&db, "upgraded@example.test", "upgrade-token").await;
+    let fired: DateTime<Utc> = "2026-09-24T09:30:00Z".parse().unwrap();
+    sqlx::query(
+        "INSERT INTO alerts (user_id, rule, state, observed_seconds, against_seconds, subject_date, fired_at, acknowledged_at, resolved_at)
+         VALUES ($1, 'day_not_closed', 'open',         61200, 57600, '2026-09-23', $2, NULL, NULL),
+                ($1, 'overwork',       'acknowledged', 45000, 28800, '2026-09-22', $2 + interval '1 minute', $2, NULL),
+                ($1, 'no_agent_data',  'resolved',     50000, 43200, NULL,         $2 - interval '1 day', NULL, $2)",
+    )
+    .bind(user)
+    .bind(fired)
+    .execute(&db.pool)
+    .await
+    .unwrap();
+
+    db.upgrade().await;
+
+    // Read back through the agent's own route, which is the proof that the
+    // payload the migration built is the shape the server reads.
+    let server = TestServer::wrap(db);
+    let body = queue(&server, "upgrade-token").await;
+    let notices = body["notifications"].as_array().unwrap();
+    assert_eq!(notices.len(), 2, "what stands is told and what resolved is not: {body}");
+    assert_eq!(notices[0]["alert"]["rule"], "day_not_closed", "in the order the alerts fired");
+    assert_eq!(notices[0]["alert"]["subject_date"], "2026-09-23");
+    assert_eq!(notices[0]["alert"]["observed_seconds"], 61200, "the figures it fired on");
+    assert_eq!(notices[0]["title"], "Your day of 2026-09-23 is still open here");
+    assert_eq!(notices[1]["alert"]["rule"], "overwork");
+    assert_eq!(notices[1]["body"], "You worked 12.5 h that day, against your norm of 8 h.");
+
+    // And the one that resolved is not written at all. The queue above would
+    // hide it anyway - an alert that is over is not toasted - so only the
+    // table can say it was never told.
+    assert_eq!(server.count("notifications").await, 2, "a silence that already ended is not news");
+
+    server.close().await;
+}
+
+#[tokio::test]
+async fn an_alert_already_told_is_not_told_again_by_the_upgrade() {
+    // An installation that ran 0.24.0 has notices for the alerts it raised.
+    // The migration that tells the standing ones must not add a second.
+    let Some(db) = support::TestDb::create_before(STANDING).await else { return };
+    let user = person_with_agent(&db, "upgraded@example.test", "upgrade-token").await;
+    let alert: kasl_server::webhooks::AlertPayload = sqlx::query_as(
+        "INSERT INTO alerts (user_id, rule, observed_seconds, against_seconds, subject_date)
+         VALUES ($1, 'day_not_closed', 61200, 57600, '2026-09-23')
+         RETURNING id, rule, observed_seconds, against_seconds, subject_date, fired_at",
+    )
+    .bind(user)
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    let mut conn = db.pool.acquire().await.unwrap();
+    kasl_server::notifications::alert_raised(&mut conn, user, &alert).await.unwrap();
+    drop(conn);
+
+    db.upgrade().await;
+
+    let told: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE alert_id = $1")
+        .bind(alert.id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(told, 1);
+
+    TestServer::wrap(db).close().await;
+}
