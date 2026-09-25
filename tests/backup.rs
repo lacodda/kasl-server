@@ -374,3 +374,62 @@ async fn every_table_in_the_schema_is_carried() {
 
     db.drop().await;
 }
+
+#[tokio::test]
+async fn every_setting_and_every_counter_comes_back() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // Two holes of one kind, found together. The settings row was restored
+    // from a hand-written list of three columns, so the norm (v0.21) and the
+    // alert thresholds (v0.22) came back as the migration's defaults - a
+    // plausible installation, with every norm and every alert silently
+    // different from the one backed up. And the counters behind `bigserial`
+    // columns were never moved, so the first audit entry written after a
+    // restore collided with the first one restored, and the audit log - whose
+    // writes are best-effort by design - stopped recording without a word.
+    server.add_admin("boss@example.test", "correct horse").await;
+    let (_, admin, _) = server.login("boss@example.test", "correct horse").await;
+    let (status, _, body) = server
+        .put_with_cookie("/api/v1/calendar/standard-hours", admin.as_deref(), json!({ "standard_hours": 7.5 }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _, body) = server
+        .put_with_cookie(
+            "/api/v1/alerts/thresholds",
+            admin.as_deref(),
+            json!({ "alert_silence_hours": 30, "alert_overwork_factor": 2.25, "alert_open_day_hours": 40 }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let file = dump(&server).await;
+    let Some(fresh) = TestDb::create().await else { return };
+    kasl_server::backup::load(&fresh.pool, schema_version(), file.as_slice())
+        .await
+        .expect("restore");
+
+    let settings: (String, i32, String, i32) =
+        sqlx::query_as("SELECT standard_hours::text, alert_silence_hours, alert_overwork_factor::text, alert_open_day_hours FROM settings WHERE singleton")
+            .fetch_one(&fresh.pool)
+            .await
+            .expect("the settings row");
+    assert_eq!(
+        settings,
+        ("7.50".to_string(), 30, "2.25".to_string(), 40),
+        "every setting comes back, not the defaults"
+    );
+
+    // A new audit entry after the restore is recorded: its id comes after the
+    // restored ones instead of colliding with the first of them.
+    let second = TestServer::wrap(fresh);
+    let before = second.count("audit_log").await;
+    let (_, cookie, _) = second.login("boss@example.test", "correct horse").await;
+    let (status, _, body) = second
+        .put_with_cookie("/api/v1/calendar/standard-hours", cookie.as_deref(), json!({ "standard_hours": 8 }))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(second.count("audit_log").await > before, "the audit log keeps recording after a restore");
+
+    second.close().await;
+    server.close().await;
+}

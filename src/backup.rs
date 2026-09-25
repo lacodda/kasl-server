@@ -225,8 +225,50 @@ pub async fn load(pool: &PgPool, schema_version: i64, input: impl BufRead) -> Re
         .with_context(|| format!("failed to restore {table}.{column}"))?;
     }
 
+    advance_counters(&mut tx).await?;
+
     tx.commit().await?;
     Ok(summary)
+}
+
+/// Moves every counter behind a `bigserial` past the ids the file brought.
+///
+/// A restore inserts rows with the ids they had, and inserting an id does not
+/// touch the sequence that hands them out. Left alone, the next row the server
+/// writes asks for id 1 and collides with the first one restored. For
+/// `audit_log`, whose writes are best-effort by design so that a logging
+/// failure cannot cost anybody their action, that collision was silent: an
+/// installation restored from a backup stopped recording who did what, and
+/// nothing anywhere said so.
+///
+/// Every sequence the schema owns, found in the catalogue rather than listed
+/// here - a list is the shape that let `calendar_days` and the settings go
+/// missing from this module before.
+async fn advance_counters(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<()> {
+    let counters: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT table_name::text, column_name::text, pg_get_serial_sequence(quote_ident(table_name), column_name)
+         FROM information_schema.columns
+         WHERE table_schema = current_schema() AND pg_get_serial_sequence(quote_ident(table_name), column_name) IS NOT NULL",
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .context("failed to find the schema's counters")?;
+
+    for (table, column, sequence) in counters {
+        let table = known_table(&table)?;
+        // `setval(.., false)`: the next id handed out is exactly max + 1, or 1
+        // on an empty table. The column name comes from the catalogue of this
+        // schema and is quoted all the same.
+        let column = column.replace('"', "\"\"");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT setval($1::regclass, coalesce((SELECT max(\"{column}\") FROM {table}), 0) + 1, false)"
+        )))
+        .bind(&sequence)
+        .execute(&mut **tx)
+        .await
+        .with_context(|| format!("failed to advance the counter of {table}"))?;
+    }
+    Ok(())
 }
 
 /// The one table name in this module that does not come from its own source.
@@ -276,17 +318,43 @@ async fn insert(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, table: &str, row
     let row = &row;
 
     if table == SETTINGS {
-        // The singleton row already exists, put there by the migration.
-        // `coalesce` on `demo`: a backup taken before the column existed has
-        // no key for it, `json_populate_record` reads that as NULL, and a
-        // restore of a perfectly good older file must not fail on the
-        // column it could not have known about.
+        // The singleton row already exists, put there by the migration, so it
+        // is updated rather than inserted - every column of it, read from the
+        // catalogue. This used to name three columns by hand, and each
+        // setting added since (the norm in v0.21, the alert thresholds in
+        // v0.22) came back from a restore as the migration's default: a
+        // plausible installation measuring everybody differently from the one
+        // that was backed up.
+        //
+        // `coalesce` with the current value: a backup taken before a column
+        // existed has no key for it, `json_populate_record` reads that as
+        // NULL, and a perfectly good older file must restore to the default
+        // rather than fail on a column it could not have known about. Every
+        // setting is `NOT NULL`, so a null in the file never means "no value".
+        let columns: Vec<String> = sqlx::query_scalar(
+            "SELECT column_name::text FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = $1 AND column_name <> 'singleton'
+             ORDER BY ordinal_position",
+        )
+        .bind(SETTINGS)
+        .fetch_all(&mut **tx)
+        .await
+        .context("failed to read the settings' columns")?;
+        let assignments: Vec<String> = columns
+            .iter()
+            .map(|column| {
+                let column = column.replace('"', "\"\"");
+                format!("\"{column}\" = coalesce((r).\"{column}\", {SETTINGS}.\"{column}\")")
+            })
+            .collect();
+
+        // `AssertSqlSafe`: the table is a constant in this file and the columns
+        // come from this schema's catalogue, quoted; the row is bound.
         sqlx::query(sqlx::AssertSqlSafe(format!(
-            "UPDATE {SETTINGS} SET privacy_level = (r).privacy_level,
-                                   demo = coalesce((r).demo, false),
-                                   updated_at = (r).updated_at
+            "UPDATE {SETTINGS} SET {}
              FROM (SELECT json_populate_record(NULL::{SETTINGS}, $1::json) AS r) AS s
-             WHERE singleton"
+             WHERE singleton",
+            assignments.join(", ")
         )))
         .bind(row)
         .execute(&mut **tx)
