@@ -53,7 +53,7 @@ reqwest = { version = "0.13.5", default-features = false, features = ["json", "r
 # Reads an agent's own database during import. Bundled rather than linked
 # against a system SQLite: the file is the employee's history, and the version
 # that reads it should not depend on what the host happens to ship.
-rusqlite = { version = "0.38.0", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.39.0", features = ["bundled", "chrono"] }
 # Hours and shares of a day are exact decimals, not floats: a norm that
 # arrives at 7.999999 hours turns into an argument about a cent at the end
 # of the month (ADR 0017).
@@ -62,7 +62,23 @@ rustls = { version = "0.23.45", default-features = false, features = ["ring", "s
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "chrono", "uuid", "rust_decimal"] }
+# Default features drag in the "any" driver, which pulls sqlx-sqlite and
+# sqlx-mysql (and their native libsqlite3-sys) even though this server only
+# ever talks to Postgres - and that sqlite pull collides with rusqlite's own
+# libsqlite3-sys over the "sqlite3" native link. Only the pieces actually
+# used are named: postgres, migrations, FromRow derives (macros) and the
+# jsonb columns (json).
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "migrate",
+    "macros",
+    "json",
+    "chrono",
+    "uuid",
+    "rust_decimal",
+] }
 tokio = { version = "1.53.1", features = ["full"] }
 # The built web UI is compiled into the binary, so a self-hosted install is one
 # file and the UI can never be from a different build than the API (ADR 0012).
@@ -81,7 +97,7 @@ tower = { version = "0.5.3", features = ["util"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 uuid = { version = "1.24.1", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
-rusqlite = { version = "0.38.0", features = ["bundled"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 
 # Line-table debug info keeps backtraces readable while cutting the .pdb weight
 # that dominates target/debug. Full debug info is a one-line revert when needed.
