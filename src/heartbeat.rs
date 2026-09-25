@@ -102,6 +102,12 @@ pub struct Accepted {
     /// clock that is minutes out makes every hour this server stores wrong,
     /// and only the machine's owner can fix it.
     pub clock_skew_seconds: i64,
+    /// How many notices this machine has not shown yet. The server cannot
+    /// reach an agent - laptops sleep behind NAT - so the minute's round trip
+    /// that already exists carries the one number that says whether to ask
+    /// `GET /agent/notifications` (ADR 0020). Zero is most answers, and an
+    /// agent that has never heard of the field ignores it.
+    pub notifications: i64,
 }
 
 /// Records a pulse.
@@ -126,6 +132,8 @@ pub async fn beat(State(state): State<AppState>, agent: AuthenticatedAgent, Json
         .execute(&state.pool)
         .await?;
 
+    let notifications = crate::notifications::pending_count(&state.pool, agent.agent_id).await?;
+
     Ok((
         StatusCode::ACCEPTED,
         Json(Accepted {
@@ -133,6 +141,7 @@ pub async fn beat(State(state): State<AppState>, agent: AuthenticatedAgent, Json
             stale_after_seconds: STALE_AFTER_SECONDS,
             state: pulse.state,
             clock_skew_seconds: skew,
+            notifications,
         }),
     ))
 }

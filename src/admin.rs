@@ -20,7 +20,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{app::AppState, audit, auth::hash_token, error::ApiError, login::CurrentUser, model::UserRole, session};
+use crate::{
+    app::AppState,
+    audit,
+    auth::hash_token,
+    error::ApiError,
+    login::CurrentUser,
+    model::UserRole,
+    notifications::{self, NotificationKind},
+    session,
+};
 
 /// The shortest password the server will store.
 ///
@@ -311,12 +320,18 @@ pub async fn create_agent(
     }
 
     let token = generate_token();
+    // The person is told in the same transaction: a machine that can file days
+    // under somebody's name is exactly what they would want to hear about if
+    // it was not theirs (ADR 0020).
+    let mut tx = state.pool.begin().await?;
     let id: Uuid = sqlx::query_scalar("INSERT INTO agents (user_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id")
         .bind(target)
         .bind(name)
         .bind(hash_token(&token))
-        .fetch_one(&state.pool)
+        .fetch_one(&mut *tx)
         .await?;
+    notifications::agent_changed(&mut tx, NotificationKind::AgentIssued, target, id, name).await?;
+    tx.commit().await?;
 
     tracing::info!(%id, %target, by = %user.user_id, "issued an agent token");
     // The token itself is never recorded - this table is read in a UI and
@@ -348,11 +363,18 @@ pub async fn revoke_agent(State(state): State<AppState>, user: CurrentUser, Path
     // `revoked_at IS NULL` in the filter makes this idempotent without pretending
     // it succeeded twice: revoking an already-revoked agent must not move the
     // timestamp of when access actually ended.
-    let revoked = sqlx::query("UPDATE agents SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL")
+    let mut tx = state.pool.begin().await?;
+    let revoked: Option<(Uuid, String)> = sqlx::query_as("UPDATE agents SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING user_id, name")
         .bind(agent)
-        .execute(&state.pool)
-        .await?
-        .rows_affected();
+        .fetch_optional(&mut *tx)
+        .await?;
+    // Told only when access actually ended here. A second revoke changes
+    // nothing, and a second notice would say it happened twice.
+    if let Some((owner, name)) = &revoked {
+        notifications::agent_changed(&mut tx, NotificationKind::AgentRevoked, *owner, agent, name).await?;
+    }
+    tx.commit().await?;
+    let revoked = u64::from(revoked.is_some());
 
     if revoked == 0 {
         // Either it does not exist or it was already revoked; both mean the

@@ -47,7 +47,9 @@
 //! Delivery starts in-app, and the webhooks of v0.23 take the same rows
 //! outward: every step an alert takes here - raised, acknowledged, resolved -
 //! is queued for the channels that hear it in the transaction that took it
-//! (ADR 0019). Delivery is added to the record; it does not replace it.
+//! (ADR 0019). Delivery is added to the record; it does not replace it. The
+//! person an alert is about is told as it is raised, in the same transaction
+//! (ADR 0020).
 
 use axum::{
     Json,
@@ -69,6 +71,7 @@ use crate::{
     error::ApiError,
     login::CurrentUser,
     model::UserRole,
+    notifications,
     webhooks::{self, AlertPayload, Event, EventKind, Webhooks},
 };
 
@@ -435,6 +438,10 @@ pub async fn sweep(pool: &PgPool, now: DateTime<Utc>, webhooks: &Webhooks) -> Re
 
         match inserted {
             Some(alert) => {
+                // The person it is about is told too, in the same transaction:
+                // the manager and the employee hear of it together or not at
+                // all (ADR 0020).
+                notifications::alert_raised(&mut tx, finding.user_id, &alert).await?;
                 announce(&mut tx, webhooks, EventKind::AlertRaised, finding.user_id, alert, None, now).await?;
                 tx.commit().await?;
                 swept.raised += 1;

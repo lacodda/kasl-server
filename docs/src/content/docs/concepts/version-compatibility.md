@@ -35,9 +35,12 @@ server has added since — departments, the audit log, the privacy manifest,
 signals, the heatmap, the webhooks — is read by people through the web UI and
 changes nothing an agent sends. The manifest an agent reads grew a
 `sent_elsewhere` list in 0.23.0; an agent that does not know the field shows
-the rest of the manifest exactly as before. The one addition an agent could use, `POST /api/v1/agent/heartbeat`
-(0.17.0), has no client yet: it is paired with a kasl version that has not
-shipped.
+the rest of the manifest exactly as before. The additions an agent could use have no client yet, each paired with a kasl
+version that has not shipped: `POST /api/v1/agent/heartbeat` (0.17.0), and the
+[notifications](/kasl-server/reference/what-you-are-told/) it counts -
+`GET /api/v1/agent/notifications` with its `ack` and `read` (0.24.0), for kasl
+v3.3. The pulse's answer grew a `notifications` field for them; an agent that
+does not know it ignores it.
 
 **Releasing a contract change.** A change to the shape of what agents send or
 receive lands in both products before either is tagged: the server's endpoint

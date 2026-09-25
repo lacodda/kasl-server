@@ -18,7 +18,11 @@
 use anyhow::{Context, Result};
 use sqlx::PgPool;
 
-use crate::{auth::hash_token, session::hash_password};
+use crate::{
+    auth::hash_token,
+    notifications::{self, NotificationKind},
+    session::hash_password,
+};
 
 /// One `email:token` pair from the environment.
 #[derive(Debug, PartialEq, Eq)]
@@ -78,22 +82,41 @@ pub async fn apply_seeds(pool: &PgPool, seeds: &[AgentSeed]) -> Result<()> {
 
         // One seeded agent per user, identified by its name: re-running with a
         // new token replaces the hash instead of leaving the old one valid.
-        sqlx::query(
+        let issued: Option<uuid::Uuid> = sqlx::query_scalar(
             "INSERT INTO agents (user_id, name, token_hash, revoked_at) VALUES ($1, 'seeded', $2, NULL)
-             ON CONFLICT (token_hash) DO NOTHING",
+             ON CONFLICT (token_hash) DO NOTHING
+             RETURNING id",
         )
         .bind(user_id)
         .bind(hash_token(&seed.token))
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .with_context(|| format!("failed to provision the agent for {}", seed.email))?;
 
-        sqlx::query("UPDATE agents SET revoked_at = now() WHERE user_id = $1 AND name = 'seeded' AND token_hash <> $2 AND revoked_at IS NULL")
-            .bind(user_id)
-            .bind(hash_token(&seed.token))
-            .execute(&mut *tx)
-            .await
-            .with_context(|| format!("failed to revoke the previous token for {}", seed.email))?;
+        let withdrawn: Vec<uuid::Uuid> = sqlx::query_scalar(
+            "UPDATE agents SET revoked_at = now() WHERE user_id = $1 AND name = 'seeded' AND token_hash <> $2 AND revoked_at IS NULL
+             RETURNING id",
+        )
+        .bind(user_id)
+        .bind(hash_token(&seed.token))
+        .fetch_all(&mut *tx)
+        .await
+        .with_context(|| format!("failed to revoke the previous token for {}", seed.email))?;
+
+        // The person hears of a token seeded from the environment as they
+        // would of one an administrator issued: the notice exists because they
+        // may not know, and that does not depend on who typed it (ADR 0020).
+        // Only on a real change - a restart with the same variable is silent.
+        for id in withdrawn {
+            notifications::agent_changed(&mut tx, NotificationKind::AgentRevoked, user_id, id, "seeded")
+                .await
+                .with_context(|| format!("failed to tell {} their previous token was revoked", seed.email))?;
+        }
+        if let Some(id) = issued {
+            notifications::agent_changed(&mut tx, NotificationKind::AgentIssued, user_id, id, "seeded")
+                .await
+                .with_context(|| format!("failed to tell {} about their token", seed.email))?;
+        }
 
         tx.commit().await?;
     }

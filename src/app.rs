@@ -12,7 +12,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, privacy, signals, team, web, webhooks,
+    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notifications, privacy, signals, team, web,
+    webhooks,
 };
 
 #[derive(Clone)]
@@ -46,6 +47,10 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // id under `/users`: this route consults no role and no department, so
         // there is no permission here to get wrong.
         .route("/me/days", get(me::days))
+        // What the server has told this person. Theirs alone - no role and no
+        // department in the query, the same as their days (ADR 0020).
+        .route("/me/notifications", get(notifications::inbox))
+        .route("/me/notifications/read", post(notifications::read))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
@@ -123,6 +128,14 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // The pulse. The only route that says anything about now rather than
         // about a day that is over (ADR 0014).
         .route("/agent/heartbeat", post(heartbeat::beat))
+        // What the server has to tell the person this agent reports for. A
+        // pull, because nothing can reach a laptop behind NAT: the pulse says
+        // how many are waiting, the agent reads them, shows them and says how
+        // far it got - `ack` for this machine, `read` for the person
+        // (ADR 0020).
+        .route("/agent/notifications", get(notifications::agent_queue))
+        .route("/agent/notifications/ack", post(notifications::agent_ack))
+        .route("/agent/notifications/read", post(notifications::agent_read))
         // Who a visitor may sign in as. Answered only on a demo - anywhere
         // else it is a 404, so no real installation lists its people to
         // someone who has not signed in (ADR 0013).

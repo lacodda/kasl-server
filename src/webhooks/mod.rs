@@ -44,6 +44,9 @@ use uuid::Uuid;
 
 pub use destination::{Destination, EventKind, Kind, PREFIX};
 pub use dispatch::{Dispatched, client, dispatch_due, run_dispatcher};
+// The dashboard's units, for every sentence the server writes - the notices
+// to the employee say figures the way the channel and the screen do.
+pub use render::{hours, span};
 pub use sign::{hmac_sha256, signature};
 
 use crate::{alerts::AlertRule, app::AppState, audit, calendar::WorkdayKind, error::ApiError, login::CurrentUser};
@@ -111,7 +114,10 @@ impl Webhooks {
         self.destinations.iter().any(|destination| destination.hears(event))
     }
 
-    fn link(&self, path: &str) -> Option<String> {
+    /// An address in the web UI, when the installation knows its own. Used by
+    /// the notices to the employee too: `KASL_PUBLIC_URL` is one setting,
+    /// read here because the webhooks were its first reader.
+    pub fn link(&self, path: &str) -> Option<String> {
         self.public_url.as_ref().map(|base| format!("{base}{path}"))
     }
 }

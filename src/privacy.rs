@@ -252,6 +252,15 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
         detail: "whether your agent currently reports you as working, on a break, or not in a day - the latest one only, replaced each time it arrives, never kept as a history",
     });
 
+    // What the server told the person is itself something kept about them,
+    // and a manifest that left it out would describe a quieter server than
+    // the one running (ADR 0020). Worded with who reads it, because that is
+    // the question it raises.
+    stored.push(Stored {
+        what: "notifications",
+        detail: "what this server has told you - an alert about you, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
+    });
+
     stored
 }
 
@@ -266,7 +275,9 @@ const NEVER_COLLECTED: [&str; 7] = [
     "your location",
 ];
 
-fn summary_for(level: PrivacyLevel) -> &'static str {
+/// The level in one sentence. Shared with the notice that tells people it
+/// changed, so the toast and the manifest describe a level in the same words.
+pub fn summary_for(level: PrivacyLevel) -> &'static str {
     match level {
         PrivacyLevel::Full => {
             "This server stores your working hours, every interruption with the reason you gave for it, and the tasks you logged with their comments."
@@ -332,10 +343,18 @@ pub async fn update(State(state): State<AppState>, user: CurrentUser, Json(updat
         .fetch_one(&state.pool)
         .await?;
 
+    // Everybody is told, in the same transaction: a manifest that changes
+    // without a word is one nobody can rely on (ADR 0020). Setting the level it
+    // already has changes nothing, and says nothing.
+    let mut tx = state.pool.begin().await?;
     sqlx::query("UPDATE settings SET privacy_level = $1 WHERE singleton")
         .bind(update.level)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
+    if previous != update.level {
+        crate::notifications::privacy_changed(&mut tx, previous, update.level).await?;
+    }
+    tx.commit().await?;
 
     tracing::info!(from = ?previous, to = ?update.level, by = %user.user_id, "changed the privacy level");
     // A policy that can be quietly loosened is not a policy (ADR 0011).
@@ -442,6 +461,21 @@ mod tests {
                 manifest(level, None, &Webhooks::default()).stored.iter().any(|s| s.what == "live status"),
                 "{level:?} does not name the pulse",
             );
+        }
+    }
+
+    #[test]
+    fn every_level_names_the_notifications() {
+        // What the server told a person is kept about them at every level, and
+        // who reads it is the question a reader brings (ADR 0020).
+        for level in [PrivacyLevel::Full, PrivacyLevel::Moderate, PrivacyLevel::Coarse] {
+            let manifest = manifest(level, None, &Webhooks::default());
+            let notices = manifest
+                .stored
+                .iter()
+                .find(|s| s.what == "notifications")
+                .unwrap_or_else(|| panic!("{level:?} does not name the notifications"));
+            assert!(notices.detail.contains("you alone"), "{}", notices.detail);
         }
     }
 

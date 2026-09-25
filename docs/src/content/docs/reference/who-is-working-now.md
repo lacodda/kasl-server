@@ -9,7 +9,7 @@ An agent reports in every minute with what it sees:
 $ curl -X POST -H "Authorization: Bearer $KASL_TOKEN" -H "Content-Type: application/json" \
     -d '{"state":"working","at":"2026-08-30T14:22:10-03:00"}' \
     http://127.0.0.1:8080/api/v1/agent/heartbeat
-{"interval_seconds":60,"stale_after_seconds":180,"state":"working","clock_skew_seconds":0}
+{"interval_seconds":60,"stale_after_seconds":180,"state":"working","clock_skew_seconds":0,"notifications":0}
 ```
 
 `state` is `working` (in a day, at the keyboard), `paused` (in a day, on a
@@ -23,6 +23,10 @@ A stamp more than a minute ahead of the server is refused with `400` rather
 than accepted and corrected: a machine whose clock is wrong uploads hours that
 are wrong too, and only its owner can fix that. `clock_skew_seconds` reports
 the difference on every pulse so kasl can say so before it becomes a mystery.
+
+`notifications` is how many notices this machine has not shown yet. The server
+cannot reach an agent, so this minute's round trip is how the agent learns
+there is something to [read and toast](/kasl-server/reference/what-you-are-told/).
 
 The dashboard reads it back:
 

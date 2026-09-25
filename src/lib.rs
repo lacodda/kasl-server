@@ -23,6 +23,7 @@ pub mod ingest;
 pub mod login;
 pub mod me;
 pub mod model;
+pub mod notifications;
 pub mod privacy;
 pub mod provision;
 pub mod session;
