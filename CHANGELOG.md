@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.24.0] - 2026-09-25
+
+### Bug Fixes
+- Restore every setting and every id counter
+
+### Dependencies
+- Take the week's updates, hold typescript at 6
+
+### Features
+- Tell the employee what the server told their manager
+- Show what the server told you, behind a bell
+
 ## [0.23.1] - 2026-09-23
 
 ### Bug Fixes
