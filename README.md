@@ -55,7 +55,9 @@ can be seen before an agent is installed anywhere.
   days, a live column of who is working right now, the month as a heatmap,
   and signals naming who is worth a look.
 - **A personal page for every employee.** Their own week, drawn as a timeline
-  of work and the pauses in it, against the hours it asked for.
+  of work and the pauses in it, against the hours it asked for - and an inbox
+  of what the server told them: an alert about their day, a machine added to
+  their account, a change to what is stored.
 - **A production calendar and a norm.** Holidays, shortened eves and
   transferred weekends; a full day per installation and a share of it per
   person, so half time reads as half time rather than as half-hearted.

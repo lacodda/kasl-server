@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { CalendarCheck, CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
+import { Bell, CalendarCheck, CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
 import { api } from '@/lib/api'
+import { InboxProvider, useInbox } from '@/lib/inbox'
 import { useSession } from '@/lib/session'
 import { Calendar } from '@/pages/Calendar'
 import { Dashboard, PersonWeek } from '@/pages/Dashboard'
 import { Heatmap } from '@/pages/Heatmap'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
+import { Notifications } from '@/pages/Notifications'
 import { Privacy } from '@/pages/Privacy'
 import { Webhooks } from '@/pages/Webhooks'
 import { Button } from '@/components/ui/button'
@@ -39,7 +41,10 @@ export function App() {
   const managesPeople = user.role === 'manager' || user.role === 'admin'
   const sections = destinations(managesPeople)
 
+  // The inbox is polled for as long as somebody is signed in, and not a
+  // moment before: the question has no answer without a session.
   return (
+    <InboxProvider>
     <div className="flex min-h-full flex-col">
       {health.demo && <DemoBanner />}
       <Header destinations={sections} version={health.version} />
@@ -63,6 +68,9 @@ export function App() {
               from anyone the server would refuse. */}
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/privacy" element={<Privacy />} />
+          {/* Everybody's, and nobody else's: what the server told the person
+              signed in. No tab - the bell in the header is the way in. */}
+          <Route path="/notifications" element={<Notifications />} />
           {/* An unknown path lands on the person's own week rather than on a
               blank page. The manager's screens arrive with v0.13. */}
           <Route path="*" element={<Navigate to="/day" replace />} />
@@ -70,6 +78,7 @@ export function App() {
       </main>
       <BottomNav destinations={sections} />
     </div>
+    </InboxProvider>
   )
 }
 
@@ -122,11 +131,49 @@ function Header({ destinations, version }: { destinations: Destination[]; versio
             phone that gets handed around than on a desktop, and a long name
             must not push the sign-out button off the screen. */}
         <span className="min-w-0 truncate text-sm text-dim">{user?.display_name}</span>
+        <InboxBell />
         <Button size="sm" className="shrink-0" onClick={() => void signOut()}>
           {t('nav.signOut')}
         </Button>
       </div>
     </header>
+  )
+}
+
+/**
+ * The way into the inbox, with how many notices are new.
+ *
+ * In the header on every screen and at every width, because a notice is
+ * worth nothing if it waits on a screen nobody opens - which is the failure
+ * this whole milestone exists to fix (ADR 0020). The count is the server's:
+ * unread and still true, so a day that has since closed does not keep the
+ * badge lit.
+ */
+function InboxBell() {
+  const { t } = useTranslation()
+  const { inbox } = useInbox()
+  const unread = inbox?.unread ?? 0
+
+  return (
+    <Button
+      variant="icon"
+      size="icon-md"
+      // Lit like a tab while its screen is open: `NavLink` says so with
+      // `aria-current`, which is also what a screen reader hears.
+      className="relative shrink-0 aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent-2"
+      aria-label={unread > 0 ? t('notifications.bellUnread', { count: unread }) : t('notifications.bell')}
+      render={<NavLink to="/notifications" />}
+    >
+      <Bell aria-hidden />
+      {unread > 0 && (
+        <span
+          aria-hidden
+          className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-mono text-2xs font-semibold text-on-accent tabular"
+        >
+          {unread > 9 ? '9+' : unread}
+        </span>
+      )}
+    </Button>
   )
 }
 

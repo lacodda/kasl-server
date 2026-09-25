@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Send } from 'lucide-react'
-import i18n from '@/i18n'
 import { api, type WebhookDelivery, type WebhookDestination, type WebhooksOverview } from '@/lib/api'
+import { moment } from '@/lib/day'
 import { deliveryState, deliveryTone, destinationProblem } from '@/lib/webhooks'
 import { Panel, SectionLabel } from '@/components/ui/panel'
 import { Button } from '@/components/ui/button'
@@ -186,19 +186,4 @@ function DeliveryRow({ delivery }: { delivery: WebhookDelivery }) {
       </span>
     </div>
   )
-}
-
-/**
- * A moment as `Sep 23, 08:00` in the reader's zone and the app's language -
- * not the machine's, which put Russian month names on an English page once
- * already (see `day.ts`).
- */
-function moment(timestamp: string): string {
-  return new Date(timestamp).toLocaleString(i18n.language || 'en', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
 }

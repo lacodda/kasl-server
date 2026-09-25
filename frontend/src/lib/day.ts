@@ -70,6 +70,21 @@ export function clock(timestamp: string): string {
   return new Date(timestamp).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+/**
+ * A moment as `Sep 23, 08:00` in the reader's zone and the app's language.
+ * For the lists of things that happened - deliveries, notices - where the day
+ * matters as much as the time.
+ */
+export function moment(timestamp: string): string {
+  return new Date(timestamp).toLocaleString(locale(), {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 /** The short weekday of a `YYYY-MM-DD` date - `Mon`, and not in another tongue. */
 export function weekdayName(date: string): string {
   // Midday, so no zone shifts the label onto a neighbouring day.

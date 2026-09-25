@@ -379,6 +379,48 @@ export interface WebhooksOverview {
   links: boolean
 }
 
+/** What a notice is about - the server's `notification_kind`. */
+export type NotificationKind = 'alert.raised' | 'agent.issued' | 'agent.revoked' | 'privacy.changed'
+
+/**
+ * One thing the server told the signed-in person (ADR 0020).
+ *
+ * The sentence is the server's: kasl shows the same words in a toast, and a
+ * second renderer here would be a second text that could disagree with it.
+ * The facts travel beside it for whatever wants to act on them.
+ */
+export interface Notification {
+  /** The order it was said in, and what reading moves the cursor to. */
+  id: number
+  kind: NotificationKind
+  created_at: string
+  title: string
+  /** May carry a command in backticks, which the inbox shows as code. */
+  body: string
+  /** When what it said stopped being true - the alert resolved. Kept, shown as over. */
+  withdrawn_at: string | null
+  read: boolean
+  link?: string
+  alert?: {
+    id: string
+    rule: AlertRule
+    observed_seconds: number
+    against_seconds: number | null
+    subject_date: string | null
+    fired_at: string
+  }
+  agent?: { id: string; name: string }
+  privacy?: { from: PrivacyLevel; to: PrivacyLevel }
+}
+
+export interface Inbox {
+  /** Newest first. */
+  notifications: Notification[]
+  /** Unread and still true - the badge. What is over asks for no attention. */
+  unread: number
+  read_through: number
+}
+
 /** One week on the trend chart. */
 export interface TrendWeek {
   week_start: string
@@ -595,6 +637,19 @@ export const api = {
   /** Sets one person's share of a full day. Administrators only. */
   putWorkRate: (id: string, work_rate: number) =>
     request<{ work_rate: number }>(`/users/${id}/work-rate`, { method: 'PUT', body: JSON.stringify({ work_rate }) }),
+
+  /**
+   * What the server has told you. Yours alone: no role reads anybody else's.
+   * Polled for the badge, so it stays one cheap query.
+   */
+  notifications: () => request<Inbox>('/me/notifications'),
+
+  /**
+   * You have seen everything up to `through`. The cursor only moves forward,
+   * and never past what you were sent; kasl stops toasting what you read here.
+   */
+  readNotifications: (through: number) =>
+    request<{ through: number }>('/me/notifications/read', { method: 'POST', body: JSON.stringify({ through }) }),
 
   /** One person's twelve-week shape, and the signals about them. */
   userTrend: (id: string) => request<TrendResponse>(`/users/${id}/trend`),

@@ -33,6 +33,13 @@ that spot. A `coarse` day draws no timeline and states how many interruptions
 there were and how long they came to, because an unbroken gold bar would be a
 claim about the day that the server did not keep the evidence for.
 
+The bell in the header is everybody's: what the server has
+[told you](/kasl-server/reference/what-you-are-told/) - an alert about your
+days, a machine added to or removed from your account, a change to what is
+stored. Its number is what is unread and still true, so a day that has since
+closed does not keep it lit; opening the list is reading it, and kasl stops
+toasting what you read there.
+
 The version in the header comes from `/health` - the server's, not the
 bundle's. One product, one number.
 

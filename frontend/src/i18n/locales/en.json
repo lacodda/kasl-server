@@ -243,5 +243,17 @@
     "pickDate": "Pick a date",
     "previousMonth": "Previous month",
     "nextMonth": "Next month"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "What this server has told you. kasl shows the same notices on your machines; reading them here stops the toasts.",
+    "none": "Nothing yet. When the server tells your manager something about your days, when a machine starts or stops reporting as you, or when what is stored about you changes, you are told here and on your machine.",
+    "unread": "New",
+    "over": "Over since {{at}}",
+    "openDay": "Open my day",
+    "openPrivacy": "See what is stored",
+    "bell": "Notifications",
+    "bellUnread_one": "Notifications, {{count}} new",
+    "bellUnread_other": "Notifications, {{count}} new"
   }
 }
