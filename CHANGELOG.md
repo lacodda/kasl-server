@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.24.1] - 2026-09-25
+
+### Bug Fixes
+- Tell the alerts already standing at the upgrade
+
+### Build
+- Rebuild when a migration is added
+
 ## [0.24.0] - 2026-09-25
 
 ### Bug Fixes
