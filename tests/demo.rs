@@ -362,113 +362,100 @@ async fn the_demo_pulses_stay_fresh() {
 }
 
 #[tokio::test]
-async fn a_demo_seeded_before_the_pulse_existed_gets_one() {
+async fn a_demo_made_by_another_version_is_generated_again() {
+    // The class the pulse (v0.17.1) and the calendar (v0.21) were each patched
+    // for, one field at a time: a stand upgraded to a new image keeps the old
+    // generator's team, without whatever the new version was released to
+    // show. The remedy is the stand being born again, not a third patch.
     let Some((server, _)) = demo_server().await else { return };
-    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
-
-    // What a demo seeded on an older version looks like: agents, days, and no
-    // pulse anywhere. Bumping the image does not re-seed, so without an
-    // upgrade path the whole live column reads "unknown" - which is what the
-    // project's own demo stand actually showed after this version deployed.
-    server
-        .execute("UPDATE agents SET heartbeat_state = NULL, heartbeat_at = NULL, heartbeat_received_at = NULL, demo_pulse_age_seconds = NULL")
-        .await;
-    let (_, before) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
-    assert!(
-        before["members"].as_array().unwrap().iter().all(|m| m["status"] == "unknown"),
-        "the fixture should start with no pulses at all: {before}"
+    let now = Utc::now();
+    assert_eq!(
+        demo::regeneration_due(&server.pool, now).await.unwrap(),
+        None,
+        "a demo this version just seeded is current"
     );
 
-    let given = demo::ensure_pulses(&server.pool).await.expect("the upgrade should succeed");
-    assert!(given > 0, "the demo's agents should have been given pulses");
-
-    let (_, after) = server.get_with_cookie("/api/v1/team/live", Some(&cookie)).await;
-    let statuses: Vec<&str> = after["members"].as_array().unwrap().iter().map(|m| m["status"].as_str().unwrap()).collect();
-    for expected in ["working", "paused", "idle", "offline", "unknown"] {
-        assert!(statuses.contains(&expected), "{expected} is missing after the upgrade: {after}");
-    }
-}
-
-#[tokio::test]
-async fn a_demo_seeded_before_the_calendar_existed_gets_one() {
-    // The same upgrade path as the pulse above, for the same reason and found
-    // the same way: the project's own demo stand, bumped from the previous
-    // image, showed twelve rows at a flat full norm - the whole point of the
-    // version, missing on the installation built to show it.
-    let Some((server, _)) = demo_server().await else { return };
-    let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;
-
+    // What an upgraded stand looks like: made by an earlier version, and
+    // missing what that version did not generate.
+    // Not the running version, whatever that is when this runs: the version
+    // this test was written in is the one it must not pick.
+    server.execute("UPDATE settings SET demo_seeded_by = '0.1.0'").await;
+    server.execute("DELETE FROM day_notes").await;
     server.execute("DELETE FROM calendar_days").await;
-    server.execute("UPDATE users SET work_rate = 1").await;
-
-    let (_, before) = server.get_with_cookie("/api/v1/calendar?year=2026", Some(&cookie)).await;
-    assert!(before["days"].as_array().unwrap().is_empty(), "the fixture starts with no calendar: {before}");
-
-    let written = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
-    assert!(written > 0, "the demo should have been given a calendar and a rate");
-
-    let days: i64 = server.scalar("SELECT count(*) FROM calendar_days").await;
-    assert_eq!(days, 3, "a holiday, a short day and a working weekend");
-    let part_time: i64 = server.scalar("SELECT count(*) FROM users WHERE work_rate <> 1").await;
-    assert_eq!(part_time, 1);
-
-    // Idempotent: running it again on an upgraded demo changes nothing.
-    let again = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
-    assert_eq!(again, 0, "a second run has nothing to do");
-}
-
-#[tokio::test]
-async fn the_calendar_upgrade_leaves_a_real_one_alone() {
-    // An administrator may have entered a genuine calendar on top of the demo.
-    // The upgrade is for a demo that has none, not for one that disagrees.
-    let Some((server, _)) = demo_server().await else { return };
-
-    server.execute("DELETE FROM calendar_days").await;
-    server
-        .execute("INSERT INTO calendar_days (date, kind, note) VALUES ('2026-01-01', 'holiday', 'theirs')")
-        .await;
-
-    let written = demo::ensure_calendar(&server.pool, Utc::now()).await.expect("the upgrade should succeed");
-
-    let days: i64 = server.scalar("SELECT count(*) FROM calendar_days").await;
-    assert_eq!(days, 1, "the calendar that was there is the calendar that stays");
-    // The rate is still given: it is per-person and does not conflict with a
-    // calendar somebody entered.
-    assert!(written <= 1);
-}
-
-#[tokio::test]
-async fn giving_pulses_leaves_an_agent_that_already_reported_alone() {
-    let Some((server, _)) = demo_server().await else { return };
-
-    // A real kasl pointed at the demo is the case the upgrade path must not
-    // trample. Clear the seeded pulses first, so `ensure_pulses` has work to
-    // do and this agent is sitting in the middle of it.
     server
         .execute("UPDATE agents SET heartbeat_state = NULL, heartbeat_at = NULL, heartbeat_received_at = NULL, demo_pulse_age_seconds = NULL")
         .await;
-    let (status, body) = server
-        .post_with_header(
-            "/api/v1/agent/heartbeat",
-            Some("Bearer demo-tomas"),
-            json!({ "state": "paused", "at": Utc::now().to_rfc3339() }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(
+        demo::regeneration_due(&server.pool, now).await.unwrap(),
+        Some(demo::Regenerate::OtherVersion {
+            seeded_by: Some("0.1.0".to_string())
+        })
+    );
 
-    let given = demo::ensure_pulses(&server.pool).await.expect("the upgrade should succeed");
-    assert!(given > 0, "the other agents should still have been filled in");
+    demo::reseed(&server.pool, now).await.expect("a demo should regenerate");
+    assert_eq!(demo::regeneration_due(&server.pool, now).await.unwrap(), None, "and is then current");
+    let notes: i64 = server.scalar("SELECT count(*) FROM day_notes").await;
+    let calendar: i64 = server.scalar("SELECT count(*) FROM calendar_days").await;
+    let pulses: i64 = server.scalar("SELECT count(*) FROM agents WHERE heartbeat_state IS NOT NULL").await;
+    assert!(
+        notes > 0 && calendar > 0 && pulses > 0,
+        "{notes} notes, {calendar} calendar days, {pulses} pulses"
+    );
+}
 
-    // Tomas is seeded `idle`; his agent said `paused`. The upgrade fills in
-    // silence, it does not correct the record.
-    let state: String = server
-        .scalar("SELECT a.heartbeat_state::text FROM agents a JOIN users u ON u.id = a.user_id WHERE u.email = 'tomas.verhoeven@example.com'")
-        .await;
-    assert_eq!(state, "paused", "a pulse an agent actually sent must survive the upgrade");
-    let seeded: Option<i32> = server
-        .optional_scalar("SELECT a.demo_pulse_age_seconds FROM agents a JOIN users u ON u.id = a.user_id WHERE u.email = 'tomas.verhoeven@example.com'")
-        .await;
-    assert_eq!(seeded, None, "and it must not be adopted into the demo's re-stamping");
+#[tokio::test]
+async fn a_demo_from_before_the_version_was_recorded_is_generated_again() {
+    // Every demo stand in existence the day this shipped: `demo_seeded_by`
+    // arrived empty. It has to count as another version, not as this one.
+    let Some((server, _)) = demo_server().await else { return };
+    server.execute("UPDATE settings SET demo_seeded_by = NULL").await;
+    assert_eq!(
+        demo::regeneration_due(&server.pool, Utc::now()).await.unwrap(),
+        Some(demo::Regenerate::OtherVersion { seeded_by: None })
+    );
+}
+
+#[tokio::test]
+async fn the_showcased_employee_finds_a_note_on_a_day_to_come() {
+    // The note the feature is keyed by date for: leave approved on a day that
+    // has not happened and has no workday row. On the account a visitor is
+    // offered, so it is the first note anybody sees.
+    let Some((server, seeded)) = demo_server().await else { return };
+    assert_eq!(seeded.notes, 3);
+    let cookie = signed_in(&server, &showcased(UserRole::Employee)).await;
+
+    let today = Utc::now().date_naive();
+    let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    let (from, to) = (monday + Duration::days(7), monday + Duration::days(13));
+    let (status, week) = server.get_with_cookie(&format!("/api/v1/me/days?from={from}&to={to}"), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{week}");
+    let notes = week["notes"].as_array().expect("the week answers its notes");
+    assert_eq!(notes.len(), 1, "{week}");
+    assert_eq!(notes[0]["date"], (monday + Duration::days(11)).to_string(), "on next week's Friday");
+    assert_eq!(notes[0]["author"], "Priya Raman");
+    assert!(week["days"].as_array().unwrap().is_empty(), "a day to come has no workday: {week}");
+
+    // And the bell says so, with the words and a link to that week.
+    let (_, inbox) = server.get_with_cookie("/api/v1/me/notifications", Some(&cookie)).await;
+    let told = inbox["notifications"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|notice| notice["kind"] == "note.added")
+        .count();
+    assert_eq!(told, 2, "both of the employee's notes are behind the bell: {inbox}");
+
+    // A real kasl pointed at the demo is told them too.
+    let (status, queue) = server.get_with_header("/api/v1/agent/notifications", Some("Bearer demo-tomas")).await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    assert!(
+        queue["notifications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|notice| notice["kind"] == "note.added" && notice["body"].as_str().unwrap().contains("day off")),
+        "{queue}"
+    );
 }
 
 #[tokio::test]

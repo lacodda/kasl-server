@@ -240,43 +240,21 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
         }
         (true, demo::Status::Demo) => {
             // A stand left running shows a team that stopped working the day
-            // it was seeded - "no days recorded for 16 days" on every row,
-            // which describes the data truthfully and the product falsely.
+            // it was seeded, and a stand upgraded shows the previous version's
+            // team - without whatever the new one was released to show.
             // Regenerated rather than patched field by field: that was tried
             // twice (the pulse in v0.17.1, the calendar in v0.21) and each
             // time the next milestone brought another field to patch.
-            match demo::history_is_stale(&pool, chrono::Utc::now()).await {
-                Ok(true) => match demo::reseed(&pool, chrono::Utc::now()).await {
-                    Ok(seeded) => tracing::info!(
-                        people = seeded.people,
-                        days = seeded.days,
-                        "the demo's history had stopped reaching today; generated it again"
-                    ),
+            match demo::regeneration_due(&pool, chrono::Utc::now()).await {
+                Ok(Some(reason)) => match demo::reseed(&pool, chrono::Utc::now()).await {
+                    Ok(seeded) => tracing::info!(people = seeded.people, days = seeded.days, ?reason, "generated the demo team again"),
                     Err(error) => tracing::warn!(%error, "failed to regenerate the demo"),
                 },
-                Ok(false) => {}
-                Err(error) => tracing::warn!(%error, "failed to check whether the demo's history is current"),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "failed to check whether the demo is current"),
             }
 
             print_demo_logins();
-            // A demo seeded before the pulse existed has agents and no
-            // pulses, and bumping the image does not re-seed: without this
-            // its dashboard shows twelve rows of "unknown" and none of the
-            // live column. Never overwrites a pulse that is already there.
-            match demo::ensure_pulses(&pool).await {
-                Ok(0) => {}
-                Ok(given) => tracing::info!(given, "gave the demo's agents their pulses"),
-                Err(error) => tracing::warn!(%error, "failed to give the demo's agents their pulses"),
-            }
-            // The same upgrade path for the calendar and the part-time rate:
-            // a demo seeded before v0.21 has neither, and a dashboard of
-            // twelve identical full norms is the one thing that version is
-            // about, missing.
-            match demo::ensure_calendar(&pool, chrono::Utc::now()).await {
-                Ok(0) => {}
-                Ok(written) => tracing::info!(written, "gave the demo its calendar and rates"),
-                Err(error) => tracing::warn!(%error, "failed to give the demo its calendar"),
-            }
             demo::keep_pulses_fresh(pool.clone());
         }
         (true, demo::Status::Populated { accounts }) => {

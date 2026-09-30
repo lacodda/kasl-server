@@ -40,8 +40,12 @@ The [live status](/kasl-server/reference/who-is-working-now/) is on it too: some
 on a break, agents idle between days, and two machines that have stopped
 answering. A demo is seeded once but a pulse is believed for three minutes, so
 the demo re-stamps its own — keeping the stopped agents stopped, and leaving
-alone any real kasl pointed at it. A demo seeded before the pulse existed gets
-its own on the next start, so upgrading the image is enough.
+alone any real kasl pointed at it.
+
+**Managers have written a few notes.** Signed in as the employee, the bell holds
+two: thanks for a review last week, and a day off approved for Friday of next
+week - a day nothing has been recorded for yet, which is where such a note
+belongs. The notice opens that week.
 
 **The team keeps reaching today.** The history is generated from the day it
 is seeded, and nothing moves it afterwards — so a stand left running for a
@@ -53,11 +57,14 @@ again from today. Two days rather than one, so an ordinary weekend is not
 staleness: this team works weekdays, and on a Sunday its newest day is rightly
 Friday's.
 
+**A new version starts a new team.** The demo records which version
+generated it, and a start by any other version - an upgraded image -
+generates it again the same way. Whatever a later version adds to the seed
+appears on the stand with the image, because the stand is not mended field by
+field, it is born again.
+
 Regenerating loses whatever a visitor clicked — an alert they dismissed, a
-password they changed. On a demo that is not a loss, and it is also what keeps
-the stand current for free: whatever a later version adds to the seed appears
-here by itself, because the stand is not mended field by field, it is born
-again.
+password they changed. On a demo that is not a loss.
 
 **The demo refuses a database that already holds accounts.** Twelve invented
 people alongside a real team, with nothing to say which rows are which, is the

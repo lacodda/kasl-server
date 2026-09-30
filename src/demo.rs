@@ -38,6 +38,7 @@ use crate::{
     heartbeat::{self, AgentState},
     import::{self, AgentDay, AgentPause, AgentTask},
     model::UserRole,
+    notes,
     session::hash_password,
 };
 
@@ -380,6 +381,8 @@ pub struct Seeded {
     pub days: usize,
     /// Dated exceptions written into the production calendar.
     pub calendar_days: usize,
+    /// Notes the managers wrote on their people's days.
+    pub notes: usize,
 }
 
 /// Who works less than a full day, and how much less.
@@ -405,6 +408,51 @@ const HOLIDAY_WEEKS_AGO: [(i64, CalendarDayKind, &str); 3] = [
     (2, CalendarDayKind::WorkingWeekend, "Transferred working day"),
 ];
 
+/// What the managers have written on their people's days (ADR 0021).
+///
+/// Dated from the Monday of the week the demo is seeded in, like everything
+/// else here is relative to that day. The first is the reason notes are keyed
+/// by date rather than by a workday: leave approved on a day that has not
+/// happened, on the week after this one, for the employee a visitor is
+/// offered to sign in as - so it is behind their bell, and the notice opens
+/// the week it is on.
+const NOTES: [DemoNote; 3] = [
+    DemoNote {
+        author: "priya.raman",
+        subject: "tomas.verhoeven",
+        from_monday: 11,
+        text: "Your day off on Friday is approved - enjoy the long weekend.",
+    },
+    DemoNote {
+        author: "priya.raman",
+        subject: "tomas.verhoeven",
+        from_monday: -6,
+        text: "Thanks for the careful review of the departments API.",
+    },
+    DemoNote {
+        author: "elena.novak",
+        subject: "yusuf.demir",
+        from_monday: -5,
+        text: "Thanks for staying late for the queue. Take Friday afternoon back.",
+    },
+];
+
+/// One note of [`NOTES`]: who to whom, on which day, saying what.
+struct DemoNote {
+    /// The author's address before the `@`, as the team table assigns it.
+    author: &'static str,
+    subject: &'static str,
+    /// Days from the Monday of the seed's week.
+    from_monday: i64,
+    text: &'static str,
+}
+
+/// The version whose generator made a demo, recorded when it seeds.
+///
+/// Compared on startup: a demo made by any other version is generated again
+/// (see [`regeneration_due`]).
+const GENERATOR: &str = env!("CARGO_PKG_VERSION");
+
 /// Seeds the team into an empty database.
 ///
 /// `now` is the moment the history is built back from: the last eight weeks
@@ -427,7 +475,10 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     // next start sees a demo and starts, rather than seeing accounts it did
     // not make and refusing.
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE settings SET demo = true WHERE singleton").execute(&mut *tx).await?;
+    sqlx::query("UPDATE settings SET demo = true, demo_seeded_by = $1 WHERE singleton")
+        .bind(GENERATOR)
+        .execute(&mut *tx)
+        .await?;
 
     let mut department_ids = Vec::with_capacity(DEPARTMENTS.len());
     for department in &DEPARTMENTS {
@@ -511,6 +562,28 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
             .execute(&mut *tx)
             .await?;
     }
+
+    // Through `notes::write`, the path a manager's own note takes, so the
+    // demo carries the rows a real one leaves - the notice included.
+    let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    let member = |prefix: &str| {
+        TEAM.iter()
+            .position(|person| person.email().starts_with(&format!("{prefix}@")))
+            .map(|index| user_ids[index])
+            .expect("every note in the table names members of the team")
+    };
+    for note in &NOTES {
+        notes::write(
+            &mut tx,
+            member(note.subject),
+            monday + Duration::days(note.from_monday),
+            member(note.author),
+            note.text,
+        )
+        .await
+        .with_context(|| format!("failed to write the note for {}", note.subject))?;
+        seeded.notes += 1;
+    }
     tx.commit().await?;
 
     for (index, person) in TEAM.iter().enumerate() {
@@ -559,6 +632,7 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
             "departments": seeded.departments,
             "days": seeded.days,
             "calendar_days": seeded.calendar_days,
+            "notes": seeded.notes,
         }))
         .record(pool)
         .await;
@@ -631,41 +705,6 @@ fn pulse_for(pattern: Pattern) -> (Option<AgentState>, Option<i32>) {
     (state, age)
 }
 
-/// Gives the demo's agents their pulses if they have none.
-///
-/// The upgrade path. A demo seeded before this milestone has agents but no
-/// pulses, and bumping the image does not re-seed - so its dashboard would
-/// show twelve rows of "unknown" and none of the live column the version was
-/// released for. Found by deploying to the project's own demo stand, not by a
-/// test: every test seeds from empty, where the question cannot arise.
-///
-/// Idempotent, and it never overwrites a pulse that exists: an agent that has
-/// reported - including a real kasl pointed at the demo - is left alone. The
-/// people are matched by the email the generator assigns, so nothing outside
-/// the fictional team is touched.
-pub async fn ensure_pulses(pool: &PgPool) -> Result<u64, sqlx::Error> {
-    let mut given = 0;
-    for person in TEAM.iter() {
-        let Some(pattern) = person.pattern else { continue };
-        let (Some(state), age) = pulse_for(pattern) else { continue };
-        let updated = sqlx::query(
-            "UPDATE agents SET heartbeat_state = $2, demo_pulse_age_seconds = $3,
-                    heartbeat_at = now() - coalesce($3, 0) * interval '1 second',
-                    heartbeat_received_at = now() - coalesce($3, 0) * interval '1 second'
-             FROM users u
-             WHERE agents.user_id = u.id AND lower(u.email) = lower($1)
-               AND agents.heartbeat_state IS NULL AND agents.revoked_at IS NULL",
-        )
-        .bind(person.email())
-        .bind(state)
-        .bind(age)
-        .execute(pool)
-        .await?;
-        given += updated.rows_affected();
-    }
-    Ok(given)
-}
-
 /// How stale the demo's newest day may be before the whole team is regenerated.
 ///
 /// Two days, so an ordinary weekend is not staleness: the fictional team works
@@ -688,14 +727,47 @@ pub async fn history_is_stale(pool: &PgPool, now: DateTime<Utc>) -> Result<bool,
     Ok((now.date_naive() - newest).num_days() > STALE_HISTORY_DAYS)
 }
 
+/// Why a demo is about to be generated again.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Regenerate {
+    /// Another version of the server generated it - `None` for one from
+    /// before the version was recorded.
+    OtherVersion { seeded_by: Option<String> },
+    /// Its newest day is more than [`STALE_HISTORY_DAYS`] behind today.
+    StaleHistory,
+}
+
+/// Whether the demo is to be generated again on this start, and why.
+///
+/// Two reasons, one remedy. A stand left running shows a team that stopped
+/// working the day it was seeded (v0.22.2). A stand upgraded to a new version
+/// carries the old generator's team: a demo seeded before v0.17 had no
+/// pulses, before v0.21 no calendar, before v0.25 no notes - each the one
+/// thing its version was released to show. The pulse and the calendar were
+/// patched in field by field (`ensure_pulses`, `ensure_calendar`) and the
+/// notes would have been the third patch; instead the stand is born again on
+/// every upgrade, and a milestone that adds to the seed adds nothing here.
+pub async fn regeneration_due(pool: &PgPool, now: DateTime<Utc>) -> Result<Option<Regenerate>, sqlx::Error> {
+    let seeded_by: Option<String> = sqlx::query_scalar("SELECT demo_seeded_by FROM settings WHERE singleton")
+        .fetch_one(pool)
+        .await?;
+    if seeded_by.as_deref() != Some(GENERATOR) {
+        return Ok(Some(Regenerate::OtherVersion { seeded_by }));
+    }
+    if history_is_stale(pool, now).await? {
+        return Ok(Some(Regenerate::StaleHistory));
+    }
+    Ok(None)
+}
+
 /// Throws the fictional team away and generates it again from today.
 ///
 /// The third time this shape was needed decided its form. `ensure_pulses`
 /// (v0.17.1) and `ensure_calendar` (v0.21) each taught the demo one new field,
 /// and each time the version after brought another - because the thing being
 /// repaired was never the field. It is that the demo's history is anchored to
-/// the moment it was seeded, while the whole job of a shopfront is to show
-/// "this week".
+/// the moment it was seeded, and to the version that seeded it, while the
+/// whole job of a shopfront is to show "this week" of this version.
 ///
 /// Regenerating removes the class instead of the instance: whatever a later
 /// milestone adds to the seed arrives on the stand by itself, because the
@@ -716,8 +788,8 @@ pub async fn reseed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     }
 
     // Everything the seed creates, in one transaction. `users` cascades to
-    // agents, workdays, pauses, tasks and alerts; the rest are named because
-    // nothing points at them from `users`.
+    // agents, workdays, pauses, tasks, alerts, notes and notices; the rest are
+    // named because nothing points at them from `users`.
     let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM users").execute(&mut *tx).await?;
     sqlx::query("DELETE FROM departments").execute(&mut *tx).await?;
@@ -731,49 +803,6 @@ pub async fn reseed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     tx.commit().await?;
 
     seed(pool, now).await
-}
-
-/// Gives an already-seeded demo its calendar and its part-time rate.
-///
-/// The upgrade path, and the second time this shape has been needed: a demo
-/// seeded before this milestone has people and days but no calendar and no
-/// rate, and bumping the image does not re-seed. Without this its dashboard
-/// shows twelve rows at a flat full norm - the one thing the version exists
-/// to show, missing on the one installation built to show it.
-///
-/// Idempotent and deliberately timid: it writes nothing if the calendar has
-/// any row at all, because an administrator may have entered a real one on
-/// top of the demo, and it never moves a rate somebody set by hand.
-pub async fn ensure_calendar(pool: &PgPool, now: DateTime<Utc>) -> Result<u64, sqlx::Error> {
-    let existing: i64 = sqlx::query_scalar("SELECT count(*) FROM calendar_days").fetch_one(pool).await?;
-    let mut written = 0;
-
-    if existing == 0 {
-        let today = now.date_naive();
-        for (weeks_ago, kind, note) in HOLIDAY_WEEKS_AGO {
-            let date = weekday_near(today - Duration::weeks(weeks_ago), kind);
-            let inserted = sqlx::query("INSERT INTO calendar_days (date, kind, note) VALUES ($1, $2, $3) ON CONFLICT (date) DO NOTHING")
-                .bind(date)
-                .bind(kind)
-                .bind(note)
-                .execute(pool)
-                .await?;
-            written += inserted.rows_affected();
-        }
-    }
-
-    for (email_prefix, rate) in PART_TIME {
-        // `= 1` rather than unconditional: a rate somebody set by hand is
-        // theirs, even on a demo.
-        let updated = sqlx::query("UPDATE users SET work_rate = $1::numeric WHERE email LIKE $2 AND work_rate = 1")
-            .bind(rate)
-            .bind(format!("{email_prefix}@%"))
-            .execute(pool)
-            .await?;
-        written += updated.rows_affected();
-    }
-
-    Ok(written)
 }
 
 /// Re-stamps the demo's seeded pulses so they stay fresh.
