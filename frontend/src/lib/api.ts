@@ -125,6 +125,24 @@ export interface DaysResponse {
    * "you took no breaks" look identical, and only one of them is true.
    */
   not_stored: NotStored[]
+  /**
+   * What a manager wrote on dates in the range, oldest first (ADR 0021).
+   * Beside the days rather than inside them: a note on leave approved ahead
+   * of time is on a date with no day to carry it.
+   */
+  notes: Note[]
+}
+
+/** A manager's word on one of a person's days. Written once, never edited. */
+export interface Note {
+  id: string
+  /** The person's local date it is written on. */
+  date: string
+  text: string
+  /** Who wrote it - what decides who may withdraw it. Null once that account is gone. */
+  author_id: string | null
+  author: string | null
+  created_at: string
 }
 
 /** One person's period, as the manager's dashboard lists them. */
@@ -380,7 +398,7 @@ export interface WebhooksOverview {
 }
 
 /** What a notice is about - the server's `notification_kind`. */
-export type NotificationKind = 'alert.raised' | 'agent.issued' | 'agent.revoked' | 'privacy.changed'
+export type NotificationKind = 'alert.raised' | 'agent.issued' | 'agent.revoked' | 'privacy.changed' | 'note.added'
 
 /**
  * One thing the server told the signed-in person (ADR 0020).
@@ -397,7 +415,7 @@ export interface Notification {
   title: string
   /** May carry a command in backticks, which the inbox shows as code. */
   body: string
-  /** When what it said stopped being true - the alert resolved. Kept, shown as over. */
+  /** When what it said stopped being true - the alert resolved, the note withdrawn. Kept, shown as over. */
   withdrawn_at: string | null
   read: boolean
   link?: string
@@ -411,6 +429,8 @@ export interface Notification {
   }
   agent?: { id: string; name: string }
   privacy?: { from: PrivacyLevel; to: PrivacyLevel }
+  /** `text` is absent once the note is withdrawn. */
+  note?: { id: string; date: string; author: string; text?: string }
 }
 
 export interface Inbox {
@@ -661,4 +681,12 @@ export const api = {
    * pointed at someone else, so the two share a renderer.
    */
   userDays: (id: string, from: string, to: string) => request<DaysResponse>(`/users/${id}/days?from=${from}&to=${to}`),
+  /**
+   * Writes a note on one of a person's days, and tells them. Refused unless
+   * the writer may see that person's days, and on their own.
+   */
+  addNote: (userId: string, date: string, text: string) =>
+    request<Note>(`/users/${userId}/notes`, { method: 'POST', body: JSON.stringify({ date, text }) }),
+  /** Takes a note back: its words go, and the notice about it says so. Its author's, or an administrator's. */
+  withdrawNote: (id: string) => request<{ id: string; withdrawn_at: string }>(`/notes/${id}`, { method: 'DELETE' }),
 }

@@ -66,8 +66,28 @@ describe('segments', () => {
 
 describe('screenFor', () => {
   it('points an alert at the day and a privacy change at the manifest', () => {
-    expect(screenFor(notice({ kind: 'alert.raised' }))).toBe('/day')
-    expect(screenFor(notice({ kind: 'privacy.changed' }))).toBe('/privacy')
+    expect(screenFor(notice({ kind: 'alert.raised' }))).toEqual({ to: '/day', screen: 'day' })
+    expect(screenFor(notice({ kind: 'privacy.changed' }))).toEqual({ to: '/privacy', screen: 'privacy' })
     expect(screenFor(notice({ kind: 'agent.issued' }))).toBeNull()
+  })
+
+  it('opens the day a notice is about', () => {
+    const alert = {
+      id: 'a',
+      rule: 'day_not_closed' as const,
+      observed_seconds: 61200,
+      against_seconds: 57600,
+      subject_date: '2026-09-22',
+      fired_at: '2026-09-25T12:10:04Z',
+    }
+    expect(screenFor(notice({ kind: 'alert.raised', alert }))?.to).toBe('/day?date=2026-09-22')
+    expect(
+      screenFor(notice({ kind: 'note.added', note: { id: 'n', date: '2026-10-02', author: 'Priya Raman', text: 'Approved.' } }))?.to,
+    ).toBe('/day?date=2026-10-02')
+  })
+
+  it('points a withdrawn note nowhere, since it is off its day', () => {
+    const note = { id: 'n', date: '2026-10-02', author: 'Priya Raman' }
+    expect(screenFor(notice({ kind: 'note.added', note, withdrawn_at: '2026-09-30T10:00:00Z' }))).toBeNull()
   })
 })

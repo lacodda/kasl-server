@@ -67,14 +67,34 @@ export function segments(body: string): Segment[] {
     .filter((segment) => segment.text !== '')
 }
 
-/** Where a notice points in this UI, when it has a screen of its own. */
-export function screenFor(notice: Notification): '/day' | '/privacy' | null {
+/** A screen a notice points at: where to go, and which of the two it is. */
+export interface Screen {
+  to: string
+  screen: 'day' | 'privacy'
+}
+
+/**
+ * Where a notice points in this UI, when it has a screen of its own.
+ *
+ * A notice about one day opens that day - `/day?date=2026-10-02` lands on its
+ * week with it expanded - rather than on this week, where the note on next
+ * Friday is a click away that nobody knows to make.
+ */
+export function screenFor(notice: Notification): Screen | null {
   switch (notice.kind) {
     case 'alert.raised':
-      return '/day'
+      return day(notice.alert?.subject_date ?? null)
+    case 'note.added':
+      // A withdrawn note is no longer on its day: the link would open a day
+      // with nothing on it.
+      return notice.withdrawn_at ? null : day(notice.note?.date ?? null)
     case 'privacy.changed':
-      return '/privacy'
+      return { to: '/privacy', screen: 'privacy' }
     default:
       return null
   }
+}
+
+function day(date: string | null): Screen {
+  return { to: date ? `/day?date=${date}` : '/day', screen: 'day' }
 }

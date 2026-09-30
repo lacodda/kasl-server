@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Coffee, Lock, Plane } from 'lucide-react'
+import { Coffee, Lock, MessageSquareText, Plane } from 'lucide-react'
 import { PeriodPicker } from '@/components/PeriodPicker'
-import { api, type Day, type DaysResponse, type NotStored } from '@/lib/api'
-import { bands, clock, duration, isoDate, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
+import { api, ApiError, type Day, type DaysResponse, type Note, type NotStored } from '@/lib/api'
+import { bands, clock, duration, isoDate, moment, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
+import { askedDay, atMidday, mayWithdraw, notesByDate } from '@/lib/notes'
+import { useSession } from '@/lib/session'
+import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import { Progress } from '@/components/ui/progress'
 import { StatRow, StatTile } from '@/components/ui/stat-tile'
+import { Textarea } from '@/components/ui/textarea'
 import { Track, type TrackSegment } from '@/components/ui/track'
 
 /**
@@ -28,23 +33,42 @@ export function MyDay() {
  * installation's privacy level withheld something, it says so in that spot
  * rather than rendering an empty list - which is the whole reason the endpoint
  * reports `not_stored` (ADR 0011).
+ *
+ * A manager's notes sit on the line of the day they are written on, whether or
+ * not that day was ever worked (ADR 0021). `?date=` opens the week of that day
+ * with it expanded, which is where a notice about one day points.
  */
 export function WeekView({
   title,
   subtitle,
   load,
+  writeFor,
 }: {
   title: string
-  subtitle?: React.ReactNode
+  subtitle?: ReactNode
   load: (from: string, to: string) => Promise<DaysResponse>
+  /**
+   * Whose days these are, when the reader may write notes on them: the
+   * drill-down. The personal page passes nothing - nobody writes on their own
+   * day, and the server would refuse it.
+   */
+  writeFor?: string
 }) {
   const { t } = useTranslation()
-  const [monday, setMonday] = useState(() => startOfWeek(new Date()))
+  const [params] = useSearchParams()
+  // Read once, on arrival: the link asks for a day, and from then on the
+  // arrows are the reader's.
+  const [asked] = useState(() => askedDay(params.get('date')))
+  const [monday, setMonday] = useState(() => startOfWeek(asked ? atMidday(asked) : new Date()))
   // The answer carries the range it is for. Clearing it in the effect instead
   // would be a second render pass on every week change - and worse, a late
   // answer for the week just left would land as if it were this one's.
   const [loaded, setLoaded] = useState<{ range: string; answer: DaysResponse | null } | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(asked)
+  // Bumped when a note is written or withdrawn, so the week is asked for
+  // again and shows what the server now holds rather than a local guess.
+  const [revision, setRevision] = useState(0)
+  const reload = useCallback(() => setRevision((current) => current + 1), [])
 
   const dates = useMemo(() => weekDates(monday), [monday])
   const from = dates[0]
@@ -65,7 +89,7 @@ export function WeekView({
     return () => {
       cancelled = true
     }
-  }, [from, to, load])
+  }, [from, to, load, revision])
 
   const current = loaded?.range === range ? loaded : null
   const answer = current?.answer ?? null
@@ -78,8 +102,8 @@ export function WeekView({
   }, [])
 
   const byDate = useMemo(() => new Map(answer?.days.map((day) => [day.date, day]) ?? []), [answer])
+  const notes = useMemo(() => notesByDate(answer?.notes ?? []), [answer])
   const today = isoDate(new Date())
-  const open = selected ? byDate.get(selected) : undefined
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -119,15 +143,26 @@ export function WeekView({
                 key={date}
                 date={date}
                 day={byDate.get(date)}
+                notes={notes.get(date) ?? []}
                 today={date === today}
                 pausesWithheld={answer.not_stored.includes('pauses')}
+                writable={writeFor !== undefined}
                 selected={date === selected}
                 onSelect={() => setSelected(date === selected ? null : date)}
               />
             ))}
           </Panel>
 
-          {open && <DayDetail day={open} notStored={answer.not_stored} />}
+          {selected && dates.includes(selected) && (
+            <DayDetail
+              date={selected}
+              day={byDate.get(selected)}
+              notes={notes.get(selected) ?? []}
+              notStored={answer.not_stored}
+              writeFor={writeFor}
+              onChanged={reload}
+            />
+          )}
         </>
       )}
     </div>
@@ -195,101 +230,159 @@ function WeekTotal({ answer }: { answer: DaysResponse }) {
   )
 }
 
-/** One day in the week list: its hours, and the timeline of how it went. */
+/**
+ * One day in the week list: its hours, and the timeline of how it went.
+ *
+ * A row opens when there is something to open - a worked day's pauses and
+ * tasks, a note on it, or the form for writing one. A day with none of those
+ * stays a plain line: a button that expands into nothing is a promise the
+ * screen does not keep.
+ */
 function DayRow({
   date,
   day,
+  notes,
   today,
   pausesWithheld,
+  writable,
   selected,
   onSelect,
 }: {
   date: string
   day: Day | undefined
+  notes: Note[]
   today: boolean
   pausesWithheld: boolean
+  writable: boolean
   selected: boolean
   onSelect: () => void
 }) {
   const { t } = useTranslation()
   const weekday = weekdayName(date)
+  const openable = day?.kind === 'work' || notes.length > 0 || writable
+  const noted = notes.length > 0 && <NoteLine notes={notes} />
+
+  let row: { className: string; content: ReactNode }
 
   if (!day) {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3.5 opacity-55 sm:gap-4 sm:px-5">
-        <DayLabel date={date} weekday={weekday} today={today} />
-        <span className="text-sm text-faint">{t('myDay.noData')}</span>
-      </div>
+    row = {
+      className: 'flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5',
+      content: (
+        <>
+          {/* The label and "nothing recorded" are dimmed, the note is not: a
+              manager's word on an empty day is not nothing, and greyed out it
+              would read as a leftover. */}
+          <div className="shrink-0 opacity-55">
+            <DayLabel date={date} weekday={weekday} today={today} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="text-sm text-faint opacity-55">{t('myDay.noData')}</span>
+            {noted}
+          </div>
+        </>
+      ),
+    }
+  } else if (day.kind !== 'work') {
+    // A day the employee told us they were away. Its own row rather than a bar
+    // of nothing: an empty timeline says "worked no hours", and this day was
+    // never going to have any (ADR 0017).
+    row = {
+      className: 'flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5',
+      content: (
+        <>
+          <DayLabel date={date} weekday={weekday} today={today} />
+          <div className="min-w-0 flex-1">
+            <span className="inline-flex items-center gap-1.5 text-sm text-dim">
+              <Plane className="size-3.5 shrink-0" />
+              {t(`myDay.dayKind.${day.kind}`)}
+            </span>
+            {noted}
+          </div>
+        </>
+      ),
+    }
+  } else {
+    const total = <div className="font-mono text-sm tabular">{duration(day.worked_seconds)}</div>
+    const tasks = day.tasks.length > 0 && (
+      <div className="text-[11px] text-faint">{t('myDay.taskCount', { count: day.tasks.length })}</div>
     )
+    row = {
+      className: 'flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5',
+      content: (
+        <>
+          {/* On a phone the day's name and its total share the top line, and
+              the bar gets the full width underneath. Keeping the desktop's
+              three columns would leave the bar about eighty pixels wide, which
+              is not a drawing of a day - it is a smudge. */}
+          <div className="flex items-baseline justify-between gap-3 sm:contents">
+            <DayLabel date={date} weekday={weekday} today={today} />
+            <div className="flex items-baseline gap-2 sm:hidden">
+              {tasks}
+              {total}
+            </div>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <Timeline day={day} withheld={pausesWithheld} />
+            {/* Wrapping rather than one line: "12:04–21:30" and a break count
+                in mono at 320px are a few pixels over, and a clipped end time
+                is the half of the pair that says whether the day is finished. */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-faint tabular">
+              <span>
+                {clock(day.started_at)}
+                {day.ended_at ? `–${clock(day.ended_at)}` : `–${t('myDay.running')}`}
+              </span>
+              {day.paused_count > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Coffee className="size-3" />
+                  {day.paused_count} · {duration(day.paused_seconds)}
+                </span>
+              )}
+            </div>
+            {noted}
+          </div>
+
+          <div className="hidden shrink-0 text-right sm:block">
+            {total}
+            {tasks && <div className="mt-0.5">{tasks}</div>}
+          </div>
+        </>
+      ),
+    }
   }
 
-  // A day the employee told us they were away. Its own row rather than a bar
-  // of nothing: an empty timeline says "worked no hours", and this day was
-  // never going to have any (ADR 0017).
-  if (day.kind !== 'work') {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5">
-        <DayLabel date={date} weekday={weekday} today={today} />
-        <span className="inline-flex items-center gap-1.5 text-sm text-dim">
-          <Plane className="size-3.5 shrink-0" />
-          {t(`myDay.dayKind.${day.kind}`)}
-        </span>
-      </div>
-    )
-  }
-
-  const total = (
-    <div className="font-mono text-sm tabular">{duration(day.worked_seconds)}</div>
-  )
-  const tasks = day.tasks.length > 0 && (
-    <div className="text-[11px] text-faint">{t('myDay.taskCount', { count: day.tasks.length })}</div>
-  )
+  if (!openable) return <div className={row.className}>{row.content}</div>
 
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-expanded={selected}
-      className={`flex w-full cursor-pointer flex-col gap-2 px-4 py-3.5 text-left transition-colors hover:bg-soft sm:flex-row sm:items-center sm:gap-4 sm:px-5 ${
-        selected ? 'bg-soft' : ''
-      }`}
+      className={`${row.className} w-full cursor-pointer text-left transition-colors hover:bg-soft ${selected ? 'bg-soft' : ''}`}
     >
-      {/* On a phone the day's name and its total share the top line, and the
-          bar gets the full width underneath. Keeping the desktop's three
-          columns would leave the bar about eighty pixels wide, which is not a
-          drawing of a day - it is a smudge. */}
-      <div className="flex items-baseline justify-between gap-3 sm:contents">
-        <DayLabel date={date} weekday={weekday} today={today} />
-        <div className="flex items-baseline gap-2 sm:hidden">
-          {tasks}
-          {total}
-        </div>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <Timeline day={day} withheld={pausesWithheld} />
-        {/* Wrapping rather than one line: "12:04–21:30" and a break count in
-            mono at 320px are a few pixels over, and a clipped end time is the
-            half of the pair that says whether the day is finished. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-faint tabular">
-          <span>
-            {clock(day.started_at)}
-            {day.ended_at ? `–${clock(day.ended_at)}` : `–${t('myDay.running')}`}
-          </span>
-          {day.paused_count > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Coffee className="size-3" />
-              {day.paused_count} · {duration(day.paused_seconds)}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="hidden shrink-0 text-right sm:block">
-        {total}
-        {tasks && <div className="mt-0.5">{tasks}</div>}
-      </div>
+      {row.content}
     </button>
+  )
+}
+
+/**
+ * The newest note on a day, in one line under it. The words themselves rather
+ * than an icon and a count: "Your day off is approved" is the whole message,
+ * and a badge would make the reader open the day to learn it.
+ */
+function NoteLine({ notes }: { notes: Note[] }) {
+  const { t } = useTranslation()
+  const newest = notes.at(-1)
+  if (!newest) return null
+  return (
+    <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-dim">
+      <MessageSquareText className="size-3 shrink-0 text-accent-2" aria-hidden />
+      <span className="sr-only">{t('notes.rowLabel')}: </span>
+      <span className="min-w-0 truncate">{newest.text}</span>
+      {notes.length > 1 && (
+        <span className="shrink-0 font-mono text-[11px] text-faint tabular">{t('notes.more', { count: notes.length - 1 })}</span>
+      )}
+    </p>
   )
 }
 
@@ -352,8 +445,48 @@ function Timeline({ day, withheld }: { day: Day; withheld: boolean }) {
   )
 }
 
-/** The opened day: its pauses and its tasks, or why they are not there. */
-function DayDetail({ day, notStored }: { day: Day; notStored: NotStored[] }) {
+/**
+ * The opened day: its pauses and its tasks, or why they are not there - and
+ * the notes on it, with the form for another where the reader may write one.
+ */
+function DayDetail({
+  date,
+  day,
+  notes,
+  notStored,
+  writeFor,
+  onChanged,
+}: {
+  date: string
+  day: Day | undefined
+  notes: Note[]
+  notStored: NotStored[]
+  writeFor: string | undefined
+  onChanged: () => void
+}) {
+  const worked = day?.kind === 'work'
+  const noted = notes.length > 0 || writeFor !== undefined
+  // A link can ask for a day with nothing on it - a note since withdrawn.
+  // Nothing opens rather than two panels saying "nothing".
+  if (!worked && !noted) return null
+
+  const panel = noted && <NotesPanel date={date} notes={notes} writeFor={writeFor} onChanged={onChanged} />
+  // A note, when there is one, comes first: it is what a person arriving from
+  // the notice came to read, and on a phone the pauses above it would be a
+  // screen of scrolling. An empty form waits below the record instead.
+  const first = notes.length > 0
+
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      {first && panel}
+      {worked && <DayRecord day={day} notStored={notStored} />}
+      {!first && panel}
+    </div>
+  )
+}
+
+/** A worked day's pauses and tasks, or why they are not there. */
+function DayRecord({ day, notStored }: { day: Day; notStored: NotStored[] }) {
   const { t } = useTranslation()
 
   return (
@@ -407,6 +540,182 @@ function DayDetail({ day, notStored }: { day: Day; notStored: NotStored[] }) {
         )}
       </Panel>
     </div>
+  )
+}
+
+/**
+ * What managers wrote on the day (ADR 0021), and - on the drill-down - the
+ * form for another.
+ *
+ * Not a conversation: no replies, no editing. A note is said once and told to
+ * the person on their machine; a correction is a second note, and one on the
+ * wrong day or the wrong person is withdrawn.
+ */
+function NotesPanel({
+  date,
+  notes,
+  writeFor,
+  onChanged,
+}: {
+  date: string
+  notes: Note[]
+  writeFor: string | undefined
+  onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const { user } = useSession()
+
+  return (
+    <Panel className="p-4 sm:p-5">
+      <h2 className="text-xs font-medium tracking-wide text-dim uppercase">{t('notes.title')}</h2>
+      {notes.length === 0 ? (
+        <p className="mt-3 text-sm text-faint">{t('notes.none')}</p>
+      ) : (
+        <ul className="mt-3 space-y-3.5">
+          {notes.map((note) => (
+            <NoteItem key={note.id} note={note} withdrawable={user ? mayWithdraw(note, user) : false} onWithdrawn={onChanged} />
+          ))}
+        </ul>
+      )}
+      {writeFor !== undefined && <NoteForm userId={writeFor} date={date} onWritten={onChanged} />}
+    </Panel>
+  )
+}
+
+function NoteItem({ note, withdrawable, onWithdrawn }: { note: Note; withdrawable: boolean; onWithdrawn: () => void }) {
+  const { t } = useTranslation()
+  // Two steps rather than a dialog: withdrawing takes the words out for the
+  // person too, and a single stray click should not be able to do that - but
+  // the question belongs next to the note it is about, not over the page.
+  const [confirming, setConfirming] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+
+  const withdraw = () => {
+    setPending(true)
+    setFailed(null)
+    api
+      .withdrawNote(note.id)
+      .then(onWithdrawn)
+      .catch((error: unknown) => {
+        setFailed(error instanceof ApiError ? error.message : t('common.error'))
+        setPending(false)
+      })
+  }
+
+  return (
+    <li className="space-y-1">
+      {/* The author's own line breaks, and a long word wrapped rather than
+          pushing the panel wider than a phone. */}
+      <p className="text-sm break-words whitespace-pre-wrap">{note.text}</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
+        <span>
+          {note.author ?? t('notes.formerAuthor')} · <span className="font-mono tabular">{moment(note.created_at)}</span>
+        </span>
+        {withdrawable && !confirming && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="cursor-pointer text-dim underline-offset-2 hover:text-bad hover:underline"
+          >
+            {t('notes.withdraw')}
+          </button>
+        )}
+      </div>
+      {confirming && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="text-xs text-dim">{t('notes.withdrawConfirm')}</span>
+          <Button size="sm" variant="danger" disabled={pending} onClick={withdraw}>
+            {t('notes.withdrawYes')}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
+            {t('notes.withdrawNo')}
+          </Button>
+        </div>
+      )}
+      {failed && <p className="text-xs text-bad">{t('notes.withdrawFailed', { reason: failed })}</p>}
+    </li>
+  )
+}
+
+/** The longest note the server takes, in characters. Mirrors `notes::MAX_CHARS`. */
+const MAX_NOTE_CHARS = 1000
+
+function NoteForm({ userId, date, onWritten }: { userId: string; date: string; onWritten: () => void }) {
+  const { t } = useTranslation()
+  const [text, setText] = useState('')
+  const [pending, setPending] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+  const length = [...text.trim()].length
+  const ready = length > 0 && length <= MAX_NOTE_CHARS && !pending
+
+  const submit = () => {
+    if (!ready) return
+    setPending(true)
+    setFailed(null)
+    api
+      .addNote(userId, date, text)
+      .then(() => {
+        setText('')
+        setPending(false)
+        onWritten()
+      })
+      .catch((error: unknown) => {
+        // The server's reason, as it gave it: "a note is dated at most 366
+        // days ahead" says what to change, and "something went wrong" does not.
+        setFailed(error instanceof ApiError ? error.message : t('common.error'))
+        setPending(false)
+      })
+  }
+
+  return (
+    <form
+      className="mt-4 space-y-2 border-t border-line pt-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit()
+      }}
+    >
+      <label htmlFor={`note-${date}`} className="sr-only">
+        {t('notes.label', { date })}
+      </label>
+      <Textarea
+        id={`note-${date}`}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          // The shortcut every message box has; Enter alone is a new line,
+          // because a note may well have two.
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault()
+            submit()
+          }
+        }}
+        placeholder={t('notes.placeholder')}
+        autoResize
+        maxRows={6}
+        rows={2}
+        aria-invalid={length > MAX_NOTE_CHARS || undefined}
+        // 16px on a phone: iOS zooms the page into any field smaller than
+        // that on focus. `text-lg` is 16px in the line's scale (`text-base`
+        // is 14).
+        className="text-lg sm:text-sm"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 text-xs text-faint">{t('notes.hint')}</p>
+        <div className="flex items-center gap-3">
+          {length > MAX_NOTE_CHARS * 0.8 && (
+            <span className={`font-mono text-xs tabular ${length > MAX_NOTE_CHARS ? 'text-bad' : 'text-faint'}`}>
+              {t('notes.length', { count: length, max: MAX_NOTE_CHARS })}
+            </span>
+          )}
+          <Button type="submit" size="sm" variant="primary" disabled={!ready}>
+            {t(pending ? 'notes.adding' : 'notes.add')}
+          </Button>
+        </div>
+      </div>
+      {failed && <p className="text-xs text-bad">{t('notes.failed', { reason: failed })}</p>}
+    </form>
   )
 }
 

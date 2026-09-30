@@ -247,13 +247,33 @@
   "notifications": {
     "title": "Notifications",
     "subtitle": "What this server has told you. kasl shows the same notices on your machines; reading them here stops the toasts.",
-    "none": "Nothing yet. When the server tells your manager something about your days, when a machine starts or stops reporting as you, or when what is stored about you changes, you are told here and on your machine.",
+    "none": "Nothing yet. When the server tells your manager something about your days, when a manager writes a note on one of your days, when a machine starts or stops reporting as you, or when what is stored about you changes, you are told here and on your machine.",
     "unread": "New",
     "over": "Over since {{at}}",
+    "withdrawn": "Withdrawn {{at}}",
     "openDay": "Open my day",
     "openPrivacy": "See what is stored",
     "bell": "Notifications",
     "bellUnread_one": "Notifications, {{count}} new",
     "bellUnread_other": "Notifications, {{count}} new"
+  },
+  "notes": {
+    "title": "Notes",
+    "none": "No notes on this day yet.",
+    "rowLabel": "Note",
+    "more": "+{{count}}",
+    "formerAuthor": "A former colleague",
+    "label": "A note on {{date}}",
+    "placeholder": "Approved, thanks, a reminder - a line or two",
+    "hint": "They are told on their machine and in their inbox. A note cannot be edited: withdraw it and write another.",
+    "add": "Add note",
+    "adding": "Adding…",
+    "length": "{{count}} / {{max}}",
+    "failed": "The note was not added: {{reason}}",
+    "withdraw": "Withdraw",
+    "withdrawConfirm": "Withdraw this note? Its words are removed for them too.",
+    "withdrawYes": "Withdraw",
+    "withdrawNo": "Keep",
+    "withdrawFailed": "The note was not withdrawn: {{reason}}"
   }
 }

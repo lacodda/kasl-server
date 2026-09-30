@@ -106,10 +106,17 @@ function Notice({ notice, openedAt }: { notice: Notification; openedAt: number }
             {/* Said rather than hidden: "your manager was told on Monday"
                 stays a fact after Tuesday fixed it, and the reader should
                 see that it was fixed. */}
-            {notice.withdrawn_at && <span className="text-faint">{t('notifications.over', { at: moment(notice.withdrawn_at) })}</span>}
+            {notice.withdrawn_at && (
+              <span className="text-faint">
+                {/* A note is taken back by the person who wrote it; an alert
+                    ends because what it said stopped being true. Two
+                    sentences, because they are two different things. */}
+                {t(notice.kind === 'note.added' ? 'notifications.withdrawn' : 'notifications.over', { at: moment(notice.withdrawn_at) })}
+              </span>
+            )}
             {screen && (
-              <Link to={screen} className="text-accent-2 underline-offset-2 hover:underline">
-                {t(screen === '/day' ? 'notifications.openDay' : 'notifications.openPrivacy')}
+              <Link to={screen.to} className="text-accent-2 underline-offset-2 hover:underline">
+                {t(screen.screen === 'day' ? 'notifications.openDay' : 'notifications.openPrivacy')}
               </Link>
             )}
           </p>

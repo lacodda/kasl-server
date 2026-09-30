@@ -422,7 +422,10 @@ export function PersonWeek() {
       {/* The chart comes first: this page is usually arrived at from a signal,
           and the twelve weeks are what the signal was about. */}
       <Trend userId={id} />
-      <WeekView title={name ?? t('team.person')} load={load} />
+      {/* A manager writes on this person's days from here - the only place a
+          note is written, because it is the only screen that is about one
+          person's days and not the manager's own (ADR 0021). */}
+      <WeekView title={name ?? t('team.person')} load={load} writeFor={id} />
     </div>
   )
 }
