@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.25.0] - 2026-09-30
+
+### Features
+- Let a manager write on a day and tell the person
+- Read, write and withdraw notes on a day
+- Write notes, and generate the team again on every upgrade
+
 ## [0.24.1] - 2026-09-25
 
 ### Bug Fixes
