@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notifications, privacy, signals, team, web,
-    webhooks,
+    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy, signals,
+    team, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -87,6 +87,12 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/webhooks", get(webhooks::overview))
         .route("/webhooks/{name}/test", post(webhooks::send_test))
         .route("/users/{id}/days", get(team::user_days))
+        // A manager's word on one of those days, told to the person whose day
+        // it is. Written by whoever may see the day, taken back by whoever
+        // wrote it; read beside the days, on both the personal page and the
+        // drill-down, rather than from a route of its own (ADR 0021).
+        .route("/users/{id}/notes", post(notes::create))
+        .route("/notes/{id}", delete(notes::withdraw))
         // The twelve-week shape behind a signal, next to the days that made it.
         .route("/users/{id}/trend", get(signals::user_trend))
         // Administration. Reading the team is a manager's; changing it is not,

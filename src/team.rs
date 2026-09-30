@@ -299,7 +299,7 @@ pub async fn live(State(state): State<AppState>, user: CurrentUser) -> Result<im
 /// Asked of the database with the same clause the listing uses, rather than
 /// reasoned about in Rust: the rule and the check cannot drift if they are the
 /// same string.
-async fn may_read(pool: &PgPool, reader: &CurrentUser, target: Uuid) -> Result<bool, ApiError> {
+pub(crate) async fn may_read(pool: &PgPool, reader: &CurrentUser, target: Uuid) -> Result<bool, ApiError> {
     let visible: Option<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT u.id FROM users u WHERE u.id = $3 AND {VISIBLE_USERS}")))
         .bind(reader.role == UserRole::Admin)
         .bind(reader.user_id)

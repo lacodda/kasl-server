@@ -53,11 +53,12 @@ can be seen before an agent is installed anywhere.
   rest.
 - **Dashboards for a manager.** The team's hours, a drill-down into anyone's
   days, a live column of who is working right now, the month as a heatmap,
-  and signals naming who is worth a look.
+  and signals naming who is worth a look - and a note on any day, "your day
+  off on Friday is approved", told to the person it is for.
 - **A personal page for every employee.** Their own week, drawn as a timeline
   of work and the pauses in it, against the hours it asked for - and an inbox
-  of what the server told them: an alert about their day, a machine added to
-  their account, a change to what is stored.
+  of what the server told them: an alert about their day, a manager's note on
+  one, a machine added to their account, a change to what is stored.
 - **A production calendar and a norm.** Holidays, shortened eves and
   transferred weekends; a full day per installation and a share of it per
   person, so half time reads as half time rather than as half-hearted.
@@ -90,7 +91,8 @@ v0.24.1, in daily use on a small team's own stand. The ingest contract,
 dashboards, roles, departments, the audit log, the privacy manifest, the
 production calendar, alerts that arrive without being asked for - in the web
 UI and in a Slack, Mattermost or Telegram chat - notices to the employee they
-are about, and a phone layout all hold end to end. What landed in each
+are about, a manager's notes on a day, and a phone layout all hold end to
+end. What landed in each
 version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 

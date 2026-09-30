@@ -15,6 +15,11 @@ $ curl -H "Cookie: kasl_session=..." "http://127.0.0.1:8080/api/v1/audit?limit=2
   "details":{"user_id":"9dce4dd0-..."},"at":"2026-08-22T00:58:11.850690Z"}]
 ```
 
+A [note on a day](/kasl-server/reference/notes-on-a-day/) is recorded as
+`note.added` and `note.withdrawn`, against the person whose day it is, with the
+note's id and date - never its words, which a withdrawal has to be able to
+remove from everywhere.
+
 Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
 `limit` (500 at most) and `offset`. "Everything that happened to this person" is
 `?target_id=...`.

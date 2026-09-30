@@ -36,6 +36,7 @@ use crate::{
     calendar::{Calendar, Norm, Progress, WorkdayKind},
     error::ApiError,
     login::CurrentUser,
+    notes::{self, Note},
     privacy::{Policy, PrivacyLevel},
 };
 
@@ -127,6 +128,12 @@ pub struct Days {
     /// Seconds worked across the range - the same rule the days follow, so the
     /// figure beside the norm is the sum of what is drawn.
     pub worked_seconds: i64,
+    /// What a manager wrote on dates in the range, oldest first (ADR 0021).
+    ///
+    /// Beside the days rather than inside them: the note most worth writing is
+    /// about a day that has not happened - leave approved ahead of time - and
+    /// that date has no entry in `days` to carry it.
+    pub notes: Vec<Note>,
 }
 
 /// What a level withholds, in the words a screen can show as-is.
@@ -178,6 +185,7 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
     }
 
     let worked_seconds = days.iter().filter_map(|day| day.worked_seconds).sum();
+    let notes = notes::for_range(pool, user_id, range).await?;
 
     Ok(Days {
         from: range.from,
@@ -189,6 +197,7 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
         },
         worked_seconds,
         days,
+        notes,
         privacy_level: level,
         not_stored: not_stored_at(level),
     })

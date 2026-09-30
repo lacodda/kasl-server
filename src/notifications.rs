@@ -26,7 +26,7 @@
 //! and is right; one that knows the kind can act on the fields beside them.
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -66,6 +66,10 @@ pub enum NotificationKind {
     #[serde(rename = "privacy.changed")]
     #[sqlx(rename = "privacy.changed")]
     PrivacyChanged,
+    /// A manager wrote a note on one of your days (ADR 0021).
+    #[serde(rename = "note.added")]
+    #[sqlx(rename = "note.added")]
+    NoteAdded,
 }
 
 /// The machine a notice is about.
@@ -84,6 +88,23 @@ pub struct PrivacyFact {
     pub to: PrivacyLevel,
 }
 
+/// The note a notice announces.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteFact {
+    pub id: Uuid,
+    /// The person's local date the note is written on.
+    pub date: NaiveDate,
+    /// Who wrote it, as they were named when the person was told.
+    pub author: String,
+    /// The words. **Never stored in the payload**: the note's own row is the
+    /// only place they are kept, and they are read from it when the notice is.
+    /// Withdrawing a note empties that row, and a second copy here would be
+    /// the words surviving their withdrawal (ADR 0021). The note cannot be
+    /// edited, so what is read is what was told. Absent once withdrawn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
 /// The facts a notice was made from, stored as its `payload`.
 ///
 /// One field is set, the one its kind names. A struct of options rather than
@@ -97,6 +118,8 @@ pub struct Facts {
     pub agent: Option<AgentFact>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub privacy: Option<PrivacyFact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<NoteFact>,
 }
 
 // Writing -----------------------------------------------------------------------
@@ -168,6 +191,24 @@ pub async fn privacy_changed(conn: &mut PgConnection, from: PrivacyLevel, to: Pr
     Ok(written.rows_affected())
 }
 
+/// Tells a person that a note was written on one of their days.
+///
+/// In the transaction that wrote the note. The payload carries who wrote it
+/// and on which date; the words stay on the note (see [`NoteFact::text`]).
+pub async fn note_added(conn: &mut PgConnection, user_id: Uuid, note: &NoteFact) -> Result<(), sqlx::Error> {
+    let facts = Facts {
+        note: Some(NoteFact { text: None, ..note.clone() }),
+        ..Facts::default()
+    };
+    sqlx::query("INSERT INTO notifications (user_id, kind, note_id, payload) VALUES ($1, 'note.added', $2, $3)")
+        .bind(user_id)
+        .bind(note.id)
+        .bind(sqlx::types::Json(&facts))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 // Reading -------------------------------------------------------------------------
 
 /// One notification, as both the agent and the inbox receive it.
@@ -181,9 +222,10 @@ pub struct Notification {
     /// agent that has never heard of `kind` still has something true to show.
     pub title: String,
     pub body: String,
-    /// When what it said stopped being true: the alert it announced resolved.
-    /// A notice that is over is kept, and shown as over, rather than removed -
-    /// "your manager was told on Monday" stays a fact after Tuesday fixes it.
+    /// When what it said stopped being true: the alert it announced resolved,
+    /// or the note it announced was withdrawn. A notice that is over is kept,
+    /// and shown as over, rather than removed - "your manager was told on
+    /// Monday" stays a fact after Tuesday fixes it.
     pub withdrawn_at: Option<DateTime<Utc>>,
     /// Whether the person has seen it.
     pub read: bool,
@@ -203,11 +245,17 @@ struct Row {
     payload: sqlx::types::Json<Facts>,
     withdrawn_at: Option<DateTime<Utc>>,
     read: bool,
+    /// The words of the note a `note.added` announces, read from the note
+    /// itself. Null for every other kind, and for a note withdrawn.
+    note_text: Option<String>,
 }
 
 impl Row {
     fn into_notification(self, webhooks: &Webhooks) -> Notification {
-        let facts = self.payload.0;
+        let mut facts = self.payload.0;
+        if let Some(note) = facts.note.as_mut() {
+            note.text = self.note_text;
+        }
         let (title, body) = words(self.id, self.kind, &facts);
         Notification {
             id: self.id,
@@ -217,18 +265,24 @@ impl Row {
             body,
             withdrawn_at: self.withdrawn_at,
             read: self.read,
-            link: webhooks.link(where_to_look(self.kind)),
+            link: webhooks.link(&where_to_look(self.kind, &facts)),
             facts,
         }
     }
 }
 
-/// The screen that shows what a notice is about.
-fn where_to_look(kind: NotificationKind) -> &'static str {
-    match kind {
-        NotificationKind::AlertRaised => "/day",
-        NotificationKind::PrivacyChanged => "/privacy",
-        NotificationKind::AgentIssued | NotificationKind::AgentRevoked => "/notifications",
+/// The screen that shows what a notice is about - for a notice about one day,
+/// that day, opened: `/day?date=2026-10-02` lands on its week with it expanded.
+fn where_to_look(kind: NotificationKind, facts: &Facts) -> String {
+    let date = match kind {
+        NotificationKind::AlertRaised => facts.alert.as_ref().and_then(|alert| alert.subject_date),
+        NotificationKind::NoteAdded => facts.note.as_ref().map(|note| note.date),
+        NotificationKind::PrivacyChanged => return "/privacy".to_string(),
+        NotificationKind::AgentIssued | NotificationKind::AgentRevoked => return "/notifications".to_string(),
+    };
+    match date {
+        Some(date) => format!("/day?date={date}"),
+        None => "/day".to_string(),
     }
 }
 
@@ -258,6 +312,16 @@ pub fn words(id: i64, kind: NotificationKind, facts: &Facts) -> (String, String)
                 level_name(privacy.to),
                 crate::privacy::summary_for(privacy.to)
             ),
+        ),
+        (NotificationKind::NoteAdded, Facts { note: Some(note), .. }) => (
+            format!("{} left a note on your day of {}", note.author, note.date),
+            match &note.text {
+                Some(text) => text.clone(),
+                // Said rather than left blank: the person may have read the
+                // toast already, and a notice that went quiet without a word
+                // would look like the server lost it.
+                None => "The note was withdrawn.".to_string(),
+            },
         ),
         // A row whose payload does not carry what its kind names. Nothing in
         // this module writes one, and a restore of a hand-edited backup could.
@@ -314,7 +378,8 @@ fn level_name(level: PrivacyLevel) -> &'static str {
 /// * not about this machine itself - "laptop can now report as you" is news to
 ///   the desktop, and noise on the laptop;
 /// * still true: an alert that resolved is over, and a toast about it would be
-///   the server repeating yesterday;
+///   the server repeating yesterday; a note withdrawn is not toasted either -
+///   it has no words left to show;
 /// * never an agent's own silence. `no_agent_data` means nothing arrived from
 ///   any of the person's machines, so a machine able to ask has, by asking,
 ///   ended it - five minutes before the sweep notices.
@@ -327,12 +392,20 @@ const PENDING_FOR_AGENT: &str = "
     JOIN agents a ON a.id = $1
     JOIN users u ON u.id = a.user_id
     LEFT JOIN alerts al ON al.id = n.alert_id
+    LEFT JOIN day_notes dn ON dn.id = n.note_id
     WHERE n.user_id = a.user_id
       AND n.id > greatest(a.notified_through, u.notifications_read_through)
       AND n.created_at >= a.created_at
       AND n.agent_id IS DISTINCT FROM a.id
       AND al.resolved_at IS NULL
+      AND dn.withdrawn_at IS NULL
       AND al.rule IS DISTINCT FROM 'no_agent_data'";
+
+/// When a notice stopped being true, as a column: the alert it announced
+/// resolved, or the note it announced was withdrawn. Read from those rows
+/// rather than copied onto the notice, so the two cannot disagree. Expects
+/// `al` and `dn` joined; at most one of them is ever there.
+const WITHDRAWN_AT: &str = "coalesce(al.resolved_at, dn.withdrawn_at)";
 
 /// How many notices an agent has not shown. Answered on every pulse.
 pub async fn pending_count(pool: &PgPool, agent_id: Uuid) -> Result<i64, ApiError> {
@@ -359,10 +432,10 @@ pub struct AgentQueue {
 
 /// `GET /api/v1/agent/notifications`: what this machine has not shown yet.
 pub async fn agent_queue(State(state): State<AppState>, agent: AuthenticatedAgent) -> Result<impl IntoResponse, ApiError> {
-    // `AssertSqlSafe` on `PENDING_FOR_AGENT`, a constant in this module; the
-    // agent and the limit are bound.
+    // `AssertSqlSafe` on `PENDING_FOR_AGENT` and `WITHDRAWN_AT`, constants in
+    // this module; the agent and the limit are bound.
     let mut rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT n.id, n.kind, n.created_at, n.payload, al.resolved_at AS withdrawn_at, false AS read
+        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, false AS read, dn.text AS note_text
          {PENDING_FOR_AGENT}
          ORDER BY n.id
          LIMIT $2"
@@ -477,14 +550,16 @@ pub async fn inbox(State(state): State<AppState>, user: CurrentUser) -> Result<i
         .fetch_one(&state.pool)
         .await?;
 
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT n.id, n.kind, n.created_at, n.payload, al.resolved_at AS withdrawn_at, n.id <= $2 AS read
+    // `AssertSqlSafe` on `WITHDRAWN_AT`, a constant in this module.
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, n.id <= $2 AS read, dn.text AS note_text
          FROM notifications n
          LEFT JOIN alerts al ON al.id = n.alert_id
+         LEFT JOIN day_notes dn ON dn.id = n.note_id
          WHERE n.user_id = $1
          ORDER BY n.id DESC
-         LIMIT $3",
-    )
+         LIMIT $3"
+    )))
     .bind(user.user_id)
     .bind(read_through)
     .bind(INBOX_PAGE)
@@ -492,8 +567,10 @@ pub async fn inbox(State(state): State<AppState>, user: CurrentUser) -> Result<i
     .await?;
 
     let unread: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM notifications n LEFT JOIN alerts al ON al.id = n.alert_id
-         WHERE n.user_id = $1 AND n.id > $2 AND al.resolved_at IS NULL",
+        "SELECT count(*) FROM notifications n
+         LEFT JOIN alerts al ON al.id = n.alert_id
+         LEFT JOIN day_notes dn ON dn.id = n.note_id
+         WHERE n.user_id = $1 AND n.id > $2 AND al.resolved_at IS NULL AND dn.withdrawn_at IS NULL",
     )
     .bind(user.user_id)
     .bind(read_through)
@@ -607,6 +684,49 @@ mod tests {
         );
     }
 
+    fn note(text: Option<&str>) -> Facts {
+        Facts {
+            note: Some(NoteFact {
+                id: Uuid::nil(),
+                date: "2026-10-02".parse().unwrap(),
+                author: "Priya Raman".to_string(),
+                text: text.map(str::to_string),
+            }),
+            ..Facts::default()
+        }
+    }
+
+    #[test]
+    fn a_note_is_told_in_its_own_words() {
+        // The manager's sentence is the body, as written - the server adds who
+        // and which day, and nothing about what it means.
+        let (title, body) = words(1, NotificationKind::NoteAdded, &note(Some("Your day off on Friday is approved.")));
+        assert_eq!(title, "Priya Raman left a note on your day of 2026-10-02");
+        assert_eq!(body, "Your day off on Friday is approved.");
+    }
+
+    #[test]
+    fn a_withdrawn_note_says_so_and_nothing_else() {
+        let (title, body) = words(1, NotificationKind::NoteAdded, &note(None));
+        assert_eq!(title, "Priya Raman left a note on your day of 2026-10-02");
+        assert_eq!(body, "The note was withdrawn.");
+    }
+
+    #[test]
+    fn a_notice_about_a_day_opens_that_day() {
+        assert_eq!(where_to_look(NotificationKind::NoteAdded, &note(Some("x"))), "/day?date=2026-10-02");
+        assert_eq!(
+            where_to_look(NotificationKind::AlertRaised, &alert(AlertRule::DayNotClosed, 1, None, Some("2026-09-22"))),
+            "/day?date=2026-09-22"
+        );
+        // Silence is about no day in particular.
+        assert_eq!(
+            where_to_look(NotificationKind::AlertRaised, &alert(AlertRule::NoAgentData, 1, None, None)),
+            "/day"
+        );
+        assert_eq!(where_to_look(NotificationKind::PrivacyChanged, &Facts::default()), "/privacy");
+    }
+
     #[test]
     fn a_notice_without_its_facts_still_says_something() {
         // Not an empty toast and not a panic: a row nothing here writes, which
@@ -624,6 +744,7 @@ mod tests {
             (NotificationKind::AgentIssued, "agent.issued"),
             (NotificationKind::AgentRevoked, "agent.revoked"),
             (NotificationKind::PrivacyChanged, "privacy.changed"),
+            (NotificationKind::NoteAdded, "note.added"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), serde_json::json!(name));
         }

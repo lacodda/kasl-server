@@ -17,6 +17,7 @@ machine and in their own inbox.
 | `agent.issued` | A new token can report as you - from the admin screen or `KASL_AGENTS` | `agent`: `id`, `name` |
 | `agent.revoked` | A machine can no longer report as you | `agent`: `id`, `name` |
 | `privacy.changed` | What this server keeps about your days changed | `privacy`: `from`, `to` |
+| `note.added` | A manager wrote a [note](/kasl-server/reference/notes-on-a-day/) on one of your days | `note`: `id`, `date`, `author`, `text` |
 
 Each notice carries a `title` and a `body` written by the server, in English,
 next to its facts. An agent that does not know a `kind` shows the words and is
@@ -33,6 +34,11 @@ backticks:
 An acknowledgement of an alert is not told - "your manager decided it was
 fine" is a comfort, not something to act on. Figures are the ones the alert
 fired on and never change afterwards.
+
+A note's notice says who wrote it and on which day, and its `body` is the note
+itself. Once the note is withdrawn the notice is over, like an alert that
+resolved, and its `body` says only "The note was withdrawn." - the words are
+gone from the server, and `note.text` with them.
 
 ## On the machine
 
@@ -61,6 +67,8 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/agent
 ```
 
 `link` is there when the server knows its own address (`KASL_PUBLIC_URL`).
+For a notice about one day it opens that day - `/day?date=2026-09-22` - rather
+than this week.
 
 Then it says how far it got. Two answers, because they are two facts:
 
@@ -85,7 +93,7 @@ future cannot silence notices not yet written. A negative `through` is `400`.
 - the notice that it was itself issued - "laptop can now report as you" is
   news to the desktop;
 - a notice that is over: once the alert it announced has resolved - the close
-  finally arrived - it is not toasted;
+  finally arrived - or the note it announced was withdrawn, it is not toasted;
 - its own silence. `no_agent_data` means nothing arrived from any of the
   person's machines, so a machine able to ask has, by asking, ended it. The
   notice is in the web inbox, where somebody away from every machine can read

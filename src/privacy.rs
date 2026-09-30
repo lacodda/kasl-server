@@ -252,13 +252,22 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
         detail: "whether your agent currently reports you as working, on a break, or not in a day - the latest one only, replaced each time it arrives, never kept as a history",
     });
 
+    // Listed at every level, because the level governs what the agent sends
+    // and a note is not that: it is a manager's words, kept whatever the
+    // level, and a manifest that left them out would describe a quieter
+    // server than the one running (ADR 0021).
+    stored.push(Stored {
+        what: "notes on your days",
+        detail: "what a manager wrote on one of your days, who wrote it and when - readable by you and by whoever can see your days; a note that is withdrawn loses its words",
+    });
+
     // What the server told the person is itself something kept about them,
     // and a manifest that left it out would describe a quieter server than
     // the one running (ADR 0020). Worded with who reads it, because that is
     // the question it raises.
     stored.push(Stored {
         what: "notifications",
-        detail: "what this server has told you - an alert about you, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
+        detail: "what this server has told you - an alert about you, a note on one of your days, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
     });
 
     stored

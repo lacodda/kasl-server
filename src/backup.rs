@@ -42,7 +42,7 @@ use std::io::{BufRead, Write};
 /// from here, so a backup of an installation's production calendar restored as
 /// an installation with no calendar at all - a full header, a plausible row
 /// count, and the norms silently wrong on every holiday.
-pub const TABLES: [&str; 15] = [
+pub const TABLES: [&str; 16] = [
     "users",
     "departments",
     "agents",
@@ -65,8 +65,13 @@ pub const TABLES: [&str; 15] = [
     // by label only - their addresses live in the environment, not here, so a
     // backup file carries no credential to post as anybody (ADR 0019).
     "webhook_deliveries",
+    // What managers wrote on people's days. The only copy of the words
+    // (ADR 0021), so a backup without it would restore every notice about a
+    // note as one that was withdrawn.
+    "day_notes",
     // What each person was told, and - on `users` and `agents` - how far they
-    // have read. After `alerts` and `agents`, which it points at (ADR 0020).
+    // have read. After `alerts`, `agents` and `day_notes`, which it points at
+    // (ADR 0020).
     "notifications",
 ];
 
@@ -423,6 +428,8 @@ mod tests {
             ("notifications", "users"),
             ("notifications", "alerts"),
             ("notifications", "agents"),
+            ("notifications", "day_notes"),
+            ("day_notes", "users"),
             ("agents", "users"),
             ("sessions", "users"),
             ("workdays", "users"),
