@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.26.0] - 2026-10-06
+
+### Dependencies
+- Take the week's updates, hold typescript at 6
+
+### Features
+- Report a finished day, and let a manager approve it
+- Report a day, and answer reports from the week and the dashboard
+- Approve days, with some waiting and one sent back
+
+### Testing
+- Drop each test database before its runtime goes away
+- Hold the queue to the newest report of a day that still stands
+
 ## [0.25.0] - 2026-09-30
 
 ### Features
