@@ -459,6 +459,33 @@ async fn the_showcased_employee_finds_a_note_on_a_day_to_come() {
 }
 
 #[tokio::test]
+async fn the_demo_shows_days_waiting_for_approval_and_one_sent_back() {
+    // Approval is opt-in, and a demo that left it off would show none of it.
+    // The manager a visitor is offered has a queue; the employee has days
+    // approved and one returned, with the notices both leave (ADR 0022).
+    let Some((server, seeded)) = demo_server().await else { return };
+    assert!(seeded.reports > 0, "{seeded:?}");
+
+    let manager = signed_in(&server, &showcased(UserRole::Manager)).await;
+    let (status, queue) = server.get_with_cookie("/api/v1/team/reports", Some(&manager)).await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    assert_eq!(queue["day_approval"], true);
+    assert!(
+        queue["waiting"].as_i64().unwrap() > 0,
+        "something waits on whichever weekday the stand was born: {queue}"
+    );
+
+    let employee = signed_in(&server, &showcased(UserRole::Employee)).await;
+    let (_, inbox) = server.get_with_cookie("/api/v1/me/notifications", Some(&employee)).await;
+    let kinds: Vec<&str> = inbox["notifications"].as_array().unwrap().iter().filter_map(|n| n["kind"].as_str()).collect();
+    assert!(kinds.contains(&"report.approved"), "{kinds:?}");
+    assert!(kinds.contains(&"report.returned"), "{kinds:?}");
+
+    let returned: i64 = server.scalar("SELECT count(*) FROM reports WHERE review = 'returned'").await;
+    assert_eq!(returned, 1);
+}
+
+#[tokio::test]
 async fn refreshing_the_demo_does_not_heal_the_agent_that_stopped() {
     let Some((server, _)) = demo_server().await else { return };
     let cookie = signed_in(&server, &showcased(UserRole::Admin)).await;

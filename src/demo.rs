@@ -39,6 +39,7 @@ use crate::{
     import::{self, AgentDay, AgentPause, AgentTask},
     model::UserRole,
     notes,
+    reports::{self, Reviewer},
     session::hash_password,
 };
 
@@ -383,6 +384,9 @@ pub struct Seeded {
     pub calendar_days: usize,
     /// Notes the managers wrote on their people's days.
     pub notes: usize,
+    /// Days reported, of which some approved, one returned and the rest
+    /// waiting (ADR 0022).
+    pub reports: usize,
 }
 
 /// Who works less than a full day, and how much less.
@@ -447,6 +451,30 @@ struct DemoNote {
     text: &'static str,
 }
 
+/// Who reports their days on the demo: the department of the manager a visitor
+/// is offered to sign in as, so that manager has days waiting. Not all of it -
+/// Lukas reports nothing, because a team where everybody does would never show
+/// a day nobody reported.
+const REPORTERS: [&str; 3] = ["tomas.verhoeven", "aiko.tanaka", "sofia.reyes"];
+
+/// Who answers them.
+const REVIEWER: &str = "priya.raman";
+
+/// How far back the reported days go.
+const REPORTED_DAYS: i64 = 14;
+
+/// How recent a reported day has to be to still wait for an answer. Older
+/// ones were answered. Counted back from the seed rather than by weekday, so
+/// the queue holds the last few working days whichever day the stand was
+/// born on - a Monday's included.
+const WAITING_DAYS: i64 = 4;
+
+/// Why the newest answered day of the employee a visitor is offered came back,
+/// so the bell of that account carries the notice and the day carries the
+/// words.
+const RETURNED_REASON: &str =
+    "The day ends later than you usually leave - was kasl left running after you went home? Check the end in kasl and report it again.";
+
 /// The version whose generator made a demo, recorded when it seeds.
 ///
 /// Compared on startup: a demo made by any other version is generated again
@@ -475,7 +503,9 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     // next start sees a demo and starts, rather than seeing accounts it did
     // not make and refusing.
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE settings SET demo = true, demo_seeded_by = $1 WHERE singleton")
+    // Days are approved on the demo: the queue, the answers and the notices
+    // they leave are what a visitor has to be able to see (ADR 0022).
+    sqlx::query("UPDATE settings SET demo = true, demo_seeded_by = $1, day_approval = true WHERE singleton")
         .bind(GENERATOR)
         .execute(&mut *tx)
         .await?;
@@ -626,6 +656,17 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         .await?;
     }
 
+    // After the days, which a report has to find: through `reports::submit`
+    // and the answers a manager gives, so the demo carries the rows - and the
+    // notices - a real installation would.
+    let reviewer = Reviewer {
+        id: member(REVIEWER),
+        is_admin: false,
+    };
+    for prefix in REPORTERS {
+        seeded.reports += seed_reports(pool, member(prefix), reviewer, today, prefix == REPORTERS[0]).await?;
+    }
+
     audit::Entry::new(audit::action::DEMO_SEEDED)
         .with(serde_json::json!({
             "people": seeded.people,
@@ -633,11 +674,49 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
             "days": seeded.days,
             "calendar_days": seeded.calendar_days,
             "notes": seeded.notes,
+            "reports": seeded.reports,
         }))
         .record(pool)
         .await;
 
     Ok(seeded)
+}
+
+/// Reports one person's finished days of the last two weeks, and answers the
+/// older ones: approved, and - where `returns_one` - the newest of those sent
+/// back instead. Returns how many days were reported.
+async fn seed_reports(pool: &PgPool, user_id: Uuid, reviewer: Reviewer, today: chrono::NaiveDate, returns_one: bool) -> Result<usize> {
+    let dates: Vec<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT date FROM workdays WHERE user_id = $1 AND date >= $2 AND ended_at IS NOT NULL ORDER BY date")
+            .bind(user_id)
+            .bind(today - Duration::days(REPORTED_DAYS))
+            .fetch_all(pool)
+            .await?;
+
+    let mut tx = pool.begin().await?;
+    let mut answered = Vec::new();
+    for date in &dates {
+        let submitted = reports::submit(&mut tx, user_id, *date)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to report {date}: {error}"))?;
+        if (today - *date).num_days() > WAITING_DAYS {
+            answered.push(submitted.report.id);
+        }
+    }
+
+    let returned = if returns_one { answered.pop() } else { None };
+    if !answered.is_empty() {
+        reports::approve_in(&mut tx, reviewer, &answered)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to approve the demo's reports: {error}"))?;
+    }
+    if let Some(id) = returned {
+        reports::return_in(&mut tx, reviewer, id, RETURNED_REASON)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to return a demo report: {error}"))?;
+    }
+    tx.commit().await?;
+    Ok(dates.len())
 }
 
 /// A date of the sort the kind needs, near the one asked for.

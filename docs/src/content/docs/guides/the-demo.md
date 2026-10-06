@@ -47,6 +47,11 @@ two: thanks for a review last week, and a day off approved for Friday of next
 week - a day nothing has been recorded for yet, which is where such a note
 belongs. The notice opens that week.
 
+**Days are approved on the demo.** Three of the manager's people report their
+days; the last few working days wait in the band on her dashboard, the older
+ones are approved, and one of the employee's days came back with a reason - so
+both notices are behind the employee's bell, and the day shows what to do.
+
 **The team keeps reaching today.** The history is generated from the day it
 is seeded, and nothing moves it afterwards — so a stand left running for a
 fortnight would show a team that stopped working a fortnight ago, every row
