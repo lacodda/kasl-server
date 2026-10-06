@@ -485,12 +485,31 @@ impl TestServer {
 
 impl Drop for TestServer {
     fn drop(&mut self) {
-        // The database outlives the test only if the process dies mid-run; a
-        // blocking drop here would need a runtime, so the cleanup is spawned.
-        if let Some(db) = self.db.take()
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            handle.spawn(db.drop());
+        // Dropped here and now, on a thread with a runtime of its own. This
+        // used to spawn the cleanup onto the test's runtime - which is shutting
+        // down at exactly this moment, and cancels the task with the database
+        // still on the server. A day of runs left 1398 of them behind, and the
+        // shared memory they held failed the next suite with "could not resize
+        // shared memory segment"; the sweep only reaches databases a day old.
+        //
+        // The pool is not closed first: its connections belong to the test's
+        // runtime, which this thread cannot drive. `WITH (FORCE)` ends them
+        // from the server's side instead, and the pool is dropped with them.
+        if let Some(db) = self.db.take() {
+            let TestDb { admin_url, name, pool } = db;
+            let dropped = std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
+                runtime.block_on(async {
+                    let mut admin = PgConnection::connect(&admin_url).await.ok()?;
+                    let _ = admin.execute(AssertSqlSafe(format!(r#"DROP DATABASE IF EXISTS "{name}" WITH (FORCE)"#))).await;
+                    admin.close().await.ok()
+                })
+            })
+            .join();
+            drop(pool);
+            if dropped.is_err() {
+                eprintln!("a test database could not be dropped; the sweep will take it in a day");
+            }
         }
     }
 }
