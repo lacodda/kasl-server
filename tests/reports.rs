@@ -509,6 +509,56 @@ async fn a_returned_day_says_why_and_is_reported_again() {
 }
 
 #[tokio::test]
+async fn a_report_whose_day_moved_waits_for_its_person_not_for_a_manager() {
+    // Nobody answered it, and the day moved since: the manager has nothing to
+    // approve - the figures in the report are not the day's any more.
+    let Some(server) = TestServer::start().await else { return };
+    let team = team(&server).await;
+    turn_approval(&server, team.admin.as_deref(), true).await;
+
+    upload(&server, INSIDE, day("2026-09-28")).await;
+    report(&server, team.employee.as_deref(), "2026-09-28").await;
+    assert_eq!(queue(&server, team.manager.as_deref()).await["waiting"], 1);
+
+    upload(&server, INSIDE, day_until("2026-09-28", "19:00:00")).await;
+    let waiting = queue(&server, team.manager.as_deref()).await;
+    assert_eq!(waiting["waiting"], 0, "{waiting}");
+    assert_eq!(waiting["reports"], json!([]));
+
+    server.close().await;
+}
+
+#[tokio::test]
+async fn a_day_is_waiting_by_its_newest_report_and_by_no_older_one() {
+    // A day reported, corrected and reported again, then corrected back to
+    // what the first report said - and the second report returned. The first
+    // report is unanswered and matches the day again, but it is history: the
+    // day's newest report was sent back, and the next word is the person's.
+    let Some(server) = TestServer::start().await else { return };
+    let team = team(&server).await;
+    turn_approval(&server, team.admin.as_deref(), true).await;
+
+    upload(&server, INSIDE, day("2026-09-28")).await;
+    let (_, first) = report(&server, team.employee.as_deref(), "2026-09-28").await;
+    upload(&server, INSIDE, day_until("2026-09-28", "19:00:00")).await;
+    let (status, second) = report(&server, team.employee.as_deref(), "2026-09-28").await;
+    assert_eq!(status, StatusCode::CREATED, "{second}");
+    upload(&server, INSIDE, day("2026-09-28")).await;
+    let (status, body) = send_back(&server, team.manager.as_deref(), &second["id"], "Which end is right?").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let waiting = queue(&server, team.manager.as_deref()).await;
+    assert_eq!(waiting["reports"], json!([]), "the older report does not surface: {waiting}");
+    assert_eq!(own_report(&server, team.employee.as_deref(), "2026-09-28").await["id"], second["id"]);
+
+    // Nor can it be approved past its successor.
+    let (_, outcome) = approve(&server, team.manager.as_deref(), &[&first["id"]]).await;
+    assert!(outcome["refused"][0]["error"].as_str().unwrap().contains("reported again"), "{outcome}");
+
+    server.close().await;
+}
+
+#[tokio::test]
 async fn an_approved_day_can_still_be_sent_back() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
