@@ -44,9 +44,9 @@ anyhow = "1.0.104"
 argon2 = "0.6.0"
 axum = "0.8.9"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
-clap = { version = "4.6.6", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 # Session tokens come from the OS entropy source, not from a counter.
-rand = "0.10.2"
+rand = "0.10.3"
 # Webhook deliveries. Without its default TLS, which brings aws-lc-rs and a C
 # toolchain to every build: the client is handed a rustls configuration on
 # `ring` and the Mozilla roots - the stack sqlx already links for the database.
@@ -58,7 +58,7 @@ rusqlite = { version = "0.39.0", features = ["bundled", "chrono"] }
 # Hours and shares of a day are exact decimals, not floats: a norm that
 # arrives at 7.999999 hours turns into an argument about a cent at the end
 # of the month (ADR 0017).
-rust_decimal = { version = "1.39.0", features = ["serde-float"] }
+rust_decimal = { version = "1.43.0", features = ["serde-float"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -80,14 +80,14 @@ sqlx = { version = "0.9", default-features = false, features = [
     "uuid",
     "rust_decimal",
 ] }
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.53.2", features = ["full"] }
 # The built web UI is compiled into the binary, so a self-hosted install is one
 # file and the UI can never be from a different build than the API (ADR 0012).
-rust-embed = { version = "8.7.2", features = ["mime-guess"] }
-tower-http = { version = "0.7.0", features = ["trace"] }
+rust-embed = { version = "8.12.0", features = ["mime-guess"] }
+tower-http = { version = "0.7.1", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-uuid = { version = "1.24.1", features = ["v4", "serde"] }
+uuid = { version = "1.27.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 
 [dev-dependencies]
@@ -96,7 +96,7 @@ tower = { version = "0.5.3", features = ["util"] }
 # Integration tests are their own crates: the binary's dependencies do not
 # reach them, so the schema tests declare what they touch directly.
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-uuid = { version = "1.24.1", features = ["v4"] }
+uuid = { version = "1.27.0", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 
