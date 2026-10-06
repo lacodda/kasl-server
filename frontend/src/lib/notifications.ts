@@ -88,6 +88,12 @@ export function screenFor(notice: Notification): Screen | null {
       // A withdrawn note is no longer on its day: the link would open a day
       // with nothing on it.
       return notice.withdrawn_at ? null : day(notice.note?.date ?? null)
+    case 'report.approved':
+      // The oldest day the approval covered: its week holds it, and usually
+      // the rest.
+      return day(notice.approved?.days[0]?.date ?? null)
+    case 'report.returned':
+      return day(notice.returned?.date ?? null)
     case 'privacy.changed':
       return { to: '/privacy', screen: 'privacy' }
     default:

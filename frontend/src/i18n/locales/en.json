@@ -247,7 +247,7 @@
   "notifications": {
     "title": "Notifications",
     "subtitle": "What this server has told you. kasl shows the same notices on your machines; reading them here stops the toasts.",
-    "none": "Nothing yet. When the server tells your manager something about your days, when a manager writes a note on one of your days, when a machine starts or stops reporting as you, or when what is stored about you changes, you are told here and on your machine.",
+    "none": "Nothing yet. When the server tells your manager something about your days, when a manager writes a note on one of your days or answers a day you reported, when a machine starts or stops reporting as you, or when what is stored about you changes, you are told here and on your machine.",
     "unread": "New",
     "over": "Over since {{at}}",
     "withdrawn": "Withdrawn {{at}}",
@@ -275,5 +275,60 @@
     "withdrawYes": "Withdraw",
     "withdrawNo": "Keep",
     "withdrawFailed": "The note was not withdrawn: {{reason}}"
+  },
+  "reports": {
+    "title": "Report",
+    "status": {
+      "waiting": "Waiting for approval",
+      "reported": "Reported",
+      "approved": "Approved",
+      "returned": "Returned",
+      "changed": "Changed since reported"
+    },
+    "submittedAt": "Reported {{at}} · {{hours}}",
+    "submittedAtKind": "Reported {{at}} · {{kind}}",
+    "approvedBy": "Approved by {{name}} · {{at}}",
+    "returnedBy": "Returned by {{name}} · {{at}}",
+    "formerReviewer": "a former colleague",
+    "moved": "Reported at {{reported}}; the day now comes to {{now}}.",
+    "movedOpen": "Reported at {{reported}}; kasl has opened the day again.",
+    "changedHint": "kasl sent this day again with other figures, so the report no longer stands for it. Report it again once it is right.",
+    "returnedHint": "Correct the day in kasl if it is wrong, then report it again - or report it as it is, if it is right.",
+    "ownHint": "Reporting a day tells your manager it is finished, and asks them to approve its hours.",
+    "notReported": "Not reported yet.",
+    "openDay": "The day is still open. It can be reported once kasl has finished it.",
+    "report": "Report this day",
+    "again": "Report it again",
+    "reporting": "Reporting…",
+    "failed": "The day was not reported: {{reason}}",
+    "approve": "Approve",
+    "approving": "Approving…",
+    "sendBack": "Send back",
+    "reasonLabel": "Why is the day of {{date}} sent back?",
+    "reasonPlaceholder": "What they should look at - a missing break, an end that looks wrong",
+    "reasonHint": "They are told on their machine and in their inbox, with these words.",
+    "sendingBack": "Sending back…",
+    "cancel": "Cancel",
+    "answerFailed": "Not saved: {{reason}}",
+    "queue": {
+      "title": "Waiting for your approval",
+      "count_one": "{{count}} day",
+      "count_other": "{{count}} days",
+      "nothing": "Nothing is waiting for your approval.",
+      "approveAll": "Approve all {{count}}",
+      "more": "{{count}} more are waiting; the oldest are shown first.",
+      "refused_one": "{{count}} could not be approved: {{reasons}}",
+      "refused_other": "{{count}} could not be approved: {{reasons}}",
+      "rowLabel": "{{name}}, {{date}}: {{hours}}",
+      "look": "Open the day",
+      "approveRow": "Approve {{name}}, {{date}}"
+    },
+    "setting": {
+      "title": "Day approval",
+      "label": "Managers approve the days people report",
+      "on": "Days are approved here: a person reports a finished day, and their manager approves its hours or sends it back with a reason.",
+      "off": "Days are not approved here. A day reported from kasl is the person saying it is finished, and nothing waits for an answer.",
+      "failed": "Not saved: {{reason}}"
+    }
   }
 }

@@ -35,8 +35,8 @@ claim about the day that the server did not keep the evidence for.
 
 The bell in the header is everybody's: what the server has
 [told you](/kasl-server/reference/what-you-are-told/) - an alert about your
-days, a note on one of them, a machine added to or removed from your account, a
-change to what is stored. Its number is what is unread and still true, so a day
+days, a note on one of them, a day approved or sent back, a machine added to or
+removed from your account, a change to what is stored. Its number is what is unread and still true, so a day
 that has since closed does not keep it lit; opening the list is reading it, and
 kasl stops toasting what you read there. A notice about one day opens that day.
 
@@ -47,6 +47,17 @@ is where approved leave usually is. The drill-down into a person's week is
 where a manager writes them: open any day, and the form is under its notes.
 Whoever wrote a note, or an administrator, can withdraw it; a note cannot be
 edited, so a correction is withdraw and write again.
+
+Where the installation approves days, a finished day opens to **Report this
+day** on the person's own week, and its line then says where the
+[report](/kasl-server/reference/reports-and-approval/) stands - waiting,
+approved, returned, or changed since it was reported - with a mark beside the
+word, never colour alone. A day sent back shows the reason and offers to report
+it again. A manager answers on the drill-down (approve, or send back with a
+reason) and, for everything at once, in the band under the alerts on the
+dashboard: the days waiting, oldest first, each approved with a click and all
+of them with one. An administrator turns approval on or off on the calendar
+screen, beside the full day; everyone else reads there whether it is on.
 
 The version in the header comes from `/health` - the server's, not the
 bundle's. One product, one number.

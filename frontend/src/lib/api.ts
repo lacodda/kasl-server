@@ -92,6 +92,55 @@ export interface Day {
    * holiday, and a day the employee was away.
    */
   norm_seconds: number
+  /** The day's newest report, absent until the person reports it (ADR 0022). */
+  report: Report | null
+}
+
+/**
+ * Where a day's report stands. Derived by the server on every read from the
+ * report's figures and the day as it is now - never stored, so `changed` is
+ * nobody's verdict: the day simply no longer comes to what was reported.
+ */
+export type ReportStatus = 'submitted' | 'approved' | 'returned' | 'changed'
+
+/** The person saying a day is finished, at the figures it came to. Never edited. */
+export interface Report {
+  id: string
+  user_id: string
+  date: string
+  status: ReportStatus
+  submitted_at: string
+  /** The figures as reported, which the day may since have moved away from. */
+  kind: WorkdayKind
+  started_at: string
+  ended_at: string
+  worked_seconds: number
+  reviewed_at: string | null
+  reviewer_id: string | null
+  reviewer: string | null
+  /** Why it was returned. Only on a returned report. */
+  reason: string | null
+}
+
+/** A report waiting for an answer, with whose it is. */
+export interface WaitingReport extends Report {
+  display_name: string
+  department: string | null
+}
+
+export interface ReportQueue {
+  /** Off, nothing is asked - which a screen says differently from "all answered". */
+  day_approval: boolean
+  /** Oldest day first. */
+  reports: WaitingReport[]
+  /** How many wait in all; `reports` is the first page of them. */
+  waiting: number
+}
+
+export interface ApprovalOutcome {
+  approved: Report[]
+  /** The ones that could not be approved, each with the server's reason. */
+  refused: { id: string; error: string }[]
 }
 
 /** What a privacy level withholds, in the server's own vocabulary. */
@@ -131,6 +180,8 @@ export interface DaysResponse {
    * of time is on a date with no day to carry it.
    */
   notes: Note[]
+  /** Whether this installation approves days - what makes a report a question. */
+  day_approval: boolean
 }
 
 /** A manager's word on one of a person's days. Written once, never edited. */
@@ -398,7 +449,14 @@ export interface WebhooksOverview {
 }
 
 /** What a notice is about - the server's `notification_kind`. */
-export type NotificationKind = 'alert.raised' | 'agent.issued' | 'agent.revoked' | 'privacy.changed' | 'note.added'
+export type NotificationKind =
+  | 'alert.raised'
+  | 'agent.issued'
+  | 'agent.revoked'
+  | 'privacy.changed'
+  | 'note.added'
+  | 'report.approved'
+  | 'report.returned'
 
 /**
  * One thing the server told the signed-in person (ADR 0020).
@@ -431,6 +489,9 @@ export interface Notification {
   privacy?: { from: PrivacyLevel; to: PrivacyLevel }
   /** `text` is absent once the note is withdrawn. */
   note?: { id: string; date: string; author: string; text?: string }
+  /** One notice per approval, naming every day it covered at the figures approved. */
+  approved?: { reviewer: string; days: { date: string; kind: WorkdayKind; worked_seconds: number }[] }
+  returned?: { id: string; date: string; reviewer: string; reason?: string }
 }
 
 export interface Inbox {
@@ -689,4 +750,29 @@ export const api = {
     request<Note>(`/users/${userId}/notes`, { method: 'POST', body: JSON.stringify({ date, text }) }),
   /** Takes a note back: its words go, and the notice about it says so. Its author's, or an administrator's. */
   withdrawNote: (id: string) => request<{ id: string; withdrawn_at: string }>(`/notes/${id}`, { method: 'DELETE' }),
+
+  /**
+   * Reports one of the signed-in person's own days as finished. Sending it
+   * again while the report still stands answers the same report: a second
+   * click writes nothing.
+   */
+  reportDay: (date: string) => request<Report>('/me/reports', { method: 'POST', body: JSON.stringify({ date }) }),
+
+  /** What waits for the reader's answer. Managers and administrators. */
+  teamReports: () => request<ReportQueue>('/team/reports'),
+
+  /** Approves any number of reports; each is decided on its own. */
+  approveReports: (ids: string[]) =>
+    request<ApprovalOutcome>('/reports/approve', { method: 'POST', body: JSON.stringify({ ids }) }),
+
+  /** Sends one report back. The reason is required - the person has to know what to look at. */
+  returnReport: (id: string, reason: string) =>
+    request<Report>(`/reports/${id}/return`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  /** Whether this installation approves days. Readable by anyone signed in. */
+  dayApproval: () => request<{ enabled: boolean }>('/reports/approval'),
+
+  /** Turns approval on or off. Administrators only. */
+  setDayApproval: (enabled: boolean) =>
+    request<{ enabled: boolean }>('/reports/approval', { method: 'PUT', body: JSON.stringify({ enabled }) }),
 }

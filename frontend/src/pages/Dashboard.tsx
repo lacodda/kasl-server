@@ -11,6 +11,7 @@ import { Track } from '@/components/ui/track'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { WeekView } from '@/pages/MyDay'
 import { Alerts } from '@/components/Alerts'
+import { Approvals } from '@/components/Approvals'
 import { Signals } from '@/components/Signals'
 import { Trend } from '@/components/Trend'
 
@@ -96,6 +97,11 @@ export function Dashboard() {
           decays goes on top. Like the signals, outside the week's loading
           state - neither is about the week being paged through. */}
       <Alerts />
+
+      {/* What people asked the reader to approve. Under the alerts - a fire
+          goes first - and above the signals, which will still be true next
+          week; somebody is waiting on this one. */}
+      <Approvals />
 
       {/* Above the table and outside the week's loading state: the signals are
           about whole weeks and do not change when the manager pages back

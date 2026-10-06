@@ -19,6 +19,7 @@ function day(overrides: Partial<Day> = {}): Day {
     pauses: [],
     tasks: [],
     norm_seconds: 8 * 3600,
+    report: null,
     ...overrides,
   }
 }

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
-import { api, type CalendarDay, type CalendarDayKind, type CalendarYear } from '@/lib/api'
+import { api, ApiError, type CalendarDay, type CalendarDayKind, type CalendarYear } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { weekdayName } from '@/lib/day'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
+import { Switch } from '@/components/ui/switch'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -115,8 +116,13 @@ export function Calendar() {
 
       {answer && (
         <>
-          <Panel className="p-4 sm:p-5">
-            <FullDay hours={answer.standard_hours} mayEdit={mayEdit} onSaved={() => load(year)} />
+          <Panel className="divide-y divide-line">
+            <div className="p-4 sm:p-5">
+              <FullDay hours={answer.standard_hours} mayEdit={mayEdit} onSaved={() => load(year)} />
+            </div>
+            <div className="p-4 sm:p-5">
+              <DayApproval mayEdit={mayEdit} />
+            </div>
           </Panel>
 
           <Panel className="divide-y divide-line">
@@ -211,6 +217,64 @@ function FullDay({ hours, mayEdit, onSaved }: { hours: number; mayEdit: boolean;
           {saving ? t('calendar.saving') : t('calendar.save')}
         </Button>
       )}
+    </div>
+  )
+}
+
+/**
+ * Whether managers approve the days people report (ADR 0022).
+ *
+ * Beside the full day, because the two are the installation's rules about
+ * hours: what a day is, and whether somebody signs it off. A switch rather
+ * than a checkbox behind the calendar's Save button - flipping it is the
+ * action, and it takes effect the moment it moves.
+ *
+ * Read by everyone, so a person can see whether a report of theirs waits for
+ * anybody; flipped by an administrator alone.
+ */
+function DayApproval({ mayEdit }: { mayEdit: boolean }) {
+  const { t } = useTranslation()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .dayApproval()
+      .then((answer) => {
+        if (!cancelled) setEnabled(answer.enabled)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Nothing until the server has said: a switch drawn off before the answer
+  // arrives would tell an administrator the opposite of the truth for a moment.
+  if (enabled === null) return null
+
+  const flip = (next: boolean) => {
+    setSaving(true)
+    setFailed(null)
+    api
+      .setDayApproval(next)
+      .then((answer) => setEnabled(answer.enabled))
+      .catch((error: unknown) => setFailed(error instanceof ApiError ? error.message : t('common.error')))
+      .finally(() => setSaving(false))
+  }
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-xs font-medium text-dim">{t('reports.setting.title')}</h2>
+      {mayEdit && (
+        <Switch checked={enabled} disabled={saving} onCheckedChange={flip}>
+          {t('reports.setting.label')}
+        </Switch>
+      )}
+      <p className="text-xs text-faint">{t(enabled ? 'reports.setting.on' : 'reports.setting.off')}</p>
+      {failed && <p className="text-xs text-bad">{t('reports.setting.failed', { reason: failed })}</p>}
     </div>
   )
 }

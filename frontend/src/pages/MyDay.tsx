@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Coffee, Lock, MessageSquareText, Plane } from 'lucide-react'
+import { CheckCheck, Coffee, Hourglass, Lock, MessageSquareText, Plane, RefreshCcw, Send, Undo2 } from 'lucide-react'
 import { PeriodPicker } from '@/components/PeriodPicker'
-import { api, ApiError, type Day, type DaysResponse, type Note, type NotStored } from '@/lib/api'
+import { api, ApiError, type Day, type DaysResponse, type Note, type NotStored, type Report } from '@/lib/api'
 import { bands, clock, duration, isoDate, moment, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
 import { askedDay, atMidday, mayWithdraw, notesByDate } from '@/lib/notes'
+import { MAX_REASON_CHARS, movedHours, ownAction, review, statusLook, type StatusLook } from '@/lib/reports'
 import { useSession } from '@/lib/session'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
@@ -37,6 +38,9 @@ export function MyDay() {
  * A manager's notes sit on the line of the day they are written on, whether or
  * not that day was ever worked (ADR 0021). `?date=` opens the week of that day
  * with it expanded, which is where a notice about one day points.
+ *
+ * A day's report stands on its line too (ADR 0022): the person reports a
+ * finished day from here, and on the drill-down its manager answers it.
  */
 export function WeekView({
   title,
@@ -147,6 +151,7 @@ export function WeekView({
                 today={date === today}
                 pausesWithheld={answer.not_stored.includes('pauses')}
                 writable={writeFor !== undefined}
+                approval={answer.day_approval}
                 selected={date === selected}
                 onSelect={() => setSelected(date === selected ? null : date)}
               />
@@ -160,6 +165,7 @@ export function WeekView({
               notes={notes.get(selected) ?? []}
               notStored={answer.not_stored}
               writeFor={writeFor}
+              approval={answer.day_approval}
               onChanged={reload}
             />
           )}
@@ -234,9 +240,9 @@ function WeekTotal({ answer }: { answer: DaysResponse }) {
  * One day in the week list: its hours, and the timeline of how it went.
  *
  * A row opens when there is something to open - a worked day's pauses and
- * tasks, a note on it, or the form for writing one. A day with none of those
- * stays a plain line: a button that expands into nothing is a promise the
- * screen does not keep.
+ * tasks, a note on it, the form for writing one, or its report. A day with
+ * none of those stays a plain line: a button that expands into nothing is a
+ * promise the screen does not keep.
  */
 function DayRow({
   date,
@@ -245,6 +251,7 @@ function DayRow({
   today,
   pausesWithheld,
   writable,
+  approval,
   selected,
   onSelect,
 }: {
@@ -254,13 +261,16 @@ function DayRow({
   today: boolean
   pausesWithheld: boolean
   writable: boolean
+  approval: boolean
   selected: boolean
   onSelect: () => void
 }) {
   const { t } = useTranslation()
   const weekday = weekdayName(date)
-  const openable = day?.kind === 'work' || notes.length > 0 || writable
+  const reportable = day !== undefined && (day.report !== null || (!writable && ownAction(day, approval) !== null))
+  const openable = day?.kind === 'work' || notes.length > 0 || writable || reportable
   const noted = notes.length > 0 && <NoteLine notes={notes} />
+  const reported = day?.report && <ReportMark look={statusLook(day.report.status, approval)} />
 
   let row: { className: string; content: ReactNode }
 
@@ -292,9 +302,12 @@ function DayRow({
         <>
           <DayLabel date={date} weekday={weekday} today={today} />
           <div className="min-w-0 flex-1">
-            <span className="inline-flex items-center gap-1.5 text-sm text-dim">
-              <Plane className="size-3.5 shrink-0" />
-              {t(`myDay.dayKind.${day.kind}`)}
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 text-sm text-dim">
+                <Plane className="size-3.5 shrink-0" />
+                {t(`myDay.dayKind.${day.kind}`)}
+              </span>
+              {reported}
             </span>
             {noted}
           </div>
@@ -338,6 +351,7 @@ function DayRow({
                   {day.paused_count} · {duration(day.paused_seconds)}
                 </span>
               )}
+              {reported}
             </div>
             {noted}
           </div>
@@ -383,6 +397,38 @@ function NoteLine({ notes }: { notes: Note[] }) {
         <span className="shrink-0 font-mono text-[11px] text-faint tabular">{t('notes.more', { count: notes.length - 1 })}</span>
       )}
     </p>
+  )
+}
+
+/** The colour roles a status names, as literal classes Tailwind can find. */
+const TONE_CLASS = {
+  good: 'text-good',
+  warn: 'text-warn',
+  dim: 'text-dim',
+} as const
+
+/** The mark each status wears beside its words. */
+const STATUS_ICON = {
+  approved: CheckCheck,
+  waiting: Hourglass,
+  reported: Send,
+  returned: Undo2,
+  changed: RefreshCcw,
+} as const
+
+/**
+ * Where the day's report stands, in a word and a mark, on the day's own line.
+ * The mark is not decoration: this product's gold accent sits 3.7 ΔE from
+ * `warn`, and a status told apart by hue alone is told apart by nothing.
+ */
+function ReportMark({ look }: { look: StatusLook }) {
+  const { t } = useTranslation()
+  const Icon = STATUS_ICON[look.icon]
+  return (
+    <span className={`inline-flex items-center gap-1 font-sans text-[11px] ${TONE_CLASS[look.tone]}`}>
+      <Icon className="size-3 shrink-0" aria-hidden />
+      {t(look.label)}
+    </span>
   )
 }
 
@@ -455,6 +501,7 @@ function DayDetail({
   notes,
   notStored,
   writeFor,
+  approval,
   onChanged,
 }: {
   date: string
@@ -462,13 +509,17 @@ function DayDetail({
   notes: Note[]
   notStored: NotStored[]
   writeFor: string | undefined
+  approval: boolean
   onChanged: () => void
 }) {
   const worked = day?.kind === 'work'
   const noted = notes.length > 0 || writeFor !== undefined
+  // A report the day carries, or - on the person's own page - one they may
+  // make. On the drill-down there is nothing to show until they report it.
+  const reporting = day !== undefined && (day.report !== null || (writeFor === undefined && ownAction(day, approval) !== null))
   // A link can ask for a day with nothing on it - a note since withdrawn.
   // Nothing opens rather than two panels saying "nothing".
-  if (!worked && !noted) return null
+  if (!worked && !noted && !reporting) return null
 
   const panel = noted && <NotesPanel date={date} notes={notes} writeFor={writeFor} onChanged={onChanged} />
   // A note, when there is one, comes first: it is what a person arriving from
@@ -478,9 +529,260 @@ function DayDetail({
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {/* The report above everything: a day sent back, or waiting for the
+          reader's answer, is the thing to do on this day - and a person
+          arriving from "your day was returned" came to read exactly that. */}
+      {reporting && day && <ReportPanel day={day} subject={writeFor} approval={approval} onChanged={onChanged} />}
       {first && panel}
       {worked && <DayRecord day={day} notStored={notStored} />}
       {!first && panel}
+    </div>
+  )
+}
+
+/**
+ * The day's report (ADR 0022): where it stands, and what the reader may do.
+ *
+ * On the person's own page that is reporting the day - once it is finished,
+ * where days are approved - or reporting it again once the report no longer
+ * stands for it. On the drill-down it is the manager's answer: approve the
+ * hours, or send the day back with a reason the person will read.
+ */
+function ReportPanel({
+  day,
+  subject,
+  approval,
+  onChanged,
+}: {
+  day: Day
+  /** Whose day it is, on the drill-down; nothing on the person's own page. */
+  subject: string | undefined
+  approval: boolean
+  onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const { user } = useSession()
+  const report = day.report
+  const own = subject === undefined
+  const action = own ? ownAction(day, approval) : null
+  const answers = !own && report && user ? review(report, approval, user.id) : null
+
+  return (
+    <Panel className="space-y-3 p-4 sm:p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="text-xs font-medium tracking-wide text-dim uppercase">{t('reports.title')}</h2>
+        {report && <ReportMark look={statusLook(report.status, approval)} />}
+      </div>
+
+      {report ? (
+        <ReportFacts day={day} report={report} />
+      ) : (
+        <p className="text-sm text-faint">{t(own ? 'reports.ownHint' : 'reports.notReported')}</p>
+      )}
+
+      {own && report?.status === 'returned' && <p className="text-xs text-faint">{t('reports.returnedHint')}</p>}
+      {own && report?.status === 'changed' && <p className="text-xs text-faint">{t('reports.changedHint')}</p>}
+
+      {action && <ReportButton date={day.date} again={action === 'again'} onReported={onChanged} />}
+      {answers && report && (answers.approve || answers.sendBack) && (
+        <ReviewControls report={report} approve={answers.approve} sendBack={answers.sendBack} onAnswered={onChanged} />
+      )}
+    </Panel>
+  )
+}
+
+/** What was reported and when, who answered, and why it came back. */
+function ReportFacts({ day, report }: { day: Day; report: Report }) {
+  const { t } = useTranslation()
+  const moved = movedHours(day, report)
+  const reviewer = report.reviewer ?? t('reports.formerReviewer')
+
+  return (
+    <div className="space-y-2">
+      <p className="font-mono text-xs text-faint tabular">
+        {report.kind === 'work'
+          ? t('reports.submittedAt', { at: moment(report.submitted_at), hours: duration(report.worked_seconds) })
+          : t('reports.submittedAtKind', { at: moment(report.submitted_at), kind: t(`myDay.dayKind.${report.kind}`) })}
+      </p>
+      {moved && (
+        <p className="text-sm text-dim">
+          {moved.now === null
+            ? t('reports.movedOpen', { reported: duration(moved.reported) })
+            : t('reports.moved', { reported: duration(moved.reported), now: duration(moved.now) })}
+        </p>
+      )}
+      {report.reviewed_at && (report.status === 'approved' || report.status === 'returned') && (
+        <p className="text-xs text-faint">
+          {t(report.status === 'approved' ? 'reports.approvedBy' : 'reports.returnedBy', {
+            name: reviewer,
+            at: moment(report.reviewed_at),
+          })}
+        </p>
+      )}
+      {report.status === 'returned' && report.reason && (
+        // The manager's own line breaks, and a long word wrapped rather than
+        // pushing the panel wider than a phone - the way a note is drawn.
+        <p className="border-l-2 border-warn pl-3 text-sm break-words whitespace-pre-wrap">{report.reason}</p>
+      )}
+    </div>
+  )
+}
+
+function ReportButton({ date, again, onReported }: { date: string; again: boolean; onReported: () => void }) {
+  const { t } = useTranslation()
+  const [pending, setPending] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+
+  const send = () => {
+    setPending(true)
+    setFailed(null)
+    api
+      .reportDay(date)
+      .then(onReported)
+      .catch((error: unknown) => {
+        // The server's reason as it gave it: "the day is still open; finish
+        // it in kasl" says what to do, and "something went wrong" does not.
+        setFailed(error instanceof ApiError ? error.message : t('common.error'))
+        setPending(false)
+      })
+  }
+
+  return (
+    <div className="space-y-2">
+      <Button variant="primary" size="sm" disabled={pending} onClick={send}>
+        {t(pending ? 'reports.reporting' : again ? 'reports.again' : 'reports.report')}
+      </Button>
+      {failed && <p className="text-xs text-bad">{t('reports.failed', { reason: failed })}</p>}
+    </div>
+  )
+}
+
+/**
+ * A manager's answer to a report: approve it, or send it back with a reason.
+ *
+ * Sending back takes a second step, because it needs words - the person has
+ * to know what to look at - and the question belongs next to the day it is
+ * about, not over the page.
+ */
+function ReviewControls({
+  report,
+  approve,
+  sendBack,
+  onAnswered,
+}: {
+  report: Report
+  approve: boolean
+  sendBack: boolean
+  onAnswered: () => void
+}) {
+  const { t } = useTranslation()
+  const [writing, setWriting] = useState(false)
+  const [reason, setReason] = useState('')
+  const [pending, setPending] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+  const length = [...reason.trim()].length
+  const ready = length > 0 && length <= MAX_REASON_CHARS && !pending
+
+  const fail = (error: unknown) => {
+    setFailed(error instanceof ApiError ? error.message : t('common.error'))
+    setPending(false)
+  }
+
+  const approveIt = () => {
+    setPending(true)
+    setFailed(null)
+    api
+      .approveReports([report.id])
+      .then((outcome) => {
+        // Refused for a reason the server names - the day changed a moment
+        // ago, a newer report arrived. Said rather than swallowed, and the
+        // week is asked for again either way.
+        const refused = outcome.refused[0]
+        if (refused) setFailed(refused.error)
+        setPending(false)
+        onAnswered()
+      })
+      .catch(fail)
+  }
+
+  const sendItBack = () => {
+    if (!ready) return
+    setPending(true)
+    setFailed(null)
+    api.returnReport(report.id, reason).then(onAnswered).catch(fail)
+  }
+
+  return (
+    <div className="space-y-2">
+      {!writing && (
+        <div className="flex flex-wrap items-center gap-2">
+          {approve && (
+            <Button variant="primary" size="sm" disabled={pending} onClick={approveIt}>
+              {t(pending ? 'reports.approving' : 'reports.approve')}
+            </Button>
+          )}
+          {sendBack && (
+            <Button variant="ghost" size="sm" disabled={pending} onClick={() => setWriting(true)}>
+              <Undo2 className="size-3.5" aria-hidden />
+              {t('reports.sendBack')}
+            </Button>
+          )}
+        </div>
+      )}
+      {writing && (
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            sendItBack()
+          }}
+        >
+          <label htmlFor={`reason-${report.id}`} className="text-xs text-dim">
+            {t('reports.reasonLabel', { date: report.date })}
+          </label>
+          <Textarea
+            id={`reason-${report.id}`}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            onKeyDown={(event) => {
+              // The shortcut every message box has; Enter alone is a new line.
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault()
+                sendItBack()
+              }
+            }}
+            placeholder={t('reports.reasonPlaceholder')}
+            autoResize
+            maxRows={6}
+            rows={2}
+            aria-invalid={length > MAX_REASON_CHARS || undefined}
+            // 16px on a phone, where iOS zooms into any smaller field.
+            className="text-lg sm:text-sm"
+            autoFocus
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="min-w-0 flex-1 text-xs text-faint">{t('reports.reasonHint')}</p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => {
+                  setWriting(false)
+                  setReason('')
+                }}
+              >
+                {t('reports.cancel')}
+              </Button>
+              <Button type="submit" size="sm" variant="primary" disabled={!ready}>
+                {t(pending ? 'reports.sendingBack' : 'reports.sendBack')}
+              </Button>
+            </div>
+          </div>
+        </form>
+      )}
+      {failed && <p className="text-xs text-bad">{t('reports.answerFailed', { reason: failed })}</p>}
     </div>
   )
 }

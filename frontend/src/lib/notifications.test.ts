@@ -65,6 +65,19 @@ describe('segments', () => {
 })
 
 describe('screenFor', () => {
+  it('opens the day a report notice is about', () => {
+    const approved = {
+      reviewer: 'Priya Raman',
+      days: [
+        { date: '2026-09-28', kind: 'work' as const, worked_seconds: 28_800 },
+        { date: '2026-09-29', kind: 'work' as const, worked_seconds: 27_000 },
+      ],
+    }
+    expect(screenFor(notice({ kind: 'report.approved', approved }))?.to).toBe('/day?date=2026-09-28')
+    const returned = { id: 'r', date: '2026-10-02', reviewer: 'Priya Raman', reason: 'Lunch is missing.' }
+    expect(screenFor(notice({ kind: 'report.returned', returned }))?.to).toBe('/day?date=2026-10-02')
+  })
+
   it('points an alert at the day and a privacy change at the manifest', () => {
     expect(screenFor(notice({ kind: 'alert.raised' }))).toEqual({ to: '/day', screen: 'day' })
     expect(screenFor(notice({ kind: 'privacy.changed' }))).toEqual({ to: '/privacy', screen: 'privacy' })
