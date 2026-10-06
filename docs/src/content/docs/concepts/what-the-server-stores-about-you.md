@@ -18,6 +18,7 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
            {"what":"account","detail":"your email, display name, role, department, ..."},
            {"what":"live status","detail":"whether your agent currently reports you as working, on a break, ..."},
            {"what":"notes on your days","detail":"what a manager wrote on one of your days, who wrote it and when - ..."},
+           {"what":"reports","detail":"each day you report as finished, with the hours as they stood when you reported it, ..."},
            {"what":"notifications","detail":"what this server has told you - ... - and how far you have read; readable by you alone"}],
  "never_collected":["keystrokes or what you type","window titles","which applications you run",
                     "screenshots or camera images","web pages you visit","file names or paths","your location"],

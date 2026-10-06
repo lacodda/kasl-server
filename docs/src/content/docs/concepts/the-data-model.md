@@ -12,12 +12,12 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | `sessions` | Browser sign-ins; a token hash each, never the token |
 | `departments` | Groups of people, each naming the manager who runs it |
 | `audit_log` | Who did what, to whom, and when; append-only |
-| `settings` | One row: how much detail this installation stores |
+| `settings` | One row: the installation's own settings - how much detail it stores, what a full day is, when to alert, whether days are approved |
 | `agents` | Installed kasl instances; a token hash each, never the token |
 | `workdays` | One row per person per date: when the day started and ended, and - under a coarse privacy level - how much of it was paused |
 | `pauses` | Idle stretches and manual breaks inside a day |
 | `tasks`, `tags`, `task_tags` | What was worked on, and how it is labelled |
-| `reports` | That a report was submitted, when, and with which figures |
+| `reports` | That a day was reported as finished, when, at which figures, and what a manager answered - one row per report, never edited |
 
 Two differences from the agent's database are deliberate: instants are stored
 with a time zone (the agent stores bare wall-clock text, which does not survive

@@ -25,7 +25,7 @@ use uuid::Uuid;
 pub enum UserRole {
     /// Runs the installation: accounts, agents, server settings.
     Admin,
-    /// Sees the team (or their department) and its reports.
+    /// Sees the team (or their department), and answers its reports.
     Manager,
     /// Sees themselves.
     Employee,
@@ -135,35 +135,6 @@ pub struct Tag {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Which period a report covers. Mirrors the `report_kind` enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "report_kind", rename_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-pub enum ReportKind {
-    Daily,
-    Monthly,
-}
-
-/// The event of a report being submitted, with the figures as of that moment.
-///
-/// Not a second copy of the day: hours are recomputed from workdays and pauses
-/// whenever they are shown. What cannot be recomputed is what the employee
-/// actually submitted and when - which is what approval rests on.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Report {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub kind: ReportKind,
-    /// The day itself for a daily report, the first of the month for a monthly.
-    pub period_start: NaiveDate,
-    pub submitted_at: DateTime<Utc>,
-    pub worked_seconds: i32,
-    /// Percent, as the agent computes productivity.
-    pub productivity: Option<f32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,12 +143,10 @@ mod tests {
     /// a rename here is a breaking API change, so it should fail a test, not
     /// surface as a puzzled client.
     #[test]
-    fn roles_and_report_kinds_serialize_in_lowercase() {
+    fn roles_serialize_in_lowercase() {
         assert_eq!(serde_json::to_string(&UserRole::Admin).unwrap(), r#""admin""#);
         assert_eq!(serde_json::to_string(&UserRole::Manager).unwrap(), r#""manager""#);
         assert_eq!(serde_json::to_string(&UserRole::Employee).unwrap(), r#""employee""#);
-        assert_eq!(serde_json::to_string(&ReportKind::Daily).unwrap(), r#""daily""#);
-        assert_eq!(serde_json::to_string(&ReportKind::Monthly).unwrap(), r#""monthly""#);
     }
 
     #[test]

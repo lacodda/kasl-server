@@ -27,6 +27,7 @@ pub mod notes;
 pub mod notifications;
 pub mod privacy;
 pub mod provision;
+pub mod reports;
 pub mod session;
 pub mod signals;
 pub mod team;

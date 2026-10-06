@@ -261,13 +261,21 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
         detail: "what a manager wrote on one of your days, who wrote it and when - readable by you and by whoever can see your days; a note that is withdrawn loses its words",
     });
 
+    // Listed at every level, like the notes: a report is the person's own
+    // word that a day was finished, not something the agent measured, and the
+    // level does not govern it (ADR 0022).
+    stored.push(Stored {
+        what: "reports",
+        detail: "each day you report as finished, with the hours as they stood when you reported it, and what a manager answered - approved, or returned with the reason they gave; readable by you and by whoever can see your days",
+    });
+
     // What the server told the person is itself something kept about them,
     // and a manifest that left it out would describe a quieter server than
     // the one running (ADR 0020). Worded with who reads it, because that is
     // the question it raises.
     stored.push(Stored {
         what: "notifications",
-        detail: "what this server has told you - an alert about you, a note on one of your days, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
+        detail: "what this server has told you - an alert about you, a note on one of your days, a day approved or returned, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
     });
 
     stored

@@ -35,6 +35,7 @@ use crate::{
     alerts::AlertRule,
     app::AppState,
     auth::AuthenticatedAgent,
+    calendar::WorkdayKind,
     error::ApiError,
     login::CurrentUser,
     privacy::PrivacyLevel,
@@ -70,6 +71,14 @@ pub enum NotificationKind {
     #[serde(rename = "note.added")]
     #[sqlx(rename = "note.added")]
     NoteAdded,
+    /// A manager approved one or more of the days you reported (ADR 0022).
+    #[serde(rename = "report.approved")]
+    #[sqlx(rename = "report.approved")]
+    ReportApproved,
+    /// A manager sent one of the days you reported back, and said why.
+    #[serde(rename = "report.returned")]
+    #[sqlx(rename = "report.returned")]
+    ReportReturned,
 }
 
 /// The machine a notice is about.
@@ -105,6 +114,43 @@ pub struct NoteFact {
     pub text: Option<String>,
 }
 
+/// One reported day an approval covered, with the figure it was approved at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportedDay {
+    pub date: NaiveDate,
+    pub kind: WorkdayKind,
+    pub worked_seconds: i64,
+}
+
+/// An approval: who gave it, and which days it covered.
+///
+/// One notice for the act rather than one per day. Approving a week is one
+/// thing a manager did, and five toasts saying it teach a person to stop
+/// reading them (ADR 0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovedFact {
+    /// Who approved, as they were named when the person was told.
+    pub reviewer: String,
+    /// Oldest first, each with the figures it was approved at - stored, never
+    /// re-derived: the day may move later, and what was approved does not.
+    pub days: Vec<ReportedDay>,
+}
+
+/// A report sent back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReturnedFact {
+    /// The report, so a reader can find it.
+    pub id: Uuid,
+    pub date: NaiveDate,
+    /// Who returned it, as they were named when the person was told.
+    pub reviewer: String,
+    /// Why. **Never stored in the payload**: the report holds the only copy,
+    /// and it is read from there when the notice is (ADR 0022) - the rule the
+    /// words of a note follow (ADR 0021).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// The facts a notice was made from, stored as its `payload`.
 ///
 /// One field is set, the one its kind names. A struct of options rather than
@@ -120,6 +166,10 @@ pub struct Facts {
     pub privacy: Option<PrivacyFact>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<NoteFact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved: Option<ApprovedFact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned: Option<ReturnedFact>,
 }
 
 // Writing -----------------------------------------------------------------------
@@ -209,6 +259,44 @@ pub async fn note_added(conn: &mut PgConnection, user_id: Uuid, note: &NoteFact)
     Ok(())
 }
 
+/// Tells a person that days they reported were approved.
+///
+/// In the approval's transaction, once per person it covered.
+pub async fn reports_approved(conn: &mut PgConnection, user_id: Uuid, approved: &ApprovedFact) -> Result<(), sqlx::Error> {
+    let facts = Facts {
+        approved: Some(approved.clone()),
+        ..Facts::default()
+    };
+    sqlx::query("INSERT INTO notifications (user_id, kind, payload) VALUES ($1, 'report.approved', $2)")
+        .bind(user_id)
+        .bind(sqlx::types::Json(&facts))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Tells a person that a day they reported was sent back.
+///
+/// In the transaction that returned it. The payload names the report, the day
+/// and who returned it; the reason stays on the report (see
+/// [`ReturnedFact::reason`]).
+pub async fn report_returned(conn: &mut PgConnection, user_id: Uuid, returned: &ReturnedFact) -> Result<(), sqlx::Error> {
+    let facts = Facts {
+        returned: Some(ReturnedFact {
+            reason: None,
+            ..returned.clone()
+        }),
+        ..Facts::default()
+    };
+    sqlx::query("INSERT INTO notifications (user_id, kind, report_id, payload) VALUES ($1, 'report.returned', $2, $3)")
+        .bind(user_id)
+        .bind(returned.id)
+        .bind(sqlx::types::Json(&facts))
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 // Reading -------------------------------------------------------------------------
 
 /// One notification, as both the agent and the inbox receive it.
@@ -248,6 +336,9 @@ struct Row {
     /// The words of the note a `note.added` announces, read from the note
     /// itself. Null for every other kind, and for a note withdrawn.
     note_text: Option<String>,
+    /// Why the report a `report.returned` announces was sent back, read from
+    /// the report. Null for every other kind.
+    report_reason: Option<String>,
 }
 
 impl Row {
@@ -255,6 +346,9 @@ impl Row {
         let mut facts = self.payload.0;
         if let Some(note) = facts.note.as_mut() {
             note.text = self.note_text;
+        }
+        if let Some(returned) = facts.returned.as_mut() {
+            returned.reason = self.report_reason;
         }
         let (title, body) = words(self.id, self.kind, &facts);
         Notification {
@@ -277,6 +371,10 @@ fn where_to_look(kind: NotificationKind, facts: &Facts) -> String {
     let date = match kind {
         NotificationKind::AlertRaised => facts.alert.as_ref().and_then(|alert| alert.subject_date),
         NotificationKind::NoteAdded => facts.note.as_ref().map(|note| note.date),
+        // The oldest of the days approved: the week that opens holds it, and
+        // usually the rest.
+        NotificationKind::ReportApproved => facts.approved.as_ref().and_then(|approved| approved.days.first()).map(|day| day.date),
+        NotificationKind::ReportReturned => facts.returned.as_ref().map(|returned| returned.date),
         NotificationKind::PrivacyChanged => return "/privacy".to_string(),
         NotificationKind::AgentIssued | NotificationKind::AgentRevoked => return "/notifications".to_string(),
     };
@@ -323,6 +421,17 @@ pub fn words(id: i64, kind: NotificationKind, facts: &Facts) -> (String, String)
                 None => "The note was withdrawn.".to_string(),
             },
         ),
+        (NotificationKind::ReportApproved, Facts { approved: Some(approved), .. }) => approved_words(approved),
+        (NotificationKind::ReportReturned, Facts { returned: Some(returned), .. }) => (
+            format!("{} returned your day of {}", returned.reviewer, returned.date),
+            match &returned.reason {
+                Some(reason) => reason.clone(),
+                // Only a row restored without its report gets here: a reason
+                // is required to return a day, and a report is never deleted
+                // apart from its person.
+                None => "Open the web UI to read why.".to_string(),
+            },
+        ),
         // A row whose payload does not carry what its kind names. Nothing in
         // this module writes one, and a restore of a hand-edited backup could.
         // Said plainly rather than rendered as an empty toast, and logged so
@@ -356,6 +465,46 @@ fn alert_words(alert: &AlertPayload) -> (String, String) {
             "Your manager was told your machines went quiet".to_string(),
             format!("Nothing had arrived from any of your machines for {}.", span(alert.observed_seconds)),
         ),
+    }
+}
+
+/// How many approved days a notice lists by date before it counts the rest.
+const APPROVED_DAYS_LISTED: usize = 5;
+
+fn approved_words(approved: &ApprovedFact) -> (String, String) {
+    if let [day] = approved.days.as_slice() {
+        return (
+            format!("{} approved your day of {}", approved.reviewer, day.date),
+            format!("Approved as you reported it: {}.", reported(day)),
+        );
+    }
+    let listed: Vec<String> = approved
+        .days
+        .iter()
+        .take(APPROVED_DAYS_LISTED)
+        .map(|day| format!("{} ({})", day.date, reported(day)))
+        .collect();
+    let rest = approved.days.len().saturating_sub(APPROVED_DAYS_LISTED);
+    let list = match (listed.split_last(), rest) {
+        (Some(_), rest) if rest > 0 => format!("{} and {rest} more", listed.join(", ")),
+        (Some((last, [])), _) => last.clone(),
+        (Some((last, others)), _) => format!("{} and {last}", others.join(", ")),
+        (None, _) => String::new(),
+    };
+    (
+        format!("{} approved {} of your days", approved.reviewer, approved.days.len()),
+        format!("Approved as you reported them: {list}."),
+    )
+}
+
+/// A reported day's figure in the dashboard's units: hours worked, or what
+/// kind of day it was where the day owes no hours.
+fn reported(day: &ReportedDay) -> String {
+    match day.kind {
+        WorkdayKind::Work => format!("{} h", hours(day.worked_seconds)),
+        WorkdayKind::Vacation => "vacation".to_string(),
+        WorkdayKind::Sick => "sick leave".to_string(),
+        WorkdayKind::DayOff => "a day off".to_string(),
     }
 }
 
@@ -393,6 +542,7 @@ const PENDING_FOR_AGENT: &str = "
     JOIN users u ON u.id = a.user_id
     LEFT JOIN alerts al ON al.id = n.alert_id
     LEFT JOIN day_notes dn ON dn.id = n.note_id
+    LEFT JOIN reports rp ON rp.id = n.report_id
     WHERE n.user_id = a.user_id
       AND n.id > greatest(a.notified_through, u.notifications_read_through)
       AND n.created_at >= a.created_at
@@ -435,7 +585,8 @@ pub async fn agent_queue(State(state): State<AppState>, agent: AuthenticatedAgen
     // `AssertSqlSafe` on `PENDING_FOR_AGENT` and `WITHDRAWN_AT`, constants in
     // this module; the agent and the limit are bound.
     let mut rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, false AS read, dn.text AS note_text
+        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, false AS read, dn.text AS note_text,
+                rp.reason AS report_reason
          {PENDING_FOR_AGENT}
          ORDER BY n.id
          LIMIT $2"
@@ -552,10 +703,12 @@ pub async fn inbox(State(state): State<AppState>, user: CurrentUser) -> Result<i
 
     // `AssertSqlSafe` on `WITHDRAWN_AT`, a constant in this module.
     let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, n.id <= $2 AS read, dn.text AS note_text
+        "SELECT n.id, n.kind, n.created_at, n.payload, {WITHDRAWN_AT} AS withdrawn_at, n.id <= $2 AS read, dn.text AS note_text,
+                rp.reason AS report_reason
          FROM notifications n
          LEFT JOIN alerts al ON al.id = n.alert_id
          LEFT JOIN day_notes dn ON dn.id = n.note_id
+         LEFT JOIN reports rp ON rp.id = n.report_id
          WHERE n.user_id = $1
          ORDER BY n.id DESC
          LIMIT $3"
@@ -712,9 +865,95 @@ mod tests {
         assert_eq!(body, "The note was withdrawn.");
     }
 
+    fn approved(days: &[(&str, WorkdayKind, i64)]) -> Facts {
+        Facts {
+            approved: Some(ApprovedFact {
+                reviewer: "Priya Raman".to_string(),
+                days: days
+                    .iter()
+                    .map(|(date, kind, worked)| ReportedDay {
+                        date: date.parse().unwrap(),
+                        kind: *kind,
+                        worked_seconds: *worked,
+                    })
+                    .collect(),
+            }),
+            ..Facts::default()
+        }
+    }
+
+    #[test]
+    fn one_approved_day_names_the_figure_it_was_approved_at() {
+        let (title, body) = words(1, NotificationKind::ReportApproved, &approved(&[("2026-10-02", WorkdayKind::Work, 27_000)]));
+        assert_eq!(title, "Priya Raman approved your day of 2026-10-02");
+        assert_eq!(body, "Approved as you reported it: 7.5 h.");
+    }
+
+    #[test]
+    fn an_approval_of_several_days_is_one_notice_listing_them() {
+        let (title, body) = words(
+            1,
+            NotificationKind::ReportApproved,
+            &approved(&[
+                ("2026-09-28", WorkdayKind::Work, 28_800),
+                ("2026-09-29", WorkdayKind::Vacation, 0),
+                ("2026-09-30", WorkdayKind::Work, 27_000),
+            ]),
+        );
+        assert_eq!(title, "Priya Raman approved 3 of your days");
+        assert_eq!(
+            body,
+            "Approved as you reported them: 2026-09-28 (8 h), 2026-09-29 (vacation) and 2026-09-30 (7.5 h)."
+        );
+    }
+
+    #[test]
+    fn a_long_approval_counts_what_it_does_not_list() {
+        let days: Vec<(String, WorkdayKind, i64)> = (1..=8).map(|day| (format!("2026-09-{day:02}"), WorkdayKind::Work, 28_800)).collect();
+        let days: Vec<(&str, WorkdayKind, i64)> = days.iter().map(|(date, kind, worked)| (date.as_str(), *kind, *worked)).collect();
+        let (title, body) = words(1, NotificationKind::ReportApproved, &approved(&days));
+        assert_eq!(title, "Priya Raman approved 8 of your days");
+        assert!(body.ends_with("2026-09-05 (8 h) and 3 more."), "{body}");
+        assert!(!body.contains("2026-09-06"), "{body}");
+    }
+
+    fn returned(reason: Option<&str>) -> Facts {
+        Facts {
+            returned: Some(ReturnedFact {
+                id: Uuid::nil(),
+                date: "2026-10-02".parse().unwrap(),
+                reviewer: "Priya Raman".to_string(),
+                reason: reason.map(str::to_string),
+            }),
+            ..Facts::default()
+        }
+    }
+
+    #[test]
+    fn a_returned_day_is_told_in_the_managers_words() {
+        let (title, body) = words(1, NotificationKind::ReportReturned, &returned(Some("Friday is missing its lunch break.")));
+        assert_eq!(title, "Priya Raman returned your day of 2026-10-02");
+        assert_eq!(body, "Friday is missing its lunch break.");
+    }
+
+    #[test]
+    fn the_reason_is_never_in_the_payload() {
+        // Only the report holds it; the notice reads it from there.
+        let json = serde_json::to_value(returned(None)).unwrap();
+        assert!(json["returned"].get("reason").is_none(), "{json}");
+    }
+
     #[test]
     fn a_notice_about_a_day_opens_that_day() {
         assert_eq!(where_to_look(NotificationKind::NoteAdded, &note(Some("x"))), "/day?date=2026-10-02");
+        assert_eq!(where_to_look(NotificationKind::ReportReturned, &returned(None)), "/day?date=2026-10-02");
+        assert_eq!(
+            where_to_look(
+                NotificationKind::ReportApproved,
+                &approved(&[("2026-09-28", WorkdayKind::Work, 1), ("2026-09-29", WorkdayKind::Work, 1)])
+            ),
+            "/day?date=2026-09-28"
+        );
         assert_eq!(
             where_to_look(NotificationKind::AlertRaised, &alert(AlertRule::DayNotClosed, 1, None, Some("2026-09-22"))),
             "/day?date=2026-09-22"
@@ -745,6 +984,8 @@ mod tests {
             (NotificationKind::AgentRevoked, "agent.revoked"),
             (NotificationKind::PrivacyChanged, "privacy.changed"),
             (NotificationKind::NoteAdded, "note.added"),
+            (NotificationKind::ReportApproved, "report.approved"),
+            (NotificationKind::ReportReturned, "report.returned"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), serde_json::json!(name));
         }

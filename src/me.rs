@@ -38,6 +38,7 @@ use crate::{
     login::CurrentUser,
     notes::{self, Note},
     privacy::{Policy, PrivacyLevel},
+    reports::{self, Report},
 };
 
 /// The widest range one request may ask for, in days.
@@ -85,6 +86,9 @@ pub struct Day {
     /// person's share of a full day, with leave excused. Zero on a weekend, a
     /// holiday, and a day the employee was away.
     pub norm_seconds: i64,
+    /// The day's newest report, and where it stands - absent until the person
+    /// reports the day (ADR 0022).
+    pub report: Option<Report>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -134,6 +138,10 @@ pub struct Days {
     /// about a day that has not happened - leave approved ahead of time - and
     /// that date has no entry in `days` to carry it.
     pub notes: Vec<Note>,
+    /// Whether this installation approves days. A report is offered and
+    /// answered only where it does; where it does not, a report a day carries
+    /// is the person saying it was finished, and nothing more (ADR 0022).
+    pub day_approval: bool,
 }
 
 /// What a level withholds, in the words a screen can show as-is.
@@ -187,6 +195,14 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
     let worked_seconds = days.iter().filter_map(|day| day.worked_seconds).sum();
     let notes = notes::for_range(pool, user_id, range).await?;
 
+    // Each day's newest report, onto its day. A report whose day is gone has
+    // no line to sit on, and its status already says the day moved.
+    for report in reports::for_range(pool, user_id, range).await? {
+        if let Some(day) = days.iter_mut().find(|day| day.date == report.date) {
+            day.report = Some(report);
+        }
+    }
+
     Ok(Days {
         from: range.from,
         to: range.to,
@@ -198,6 +214,7 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
         worked_seconds,
         days,
         notes,
+        day_approval: reports::approval_enabled(pool).await?,
         privacy_level: level,
         not_stored: not_stored_at(level),
     })
@@ -330,6 +347,8 @@ impl WorkdayRow {
             // Filled by `days_for`, which holds the calendar. A day on its own
             // cannot know what it was meant to be.
             norm_seconds: 0,
+            // Filled by `days_for` as well, from the reports of the range.
+            report: None,
         }
     }
 }

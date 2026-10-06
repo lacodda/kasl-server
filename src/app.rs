@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy, signals,
-    team, web, webhooks,
+    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy, reports,
+    signals, team, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -51,6 +51,10 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // department in the query, the same as their days (ADR 0020).
         .route("/me/notifications", get(notifications::inbox))
         .route("/me/notifications/read", post(notifications::read))
+        // The person says a day is finished. Whether or not anybody approves
+        // days here: a report is true either way, and where approval is on it
+        // is also the question to a manager (ADR 0022).
+        .route("/me/reports", post(reports::submit_own))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
@@ -93,6 +97,17 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // drill-down, rather than from a route of its own (ADR 0021).
         .route("/users/{id}/notes", post(notes::create))
         .route("/notes/{id}", delete(notes::withdraw))
+        // The answer to a report, where the installation asks for one. What
+        // waits for the reader, approving any number of reports at once - a
+        // manager's Friday is "approve the week" - and sending one back with
+        // a reason. Who may answer is who may see the day, never its person
+        // (ADR 0022).
+        .route("/team/reports", get(reports::queue))
+        .route("/reports/approve", post(reports::approve))
+        .route("/reports/{id}/return", post(reports::send_back))
+        // Whether days are approved here at all. Readable by anyone signed in,
+        // set by an administrator; off unless somebody asks.
+        .route("/reports/approval", get(reports::show_setting).put(reports::update_setting))
         // The twelve-week shape behind a signal, next to the days that made it.
         .route("/users/{id}/trend", get(signals::user_trend))
         // Administration. Reading the team is a manager's; changing it is not,
@@ -142,6 +157,9 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/agent/notifications", get(notifications::agent_queue))
         .route("/agent/notifications/ack", post(notifications::agent_ack))
         .route("/agent/notifications/read", post(notifications::agent_read))
+        // A day reported from kasl, where the person closes it
+        // (`kasl report --send`). The same act as `/me/reports`.
+        .route("/agent/reports", post(reports::submit_from_agent))
         // Who a visitor may sign in as. Answered only on a demo - anywhere
         // else it is a 404, so no real installation lists its people to
         // someone who has not signed in (ADR 0013).

@@ -50,5 +50,11 @@ with its `date`, `text` and `author`. Beside the days rather than inside them:
 a note on leave approved ahead of time is on a date with no day. See [notes on
 a day](/kasl-server/reference/notes-on-a-day/).
 
+**`report` is the day's newest report**, absent until the person reports the
+day, with its `status` - `submitted`, `approved`, `returned` or `changed` - and
+the figures it was reported at. `day_approval` beside the days says whether this
+installation approves days at all. See [reports and
+approval](/kasl-server/reference/reports-and-approval/).
+
 A range covers at most 400 days; a wider one, or one that runs backwards, is a
 `400` naming the span asked for rather than a truncated answer.

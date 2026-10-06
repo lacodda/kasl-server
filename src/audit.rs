@@ -48,6 +48,9 @@ pub mod action {
     pub const ALERT_THRESHOLDS_CHANGED: &str = "alert.thresholds_changed";
     pub const NOTE_ADDED: &str = "note.added";
     pub const NOTE_WITHDRAWN: &str = "note.withdrawn";
+    pub const REPORT_APPROVED: &str = "report.approved";
+    pub const REPORT_RETURNED: &str = "report.returned";
+    pub const DAY_APPROVAL_CHANGED: &str = "reports.approval_changed";
     pub const WEBHOOK_TESTED: &str = "webhook.tested";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }

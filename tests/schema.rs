@@ -158,11 +158,14 @@ async fn deleting_a_user_takes_their_data() {
             .execute(&pool)
             .await
             .expect("agent");
-        sqlx::query("INSERT INTO reports (user_id, kind, period_start, submitted_at) VALUES ($1, 'daily', date '2026-08-14', now())")
-            .bind(user)
-            .execute(&pool)
-            .await
-            .expect("report");
+        sqlx::query(
+            "INSERT INTO reports (user_id, date, kind, started_at, ended_at, worked_seconds)
+             VALUES ($1, date '2026-08-14', 'work', now() - interval '8 hours', now(), 28800)",
+        )
+        .bind(user)
+        .execute(&pool)
+        .await
+        .expect("report");
 
         sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(user)

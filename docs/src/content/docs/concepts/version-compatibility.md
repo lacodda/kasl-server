@@ -14,6 +14,7 @@ answered it.
 | v1.8.0 | `kasl server push` — one day | `POST /api/v1/days` | **0.14.1** |
 | v1.9.0 | `queue`, `flush`, `backfill` — a backlog in one request | `POST /api/v1/days/batch` | **0.14.1** |
 | v1.13.0 | `manifest` — what the server keeps about you | `GET /api/v1/privacy/agent` | **0.14.1** |
+| v1.14.0 | `pulse enable` — the live status, once a minute | `POST /api/v1/agent/heartbeat` | **0.17.0** |
 
 The floor is 0.14.1 across the board, and it is set by `whoami` rather than by
 uploading: ingest has answered since 0.3.0 and batch since 0.4.0, but every
@@ -35,14 +36,18 @@ server has added since — departments, the audit log, the privacy manifest,
 signals, the heatmap, the webhooks — is read by people through the web UI and
 changes nothing an agent sends. The manifest an agent reads grew a
 `sent_elsewhere` list in 0.23.0; an agent that does not know the field shows
-the rest of the manifest exactly as before. The additions an agent could use have no client yet, each paired with a kasl
-version that has not shipped: `POST /api/v1/agent/heartbeat` (0.17.0), and the
+the rest of the manifest exactly as before. The additions an agent can use arrive before their client. The pulse
+(`POST /api/v1/agent/heartbeat`, 0.17.0) has one since kasl v1.14.0, opt-in. The
 [notifications](/kasl-server/reference/what-you-are-told/) it counts -
-`GET /api/v1/agent/notifications` with its `ack` and `read` (0.24.0), for kasl
-v3.3. The pulse's answer grew a `notifications` field for them; an agent that
-does not know it ignores it. A new kind of notice - `note.added` in 0.25.0 -
-changes nothing either: an agent that does not know a kind shows the sentence
-the server wrote, which for a note is the note.
+`GET /api/v1/agent/notifications` with its `ack` and `read` (0.24.0) - and
+[reporting a day](/kasl-server/reference/reports-and-approval/) -
+`POST /api/v1/agent/reports` (0.26.0), which belongs in `kasl report --send` -
+have none yet. The pulse's answer grew a `notifications` field for them; an
+agent that does not know it ignores it, as kasl v1.14.0 does. A new kind of
+notice - `note.added` in 0.25.0, `report.approved` and `report.returned` in
+0.26.0 - changes nothing either: an agent that does not know a kind shows the
+sentence the server wrote, which for a note is the note and for a returned day
+is the reason.
 
 **Releasing a contract change.** A change to the shape of what agents send or
 receive lands in both products before either is tagged: the server's endpoint

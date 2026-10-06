@@ -18,6 +18,8 @@ machine and in their own inbox.
 | `agent.revoked` | A machine can no longer report as you | `agent`: `id`, `name` |
 | `privacy.changed` | What this server keeps about your days changed | `privacy`: `from`, `to` |
 | `note.added` | A manager wrote a [note](/kasl-server/reference/notes-on-a-day/) on one of your days | `note`: `id`, `date`, `author`, `text` |
+| `report.approved` | A manager approved days you [reported](/kasl-server/reference/reports-and-approval/) - one notice for one approval, however many days it covered | `approved`: `reviewer`, `days` (each `date`, `kind`, `worked_seconds`) |
+| `report.returned` | A manager sent a day you reported back | `returned`: `id`, `date`, `reviewer`, `reason` |
 
 Each notice carries a `title` and a `body` written by the server, in English,
 next to its facts. An agent that does not know a `kind` shows the words and is
@@ -39,6 +41,12 @@ A note's notice says who wrote it and on which day, and its `body` is the note
 itself. Once the note is withdrawn the notice is over, like an alert that
 resolved, and its `body` says only "The note was withdrawn." - the words are
 gone from the server, and `note.text` with them.
+
+An approval names the days it covered with the figures each was approved at,
+which do not change if the day does later: "Approved as you reported them:
+2026-09-28 (8 h), 2026-09-29 (vacation) and 2026-09-30 (7.5 h)." A returned
+day's `body` is the reason the manager gave, read from the report - the only
+place it is kept.
 
 ## On the machine
 

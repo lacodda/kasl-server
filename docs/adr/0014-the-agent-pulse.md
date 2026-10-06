@@ -101,4 +101,6 @@ described only days would be describing a quieter server than the one running.
 - kasl's paired milestone is v3.5. Until it ships, the endpoint has no client
   in the wild: the contract is exercised by this repository's tests rather
   than by a real agent, which is a weaker check than the ingest contract got
-  and is recorded here as such.
+  and is recorded here as such. (2026-10-06: the client shipped earlier than
+  planned, in kasl v1.14.0 - `kasl server pulse enable`, opt-in - and was
+  checked live against this server on 2026-10-02.)

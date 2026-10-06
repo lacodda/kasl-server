@@ -52,6 +52,10 @@ pub const TABLES: [&str; 16] = [
     "tasks",
     "tags",
     "task_tags",
+    // Who reported which day as finished, at which figures, and what a manager
+    // answered. Not derivable from the days: what was reported is exactly what
+    // a later upload can no longer show (ADR 0022). Before `notifications`,
+    // which points at it.
     "reports",
     "audit_log",
     // The production calendar. Not derivable from anything else in the file:
@@ -429,6 +433,7 @@ mod tests {
             ("notifications", "alerts"),
             ("notifications", "agents"),
             ("notifications", "day_notes"),
+            ("notifications", "reports"),
             ("day_notes", "users"),
             ("agents", "users"),
             ("sessions", "users"),

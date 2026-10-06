@@ -20,6 +20,12 @@ A [note on a day](/kasl-server/reference/notes-on-a-day/) is recorded as
 note's id and date - never its words, which a withdrawal has to be able to
 remove from everywhere.
 
+An answer to a [report](/kasl-server/reference/reports-and-approval/) is
+recorded as `report.approved` or `report.returned`, against the person whose day
+it is, with the report's id and date - never the reason, which the report keeps
+where the person reads it. Turning approval on or off is
+`reports.approval_changed`, with both values.
+
 Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
 `limit` (500 at most) and `offset`. "Everything that happened to this person" is
 `?target_id=...`.
