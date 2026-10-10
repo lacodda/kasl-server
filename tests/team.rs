@@ -392,7 +392,7 @@ async fn an_open_day_today_is_reported_as_open() {
 }
 
 #[tokio::test]
-async fn a_deactivated_person_leaves_the_dashboard_but_keeps_their_history() {
+async fn a_deactivated_person_stays_in_the_periods_they_worked() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
 
@@ -404,13 +404,31 @@ async fn a_deactivated_person_leaves_the_dashboard_but_keeps_their_history() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
 
+    // A week they worked in still has their hours: a period is a record of
+    // what happened in it, and August's total must not shrink because somebody
+    // left in October (ADR 0023).
     let (status, body) = server
         .get_with_cookie("/api/v1/team/days?from=2026-08-24&to=2026-08-30", team.manager.as_deref())
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let row = body["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["email"] == "inside@example.test")
+        .unwrap_or_else(|| panic!("the week they worked lists them: {body}"));
+    assert_eq!(row["active"], false, "and says they have left: {row}");
+    assert_eq!(row["worked_seconds"], 30600);
+
+    // A week without their days does not: today's dashboard is for the people
+    // still here.
+    let (status, body) = server
+        .get_with_cookie("/api/v1/team/days?from=2026-08-31&to=2026-09-06", team.manager.as_deref())
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
         !emails(&body).contains(&"inside@example.test"),
-        "a deactivated person is not on today's dashboard: {body}"
+        "a deactivated person is not on a week they have nothing in: {body}"
     );
 
     // Their days are still there for whoever needs to look: deactivation ends
@@ -423,6 +441,42 @@ async fn a_deactivated_person_leaves_the_dashboard_but_keeps_their_history() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["days"].as_array().unwrap().len(), 1, "{body}");
+}
+
+#[tokio::test]
+async fn the_team_total_is_the_sum_of_the_days_to_the_second() {
+    let Some(server) = TestServer::start().await else { return };
+    let team = team(&server).await;
+
+    // Starts four tenths of a second into the minute: 32 399.6 seconds on the
+    // clock. Rounded, that is a second more than the days answer, which
+    // rounds down (`workday_figures`); the table once rounded and the days
+    // did not, so a person's week and the sum of its days disagreed.
+    let mut upload = day("2026-08-25", 1);
+    upload["started_at"] = json!("2026-08-25T09:00:00.400-03:00");
+    let (status, body) = server.post_day("inside-token", upload).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, table) = server
+        .get_with_cookie("/api/v1/team/days?from=2026-08-24&to=2026-08-30", team.manager.as_deref())
+        .await;
+    let row = table["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["email"] == "inside@example.test")
+        .unwrap()
+        .clone();
+    let (_, days) = server
+        .get_with_cookie(
+            &format!("/api/v1/users/{}/days?from=2026-08-24&to=2026-08-30", team.inside_id),
+            team.manager.as_deref(),
+        )
+        .await;
+
+    let summed: i64 = days["days"].as_array().unwrap().iter().map(|day| day["worked_seconds"].as_i64().unwrap()).sum();
+    assert_eq!(summed, 32_399 - 1_800, "the day, rounded down");
+    assert_eq!(row["worked_seconds"], summed, "the table says what the days say: {row}");
 }
 
 #[tokio::test]

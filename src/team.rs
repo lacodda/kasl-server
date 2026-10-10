@@ -52,6 +52,9 @@ pub struct Member {
     pub display_name: String,
     pub email: String,
     pub department: Option<String>,
+    /// Whether the account is still in use. A deactivated person appears only
+    /// in a range they have days in - their hours belong to that period.
+    pub active: bool,
     /// Days worked in the range. Zero is a real answer.
     ///
     /// Days the person was away are **not** counted here - they have their own
@@ -114,80 +117,106 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
     require_manager_or_admin(&user)?;
     me::validate_range(&range)?;
 
-    let is_admin = user.role == UserRole::Admin;
+    let (members, standard_hours) = members(&state.pool, &user, &range, None).await?;
+    let level = Policy::load(&state.pool).await?.level();
+
+    Ok(Json(Team {
+        from: range.from,
+        to: range.to,
+        members,
+        privacy_level: level,
+        not_stored: me::not_stored_at(level),
+        standard_hours,
+    }))
+}
+
+/// Everyone `reader` may see, with their figures over `range` - the rows of
+/// the team table and of the summary export alike (ADR 0023).
+///
+/// One function for both, so a spreadsheet and the screen it was downloaded
+/// from cannot disagree about a person's month. `only` narrows the list to one
+/// person, which is the personal export; the visibility rule still applies on
+/// top of it rather than being replaced.
+///
+/// Who is listed: everyone active the reader may see - including people with
+/// nothing recorded, the case the dashboard exists for - and anyone since
+/// deactivated who has days in the range. A period is a record of what
+/// happened in it: August's total must not shrink in October because somebody
+/// who worked in August has left since.
+///
+/// Answers the installation's full day beside the rows, since every norm in
+/// them was computed from it.
+pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, only: Option<Uuid>) -> Result<(Vec<Member>, Decimal), ApiError> {
+    let is_admin = reader.role == UserRole::Admin;
 
     // `date` here is the employee's own local date, as their agent recorded it,
     // and "today" is the server's. They can differ by a day at the edges; for
     // "is a day open" that is the right approximation - the alternative needs a
     // per-person time zone the server does not store (ADR 0003).
+    //
+    // The figures come from `workday_figures`, the one definition of what a
+    // day comes to (ADR 0022): the worked seconds here are the sum of the ones
+    // `/me/days` answers per day, to the second.
+    //
     // `AssertSqlSafe` because the only interpolation is `VISIBLE_USERS`, a
     // constant in `admin`; every value from the request is bound below.
     let members: Vec<Member> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT u.id, u.display_name, u.email, d.name AS department,
+        "SELECT u.id, u.display_name, u.email, u.active, d.name AS department,
                 u.work_rate,
-                coalesce(w.days_away, 0)::bigint AS days_away,
-                coalesce(w.days_recorded, 0)::bigint AS days_recorded,
-                coalesce(w.worked_seconds, 0)::bigint AS worked_seconds,
-                coalesce(w.paused_seconds, 0)::bigint AS paused_seconds,
+                w.days_away,
+                w.days_recorded,
+                w.worked_seconds,
+                w.paused_seconds,
                 w.last_day,
                 coalesce(o.day_open, false) AS day_open,
                 (SELECT max(a.last_seen_at) FROM agents a WHERE a.user_id = u.id) AS last_seen_at,
                 (SELECT count(*) FROM agents a WHERE a.user_id = u.id AND a.revoked_at IS NULL) AS agents
          FROM users u
          LEFT JOIN departments d ON d.id = u.department_id
-         LEFT JOIN LATERAL (
+         CROSS JOIN LATERAL (
+             -- An aggregate with no GROUP BY answers one row even over no
+             -- days, so every count below is a number and never NULL.
              -- `sum()` over bigint answers `numeric`, which does not decode
              -- into an i64; the cast is outside the sum so it happens once.
-             SELECT count(*) FILTER (WHERE w.kind = 'work') AS days_recorded,
+             SELECT count(*) FILTER (WHERE f.kind = 'work') AS days_recorded,
                     -- Days the employee told us they were away. Counted here
                     -- rather than in a second query: the same scan already has
                     -- the range's rows in hand, and the two counts partition
                     -- the days rather than overlapping.
-                    count(*) FILTER (WHERE w.kind <> 'work') AS days_away,
-                    max(w.date) AS last_day,
-                    coalesce(sum(
-                        CASE WHEN w.ended_at IS NULL THEN 0
-                             ELSE greatest(extract(epoch FROM (w.ended_at - w.started_at))::bigint - paused.seconds, 0)
-                        END
-                    ), 0)::bigint AS worked_seconds,
-                    coalesce(sum(paused.seconds), 0)::bigint AS paused_seconds
-             FROM workdays w
-             CROSS JOIN LATERAL (
-                 -- Stored pauses where they exist; the day's own totals where a
-                 -- narrower policy summarized them away (ADR 0011). One or the
-                 -- other, never both, so the hours cannot be double-counted.
-                 SELECT CASE
-                     WHEN EXISTS (SELECT 1 FROM pauses p WHERE p.workday_id = w.id)
-                     THEN (SELECT coalesce(sum(p.duration_seconds), 0)::bigint FROM pauses p WHERE p.workday_id = w.id)
-                     ELSE coalesce(w.paused_seconds, 0)::bigint
-                 END AS seconds
-             ) AS paused
-             WHERE w.user_id = u.id AND w.date BETWEEN $3 AND $4
-         ) AS w ON true
+                    count(*) FILTER (WHERE f.kind <> 'work') AS days_away,
+                    max(f.date) AS last_day,
+                    -- An open day's worked figure is NULL, and `sum()` passes
+                    -- over it: a day still running has no total to add.
+                    coalesce(sum(f.worked_seconds), 0)::bigint AS worked_seconds,
+                    coalesce(sum(f.paused_seconds), 0)::bigint AS paused_seconds
+             FROM workday_figures f
+             WHERE f.user_id = u.id AND f.date BETWEEN $3 AND $4
+         ) AS w
          LEFT JOIN LATERAL (
              SELECT true AS day_open
              FROM workdays w2
              WHERE w2.user_id = u.id AND w2.date = current_date AND w2.ended_at IS NULL
              LIMIT 1
          ) AS o ON true
-         WHERE u.active AND {VISIBLE_USERS}
+         WHERE (u.active OR w.days_recorded > 0 OR w.days_away > 0)
+           AND ($5::uuid IS NULL OR u.id = $5)
+           AND {VISIBLE_USERS}
          ORDER BY u.display_name, u.email"
     )))
     .bind(is_admin)
-    .bind(user.user_id)
+    .bind(reader.user_id)
     .bind(range.from)
     .bind(range.to)
-    .fetch_all(&state.pool)
+    .bind(only)
+    .fetch_all(pool)
     .await?;
-
-    let level = Policy::load(&state.pool).await?.level();
 
     // One calendar for the whole table, and one query for the leave dates.
     // The norm differs per person only by their rate and by the days they were
     // away, so nothing here needs a round trip per row.
-    let calendar = Calendar::load(&state.pool, range.from, range.to).await?;
-    let standard_hours = Norm::standard_hours(&state.pool).await?;
-    let away = away_by_user(&state.pool, &members, &range).await?;
+    let calendar = Calendar::load(pool, range.from, range.to).await?;
+    let standard_hours = Norm::standard_hours(pool).await?;
+    let away = away_by_user(pool, &members, range).await?;
 
     let mut members = members;
     for member in &mut members {
@@ -199,14 +228,7 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
         member.norm_seconds = norm.for_range(&calendar, range.from, range.to, &theirs);
     }
 
-    Ok(Json(Team {
-        from: range.from,
-        to: range.to,
-        members,
-        privacy_level: level,
-        not_stored: me::not_stored_at(level),
-        standard_hours,
-    }))
+    Ok((members, standard_hours))
 }
 
 /// The dates in the range each listed person was away.
