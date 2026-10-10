@@ -705,6 +705,7 @@ mod tests {
             agents: 0,
             work_rate: Decimal::ONE,
             norm_seconds: 0,
+            due_seconds: 0,
             days_away: 0,
         }
     }

@@ -91,6 +91,11 @@ pub struct Member {
     /// joined per row.
     #[sqlx(default)]
     pub norm_seconds: i64,
+    /// The part of the norm that has come due: the dates before today, and
+    /// today once their day is closed. What a range still running is measured
+    /// against (ADR 0023); equal to the norm once the range is over.
+    #[sqlx(default)]
+    pub due_seconds: i64,
     /// Days in the range the person was on leave or ill, so a row short of its
     /// norm can be read without opening it.
     #[sqlx(default)]
@@ -217,6 +222,8 @@ pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, 
     let calendar = Calendar::load(pool, range.from, range.to).await?;
     let standard_hours = Norm::standard_hours(pool).await?;
     let away = away_by_user(pool, &members, range).await?;
+    let today = Norm::today(pool).await?;
+    let closed_today = closed_on(pool, &members, today).await?;
 
     let mut members = members;
     for member in &mut members {
@@ -226,6 +233,7 @@ pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, 
         };
         let theirs = away.iter().filter(|(id, _)| *id == member.id).map(|(_, date)| *date).collect::<Vec<_>>();
         member.norm_seconds = norm.for_range(&calendar, range.from, range.to, &theirs);
+        member.due_seconds = norm.due_for_range(&calendar, range.from, range.to, &theirs, today, closed_today.contains(&member.id));
     }
 
     Ok((members, standard_hours))
@@ -252,6 +260,24 @@ async fn away_by_user(pool: &PgPool, members: &[Member], range: &Range) -> Resul
             .await?;
 
     Ok(rows)
+}
+
+/// Who among the listed people has closed their day on `date`.
+///
+/// Scoped to the people already listed, like the leave dates above: the
+/// visibility rule was applied when they were selected.
+async fn closed_on(pool: &PgPool, members: &[Member], date: NaiveDate) -> Result<Vec<Uuid>, ApiError> {
+    if members.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = members.iter().map(|member| member.id).collect();
+    Ok(
+        sqlx::query_scalar("SELECT user_id FROM workdays WHERE user_id = ANY($1) AND date = $2 AND ended_at IS NOT NULL")
+            .bind(&ids)
+            .bind(date)
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 /// Answers one person's days to someone allowed to see them.

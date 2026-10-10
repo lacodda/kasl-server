@@ -129,14 +129,23 @@ a stored one would stay wrong in every row written before the correction.
 object beside the days, and each day carries its own `norm_seconds`:
 
 ```json
-{"progress":{"norm_seconds":144000,"standard_hours":8,"work_rate":1},
+{"progress":{"norm_seconds":144000,"due_seconds":144000,"standard_hours":8,"work_rate":1},
  "worked_seconds":138600,
  "days":[{"date":"2026-09-14","kind":"work","norm_seconds":28800, "...":"..."},
          {"date":"2026-09-15","kind":"vacation","norm_seconds":0, "...":"..."}]}
 ```
 
-`GET /api/v1/team/days` carries `norm_seconds`, `days_away` and `work_rate` on
-every member, and `standard_hours` once for the table.
+`GET /api/v1/team/days` carries `norm_seconds`, `due_seconds`, `days_away` and
+`work_rate` on every member, and `standard_hours` once for the table.
+
+**`due_seconds` is the part of the norm that has come due**: every date before
+today, and today itself once its day is closed. For a range that is over it
+equals `norm_seconds`; for one still running it is what the hours so far should
+be read against. On the 10th of a month, somebody exactly on track has worked a
+third of the month's norm and all of what was due - and until today's day is
+closed, today owes nothing, because an open day has no total yet either.
+"Today" is the server's date, the same approximation that decides whether a day
+is open.
 
 **A pair, never a percentage.** The server answers hours asked for next to
 hours worked, and the screen divides them if it wants to: eight out of ten and

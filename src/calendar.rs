@@ -215,6 +215,16 @@ impl Norm {
         Ok(Self { standard_hours, work_rate })
     }
 
+    /// The date it is now, as the database has it - the "today" a norm comes
+    /// due by.
+    ///
+    /// The server's date, not the employee's: it stores no time zone per
+    /// person (ADR 0003). Near midnight the two differ by a day, the same
+    /// approximation "is a day open" makes, and from the same clock.
+    pub async fn today(pool: &PgPool) -> Result<NaiveDate, ApiError> {
+        Ok(sqlx::query_scalar("SELECT current_date").fetch_one(pool).await?)
+    }
+
     /// The installation's full day alone, for a caller that holds the rates
     /// itself - the team table reads one rate per row.
     pub async fn standard_hours(pool: &PgPool) -> Result<Decimal, ApiError> {
@@ -238,6 +248,23 @@ impl Norm {
             .sum();
         (full - excused).max(0)
     }
+
+    /// The part of [`Norm::for_range`] that has come due by `today`: every
+    /// date before it, and `today` itself only once its day is closed.
+    ///
+    /// What a period still running is measured against (ADR 0023). On the
+    /// 10th, a month's norm makes somebody exactly on track read as a third
+    /// done; and today's own norm, counted while the day is open, makes the
+    /// morning read as a day missed - an open day has no total yet, so it
+    /// cannot owe one either. A range already over is due in full; one not yet
+    /// begun owes nothing.
+    pub fn due_for_range(&self, calendar: &Calendar, from: NaiveDate, to: NaiveDate, away: &[NaiveDate], today: NaiveDate, today_closed: bool) -> i64 {
+        let last_due = if today_closed { Some(today) } else { today.pred_opt() };
+        match last_due.map(|last| last.min(to)) {
+            Some(last) if last >= from => self.for_range(calendar, from, last, away),
+            _ => 0,
+        }
+    }
 }
 
 /// What the norm endpoints answer alongside hours worked.
@@ -250,6 +277,10 @@ pub struct Progress {
     /// Seconds the calendar and the person's rate ask for, over the range,
     /// less the days they were on leave.
     pub norm_seconds: i64,
+    /// The part of that which has come due: the dates before today, and today
+    /// once its day is closed. Equal to the norm for a range already over;
+    /// what a range still running is measured against (ADR 0023).
+    pub due_seconds: i64,
     /// The installation's full day, in hours, so a screen can say what a day
     /// is worth without a second request.
     pub standard_hours: Decimal,
@@ -578,6 +609,47 @@ mod tests {
             3 * 8 * 3600,
             "two days of leave are not owed"
         );
+    }
+
+    #[test]
+    fn a_running_range_owes_what_has_come_due() {
+        let norm = Norm {
+            standard_hours: eight(),
+            work_rate: Decimal::ONE,
+        };
+        let calendar = Calendar::empty();
+        let (monday, sunday) = (date("2026-09-14"), date("2026-09-20"));
+        let thursday = date("2026-09-17");
+
+        // Thursday, its day still open: Monday to Wednesday are due.
+        assert_eq!(norm.due_for_range(&calendar, monday, sunday, &[], thursday, false), 3 * 8 * 3600);
+        // Closed: Thursday is due too.
+        assert_eq!(norm.due_for_range(&calendar, monday, sunday, &[], thursday, true), 4 * 8 * 3600);
+        // Leave inside the due part is excused there as everywhere.
+        assert_eq!(
+            norm.due_for_range(&calendar, monday, sunday, &[date("2026-09-15")], thursday, false),
+            2 * 8 * 3600
+        );
+    }
+
+    #[test]
+    fn a_range_over_is_due_in_full_and_one_to_come_owes_nothing() {
+        let norm = Norm {
+            standard_hours: eight(),
+            work_rate: Decimal::ONE,
+        };
+        let calendar = Calendar::empty();
+        let (monday, sunday) = (date("2026-09-14"), date("2026-09-20"));
+
+        assert_eq!(
+            norm.due_for_range(&calendar, monday, sunday, &[], date("2026-10-10"), false),
+            norm.for_range(&calendar, monday, sunday, &[])
+        );
+        // Its first day, still open: nothing is due yet.
+        assert_eq!(norm.due_for_range(&calendar, monday, sunday, &[], monday, false), 0);
+        assert_eq!(norm.due_for_range(&calendar, monday, sunday, &[], date("2026-09-01"), true), 0);
+        // The day after it ends, whatever today's day is doing.
+        assert_eq!(norm.due_for_range(&calendar, monday, sunday, &[], date("2026-09-21"), false), 5 * 8 * 3600);
     }
 
     #[test]

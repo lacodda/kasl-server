@@ -14,11 +14,11 @@ $ curl -H "Cookie: kasl_session=..."        "http://127.0.0.1:8080/api/v1/team/d
    {"id":"c49ea6a8-...","display_name":"Anna","email":"anna@example.com","department":"Engineering",
     "active":true,"days_recorded":3,"worked_seconds":72600,"paused_seconds":8100,"last_day":"2026-08-26",
     "day_open":false,"last_seen_at":"2026-08-26T20:31:00Z","agents":1,
-    "work_rate":1,"norm_seconds":144000,"days_away":0},
+    "work_rate":1,"norm_seconds":144000,"due_seconds":144000,"days_away":0},
    {"id":"0073460d-...","display_name":"Clara","email":"clara@example.com","department":null,
     "active":true,"days_recorded":0,"worked_seconds":0,"paused_seconds":0,"last_day":null,
     "day_open":false,"last_seen_at":null,"agents":0,
-    "work_rate":1,"norm_seconds":144000,"days_away":0}]}
+    "work_rate":1,"norm_seconds":144000,"due_seconds":144000,"days_away":0}]}
 ```
 
 **Everyone the reader may see is listed, including people with nothing
@@ -45,7 +45,9 @@ work rather than two days of work and two of holiday.
 calendar at their own `work_rate`, with the days they were on leave taken out
 (`days_away` counts them). `standard_hours` is stated once for the table: it is
 the installation's full day, and every norm in the rows is computed from it.
-See [the calendar and the norm](/kasl-server/reference/the-calendar-and-the-norm/).
+`due_seconds` is the part of it that has come due - the dates before today, and
+today once their day is closed - which is what a range still running is read
+against. See [the calendar and the norm](/kasl-server/reference/the-calendar-and-the-norm/).
 
 A shorter week is not a verdict. A row at half the others' hours with
 `work_rate: 0.5` is somebody on half time, and a row short by two days with

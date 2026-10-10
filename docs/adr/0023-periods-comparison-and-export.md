@@ -40,7 +40,7 @@ beats somebody on half time and somebody back from holiday always comes last.
 
 **A period is a day, a week or a month**, and the team screen and the personal
 page both show any of them. Weeks run Monday to Sunday, months are calendar
-months. The API did not change shape for this: `/team/days` and `/me/days` have
+months. The API needed no new route for this: `/team/days` and `/me/days` have
 taken a range from the first version, and a period is a range. The unit lives
 in the client and in its URL (`?period=month&from=2026-09-01`), so a period can
 be linked and survives a visit to a person's page and back.
@@ -61,6 +61,19 @@ either period owed nothing (a Sunday, a fortnight of leave) there is no share
 and no comparison, rather than an infinite one. The comparison is the client's
 arithmetic on two answers of the same endpoint; the server answers pairs and
 the screen divides (ADR 0017).
+
+**A period still running is measured against the norm that has come due.**
+On the 10th, the month's whole norm makes somebody exactly on track read as a
+third done; the norm "up to today" is still wrong in the morning, because it
+counts today while today's day is open, and an open day has no total. So the
+server answers `due_seconds` beside `norm_seconds` - on every row of
+`/team/days` and in the `progress` of `/me/days`: every date before today, and
+today once its day is closed. For a period that is over the two are equal. The
+share of norm is worked over due, so a share compares the same thing whether
+the period is over or not, and a period not yet begun has nothing due and no
+share. "Today" is the server's date - the approximation "is a day open" already
+makes, from the same clock (ADR 0003). The screens show the due norm, with the
+whole period's beside it while they differ.
 
 **One function answers the team's rows**, for the table and for the export
 alike, and it reads `workday_figures`, which now carries `paused_seconds`
@@ -101,6 +114,9 @@ Exporting your own hours is not recorded.
 
 - The team screen answers "how did September go" in one view, the personal page
   answers "am I on track this month", and both can be handed to a spreadsheet.
+- An export is of the dates asked for. The screens ask for the period up to
+  today while it runs, so a file downloaded on the 10th holds the month so far
+  and no dates that are due but have not come yet.
 - The norm of somebody deactivated covers the whole range: the server does not
   record when an account was deactivated, so it cannot stop asking on that day.
   Their hours are right; their norm in a month they left is overstated.

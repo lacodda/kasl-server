@@ -195,6 +195,11 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
     let worked_seconds = days.iter().filter_map(|day| day.worked_seconds).sum();
     let notes = notes::for_range(pool, user_id, range).await?;
 
+    // Today counts towards what is due once its day is closed - read from the
+    // days in hand, where today's is if the range holds it.
+    let today = Norm::today(pool).await?;
+    let today_closed = days.iter().any(|day| day.date == today && day.ended_at.is_some());
+
     // Each day's newest report, onto its day. A report whose day is gone has
     // no line to sit on, and its status already says the day moved.
     for report in reports::for_range(pool, user_id, range).await? {
@@ -208,6 +213,7 @@ pub async fn days_for(pool: &PgPool, user_id: Uuid, range: &Range) -> Result<Day
         to: range.to,
         progress: Progress {
             norm_seconds: norm.for_range(&calendar, range.from, range.to, &away),
+            due_seconds: norm.due_for_range(&calendar, range.from, range.to, &away, today, today_closed),
             standard_hours: norm.standard_hours,
             work_rate: norm.work_rate,
         },

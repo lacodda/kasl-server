@@ -480,6 +480,99 @@ async fn the_team_total_is_the_sum_of_the_days_to_the_second() {
 }
 
 #[tokio::test]
+async fn a_running_range_is_measured_against_what_has_come_due() {
+    let Some(server) = TestServer::start().await else { return };
+    let team = team(&server).await;
+
+    // The database's today, which is the one the server measures by - the
+    // test machine's own date may already be tomorrow in UTC.
+    let today: String = server.scalar("SELECT current_date::text").await;
+    let shift = |days: i64| -> String {
+        let date: chrono::NaiveDate = today.parse().unwrap();
+        (date + chrono::Duration::days(days)).to_string()
+    };
+    let (from, to, yesterday) = (shift(-6), shift(6), shift(-1));
+    // Today is made a full working day whatever weekday it falls on. On a
+    // Saturday it would owe nothing open or closed, and the test would pass
+    // with the rule about open days deleted.
+    server
+        .execute("INSERT INTO calendar_days (date, kind) VALUES (current_date, 'working_weekend')")
+        .await;
+
+    // What the team table says a range owes, for one person.
+    let owed = |body: &Value, field: &str| -> i64 {
+        body["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|member| member["email"] == "inside@example.test")
+            .unwrap()[field]
+            .as_i64()
+            .unwrap()
+    };
+    let read = |from: String, to: String| {
+        let server = &server;
+        let cookie = team.manager.clone();
+        async move {
+            let (status, body) = server
+                .get_with_cookie(&format!("/api/v1/team/days?from={from}&to={to}"), cookie.as_deref())
+                .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            body
+        }
+    };
+
+    // Today's day, still open.
+    let open = json!({
+        "date": today,
+        "started_at": format!("{today}T00:00:01+00:00"),
+        "pauses": [],
+        "tasks": []
+    });
+    let (status, body) = server.post_day("inside-token", open).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let running = read(from.clone(), to.clone()).await;
+    let through_yesterday = read(from.clone(), yesterday.clone()).await;
+    assert_eq!(
+        owed(&running, "due_seconds"),
+        owed(&through_yesterday, "norm_seconds"),
+        "an open day owes nothing yet, and the days to come owe nothing either"
+    );
+    assert!(
+        owed(&running, "norm_seconds") > owed(&running, "due_seconds"),
+        "the norm is still the whole range's"
+    );
+
+    // The person's own page measures the same way.
+    let (_, employee, _) = server.login("inside@example.test", "correct horse").await;
+    let (status, mine) = server
+        .get_with_cookie(&format!("/api/v1/me/days?from={from}&to={to}"), employee.as_deref())
+        .await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_eq!(mine["progress"]["due_seconds"], owed(&running, "due_seconds"));
+
+    // Closed, today is due too.
+    let closed = json!({
+        "date": today,
+        "started_at": format!("{today}T00:00:01+00:00"),
+        "ended_at": format!("{today}T00:00:02+00:00"),
+        "pauses": [],
+        "tasks": []
+    });
+    let (status, body) = server.post_day("inside-token", closed).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let running = read(from.clone(), to.clone()).await;
+    let through_today = read(from.clone(), today.clone()).await;
+    assert_eq!(owed(&running, "due_seconds"), owed(&through_today, "norm_seconds"));
+
+    // A range already over is due in full.
+    let past = read(shift(-20), shift(-14)).await;
+    assert_eq!(owed(&past, "due_seconds"), owed(&past, "norm_seconds"));
+    assert!(owed(&past, "due_seconds") > 0, "a full week owes something");
+}
+
+#[tokio::test]
 async fn a_malformed_range_is_refused() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
