@@ -154,6 +154,12 @@ export type NotStored = 'pauses' | 'tasks' | 'free_text'
  */
 export interface Progress {
   norm_seconds: number
+  /**
+   * The part of the norm that has come due: the dates before today, and today
+   * once its day is closed. The whole norm once the range is over; what a
+   * range still running is measured against (ADR 0023).
+   */
+  due_seconds: number
   /** The installation's full day, in hours. */
   standard_hours: number
   /** This person's share of it: `0.5` is half time. */
@@ -202,6 +208,12 @@ export interface Member {
   display_name: string
   email: string
   department: string | null
+  /**
+   * Whether the account is still in use. Somebody deactivated since appears
+   * only in a range they have days in - their hours belong to that period
+   * (ADR 0023).
+   */
+  active: boolean
   /** Days worked in the range. Days away are counted separately below. */
   days_recorded: number
   worked_seconds: number
@@ -224,6 +236,8 @@ export interface Member {
   work_rate: number
   /** What the range asked of them, with days away taken out. */
   norm_seconds: number
+  /** The part of it that has come due - see `Progress.due_seconds`. */
+  due_seconds: number
   /** Days in the range they were on leave or ill. */
   days_away: number
 }
@@ -537,6 +551,47 @@ export class ApiError extends Error {
 interface Options extends RequestInit {
   /** Path is from the site root rather than under `/api/v1` - only `/health`. */
   absolute?: boolean
+}
+
+/** Whose hours an export holds: everyone the reader may see, or the reader. */
+export type ExportSubject = 'team' | 'me'
+
+/** Which file: both tables as a workbook, or one table as CSV (ADR 0023). */
+export type ExportFile = 'xlsx' | 'summary.csv' | 'days.csv'
+
+/** Where an export downloads from. */
+export function exportUrl(subject: ExportSubject, file: ExportFile, from: string, to: string): string {
+  const path = file === 'xlsx' ? `/${subject}/export.xlsx` : `/${subject}/export/${file}`
+  return `/api/v1${path}?from=${from}&to=${to}`
+}
+
+/** The file name a `Content-Disposition` header gives, if it gives one. */
+export function attachmentName(disposition: string | null): string | null {
+  return disposition?.match(/filename="([^"]+)"/)?.[1] ?? null
+}
+
+/**
+ * Downloads an export and hands it to the browser to save.
+ *
+ * Fetched rather than navigated to, so a refusal is an error the screen can
+ * word rather than a page of JSON replacing the app. The browser then saves
+ * the bytes under the name the server chose.
+ */
+export async function downloadExport(subject: ExportSubject, file: ExportFile, from: string, to: string): Promise<void> {
+  const response = await fetch(exportUrl(subject, file, from, to), { credentials: 'same-origin' })
+  if (!response.ok) throw new ApiError(response.status, response.statusText)
+
+  const blob = await response.blob()
+  const name = attachmentName(response.headers.get('Content-Disposition')) ?? `kasl-${subject}-${from}-to-${to}`
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = name
+  document.body.append(link)
+  link.click()
+  link.remove()
+  // After the click has been handled: revoking first cancels the download in
+  // some browsers.
+  setTimeout(() => URL.revokeObjectURL(link.href), 0)
 }
 
 async function request<T>(path: string, init?: Options): Promise<T> {

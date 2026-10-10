@@ -8,13 +8,14 @@ The same binary that answers the API serves the web app, on the same port:
 self-hosted install is one file - there is no web server to configure, and no
 way for the UI to be from a different build than the API it calls.
 
-**My week** is the employee's own history: seven days, each drawn as a timeline
-of gold stretches broken by the pauses in them, and any day opens to its pauses
-and the tasks logged on it. **The team** is the manager's dashboard - a row per
-person with their hours, bars that compare people with each other, and a status
-that says what the server knows, under a band naming the people the server
-thinks are worth a look; clicking a row opens that person's twelve-week chart
-and their week, in the same component the personal page uses. **The month** is the same team as a
+**My day** is the employee's own history: a day, a week or a month of days,
+each drawn as a timeline of gold stretches broken by the pauses in them, and any
+day opens to its pauses and the tasks logged on it. **The team** is the
+manager's dashboard - a row per person with their hours, a bar against their own
+norm, and a status that says what the server knows, under a band naming the
+people the server thinks are worth a look; clicking a row opens that person's
+twelve-week chart and their days, in the same component the personal page uses.
+**The month** is the same team as a
 grid - a square per person per day, shaded by hours, with weekends marked from
 the calendar and nothing recorded drawn as an empty square rather than as a
 worked day of zero. Its five shades come from the design system rather than
@@ -43,13 +44,13 @@ kasl stops toasting what you read there. A notice about one day opens that day.
 A manager's [notes](/kasl-server/reference/notes-on-a-day/) sit on the line of
 the day they are written on - the newest one's words under the day, all of
 them when the day is opened - including a day nothing was recorded for, which
-is where approved leave usually is. The drill-down into a person's week is
+is where approved leave usually is. The drill-down into a person's days is
 where a manager writes them: open any day, and the form is under its notes.
 Whoever wrote a note, or an administrator, can withdraw it; a note cannot be
 edited, so a correction is withdraw and write again.
 
 Where the installation approves days, a finished day opens to **Report this
-day** on the person's own week, and its line then says where the
+day** on the person's own page, and its line then says where the
 [report](/kasl-server/reference/reports-and-approval/) stands - waiting,
 approved, returned, or changed since it was reported - with a mark beside the
 word, never colour alone. A day sent back shows the reason and offers to report
@@ -61,6 +62,32 @@ screen, beside the full day; everyone else reads there whether it is on.
 
 The version in the header comes from `/health` - the server's, not the
 bundle's. One product, one number.
+
+## Periods, comparison and export
+
+Both the personal page and the team screen show **a day, a week or a month**,
+picked above the arrows. The period is in the address - `?period=month&from=2026-09-01`
+- so it can be linked, and it survives a visit to a person's page and back.
+
+**Everyone is measured against their own norm**, never against each other's
+hours: the share of norm is already adjusted for part time and for leave, so
+somebody on half time who worked their half reads as 100%. **A period is
+compared with the one before** - this week with last week, September with
+August - as shares, because two months with different working days would
+otherwise compare calendars. The team table sorts by name, by share of norm,
+or by how the share moved, and an administrator who sees several departments
+gets a line per department. There is no sort by hours: that order is a
+scoreboard, which this product does not draw.
+
+**A period still running is measured against what has come due**: the days
+before today, and today once its day is closed. On the 10th of a month the
+norm shown is ten days' worth, with the whole month's beside it, so somebody on
+track reads as on track rather than as a third done.
+
+**Export** downloads what is on the screen: an Excel workbook with a summary
+sheet and a sheet of days, or either table as CSV. The team screen exports the
+team, the personal page exports your own hours; a period still running is
+exported to today. See [exporting hours](/kasl-server/reference/exporting-hours/).
 
 ## On a phone
 

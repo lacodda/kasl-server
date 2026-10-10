@@ -47,8 +47,3 @@ export function askedDay(value: string | null): string | null {
   const real = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
   return real ? value : null
 }
-
-/** A `YYYY-MM-DD` date as a local `Date` at midday, so no zone moves it onto a neighbouring day. */
-export function atMidday(date: string): Date {
-  return new Date(`${date}T12:00:00`)
-}

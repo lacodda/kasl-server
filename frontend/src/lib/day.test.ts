@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Day, Pause } from '@/lib/api'
-import { bands, duration, isoDate, shiftWeeks, since, startOfWeek, weekDates, weekdayName } from '@/lib/day'
+import { bands, duration, isoDate, since, weekdayName } from '@/lib/day'
 import { place } from '@/components/ui/track-segments'
 
 function pause(from: string, to: string | null, seconds: number, manual = false): Pause {
@@ -42,26 +42,8 @@ describe('duration', () => {
   })
 })
 
-describe('week boundaries', () => {
-  it('starts the week on Monday', () => {
-    // A Wednesday and the Sunday after it belong to the same week.
-    expect(isoDate(startOfWeek(new Date(2026, 7, 26)))).toBe('2026-08-24')
-    expect(isoDate(startOfWeek(new Date(2026, 7, 30)))).toBe('2026-08-24')
-    // A Monday is already the start of its own week.
-    expect(isoDate(startOfWeek(new Date(2026, 7, 24)))).toBe('2026-08-24')
-  })
-
-  it('lists seven days and crosses a month boundary', () => {
-    const dates = weekDates(startOfWeek(new Date(2026, 7, 31)))
-    expect(dates).toEqual(['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06'])
-  })
-
-  it('steps by whole weeks in both directions', () => {
-    const monday = startOfWeek(new Date(2026, 7, 26))
-    expect(isoDate(shiftWeeks(monday, -1))).toBe('2026-08-17')
-    expect(isoDate(shiftWeeks(monday, 1))).toBe('2026-08-31')
-  })
-
+// Weeks, months and their arithmetic are `period.ts`'s, and tested there.
+describe('local dates', () => {
   it('keeps a date on its own calendar day', () => {
     // The regression this guards: `new Date('2026-08-24')` is UTC midnight,
     // which west of Greenwich is the 23rd. Dates here are local by

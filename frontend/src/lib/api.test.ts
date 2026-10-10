@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, attachmentName, exportUrl } from '@/lib/api'
 
 /**
  * What is worth testing here is the failure path, not the happy one: a
@@ -78,5 +78,28 @@ describe('the API client', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(init.headers).toEqual({})
+  })
+})
+
+describe('export links', () => {
+  it('name the six files the server answers', () => {
+    // The routes are files, so a browser saves them as what they are; a typo
+    // here is a 404 that only shows when somebody presses the button.
+    expect(exportUrl('team', 'xlsx', '2026-09-01', '2026-09-30')).toBe('/api/v1/team/export.xlsx?from=2026-09-01&to=2026-09-30')
+    expect(exportUrl('team', 'summary.csv', '2026-09-01', '2026-09-30')).toBe(
+      '/api/v1/team/export/summary.csv?from=2026-09-01&to=2026-09-30',
+    )
+    expect(exportUrl('me', 'days.csv', '2026-09-01', '2026-09-30')).toBe('/api/v1/me/export/days.csv?from=2026-09-01&to=2026-09-30')
+    expect(exportUrl('me', 'xlsx', '2026-10-07', '2026-10-07')).toBe('/api/v1/me/export.xlsx?from=2026-10-07&to=2026-10-07')
+  })
+})
+
+describe('attachment names', () => {
+  it('come from the header, or not at all', () => {
+    expect(attachmentName('attachment; filename="kasl-team-2026-09-01-to-2026-09-30.xlsx"')).toBe(
+      'kasl-team-2026-09-01-to-2026-09-30.xlsx',
+    )
+    expect(attachmentName('attachment')).toBeNull()
+    expect(attachmentName(null)).toBeNull()
   })
 })

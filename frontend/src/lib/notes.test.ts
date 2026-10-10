@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Note } from '@/lib/api'
-import { isoDate, startOfWeek } from '@/lib/day'
-import { askedDay, atMidday, mayWithdraw, notesByDate } from '@/lib/notes'
+import { askedDay, mayWithdraw, notesByDate } from '@/lib/notes'
 
 const note = (fields: Partial<Note>): Note => ({
   id: 'n1',
@@ -54,12 +53,5 @@ describe('askedDay', () => {
     // Would roll over to March 2 in `Date`, and open the wrong week silently.
     expect(askedDay('2026-02-30')).toBeNull()
     expect(askedDay('2026-13-01')).toBeNull()
-  })
-
-  it('opens the week the day is in', () => {
-    // A Friday opens the week that started on its Monday, whatever the zone.
-    expect(isoDate(startOfWeek(atMidday('2026-10-02')))).toBe('2026-09-28')
-    // A Sunday belongs to the week before, not the one about to start.
-    expect(isoDate(startOfWeek(atMidday('2026-10-04')))).toBe('2026-09-28')
   })
 })

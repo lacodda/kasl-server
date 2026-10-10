@@ -24,33 +24,6 @@ export function isoDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-/** The Monday of the week containing `date`, as a local date. */
-export function startOfWeek(date: Date): Date {
-  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  // getDay() is 0 on Sunday, which belongs to the week that started six days
-  // earlier rather than the one about to start.
-  const weekday = (monday.getDay() + 6) % 7
-  monday.setDate(monday.getDate() - weekday)
-  return monday
-}
-
-/** A week: seven dates, Monday first. A tuple, so its ends are always there. */
-export type Week = [string, string, string, string, string, string, string]
-
-/** The seven local dates of the week that `monday` starts, as `YYYY-MM-DD`. */
-export function weekDates(monday: Date): Week {
-  const dates = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset)
-    return isoDate(date)
-  })
-  return dates as Week
-}
-
-/** Moves a week boundary by whole weeks, forward or back. */
-export function shiftWeeks(monday: Date, weeks: number): Date {
-  return new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + weeks * 7)
-}
-
 /**
  * Hours and minutes as `7h 30m`, or `—` for a figure the server does not have.
  *

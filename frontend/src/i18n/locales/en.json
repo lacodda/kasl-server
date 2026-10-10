@@ -22,10 +22,11 @@
     "calendar": "Calendar"
   },
   "myDay": {
-    "title": "My week",
-    "thisWeek": "This week",
-    "previousWeek": "Previous week",
-    "nextWeek": "Next week",
+    "title": {
+      "day": "My day",
+      "week": "My week",
+      "month": "My month"
+    },
     "worked": "Worked",
     "paused": "Paused",
     "daysRecorded": "Days recorded",
@@ -50,9 +51,17 @@
     "whyNotStored": "What this server stores about me",
     "norm": "Norm",
     "progress": "{{worked}} of {{norm}}",
-    "progressLabel": "Hours worked against the norm for this week",
+    "progressLabel": {
+      "day": "Hours worked against the norm for this day",
+      "week": "Hours worked against the norm for this week",
+      "month": "Hours worked against the norm for this month"
+    },
     "overNorm": "{{over}} over",
-    "noNorm": "No hours are due this week",
+    "noNorm": {
+      "day": "No hours are due this day",
+      "week": "No hours are due this week",
+      "month": "No hours are due this month"
+    },
     "partTime": "{{rate}} of a full day",
     "dayKind": {
       "vacation": "On leave",
@@ -60,7 +69,14 @@
       "day_off": "Day off"
     },
     "dayNorm": "{{hours}} due",
-    "nothingDue": "Nothing due"
+    "nothingDue": "Nothing due",
+    "ofNorm": "Of norm",
+    "wholeNorm": {
+      "day": "of {{hours}} today",
+      "week": "of {{hours}} this week",
+      "month": "of {{hours}} this month"
+    },
+    "nothingDueYet": "Nothing is due yet"
   },
   "team": {
     "title": "The team",
@@ -71,8 +87,8 @@
     "silent": "Not reporting",
     "nobody": "Nobody is in your departments yet.",
     "noDepartment": "No department",
-    "noData": "No days recorded in this week",
-    "workedBar": "{{name}} worked {{hours}} this week",
+    "noData": "No days recorded in this period",
+    "workedBar": "{{name}} worked {{hours}}",
     "days": "days",
     "pausedShort": "paused",
     "open": "Day open",
@@ -83,7 +99,7 @@
     "hoursAgo": "{{count}} h",
     "daysAgo": "{{count}} d",
     "backToTeam": "Back to the team",
-    "person": "Their week",
+    "person": "Their hours",
     "live": {
       "working": "Working",
       "paused": "On a break",
@@ -96,7 +112,19 @@
     "daysAway_other": "{{count}} days away",
     "fullDay": "A full day here is {{hours}}h",
     "partTime": "{{rate}}×",
-    "normBar": "{{name}} worked {{hours}} of {{norm}}"
+    "normBar": "{{name}} worked {{hours}} of {{norm}}",
+    "ofNormTotal": "Of norm",
+    "ofNormShort": "{{share}} of norm",
+    "departments": "Departments",
+    "peopleCount": "{{count}} person",
+    "peopleCount_other": "{{count}} people",
+    "sortLabel": "Sort",
+    "sort": {
+      "name": "Name",
+      "share": "Of norm",
+      "change": "Change"
+    },
+    "left": "Left"
   },
   "heatmap": {
     "title": "The month",
@@ -330,5 +358,43 @@
       "off": "Days are not approved here. A day reported from kasl is the person saying it is finished, and nothing waits for an answer.",
       "failed": "Not saved: {{reason}}"
     }
+  },
+  "period": {
+    "label": "Period",
+    "unit": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month"
+    },
+    "previous": {
+      "day": "Previous day",
+      "week": "Previous week",
+      "month": "Previous month"
+    },
+    "next": {
+      "day": "Next day",
+      "week": "Next week",
+      "month": "Next month"
+    },
+    "now": {
+      "day": "Today",
+      "week": "This week",
+      "month": "This month"
+    },
+    "versus": {
+      "day": "vs the day before",
+      "week": "vs last week",
+      "month": "vs last month"
+    },
+    "soFar": "so far, to {{date}}",
+    "upcoming": "not begun yet"
+  },
+  "export": {
+    "button": "Export",
+    "preparing": "Preparing…",
+    "workbook": "Excel workbook",
+    "summaryCsv": "Summary as CSV",
+    "daysCsv": "Days as CSV",
+    "failed": "The file could not be downloaded"
   }
 }

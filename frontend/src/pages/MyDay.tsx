@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { CheckCheck, Coffee, Hourglass, Lock, MessageSquareText, Plane, RefreshCcw, Send, Undo2 } from 'lucide-react'
-import { PeriodPicker } from '@/components/PeriodPicker'
+import { ExportMenu } from '@/components/ExportMenu'
+import { PeriodControls, PeriodRange } from '@/components/PeriodControls'
 import { api, ApiError, type Day, type DaysResponse, type Note, type NotStored, type Report } from '@/lib/api'
-import { bands, clock, duration, isoDate, moment, shiftWeeks, startOfWeek, weekDates, weekdayName } from '@/lib/day'
-import { askedDay, atMidday, mayWithdraw, notesByDate } from '@/lib/notes'
+import { points } from '@/lib/compare'
+import { bands, clock, duration, isoDate, moment, weekdayName } from '@/lib/day'
+import { askedDay, mayWithdraw, notesByDate } from '@/lib/notes'
+import { percent, periodDates, shareChange, shareOfNorm, shiftPeriod, type Period, type PeriodUnit } from '@/lib/period'
 import { MAX_REASON_CHARS, movedHours, ownAction, review, statusLook, type StatusLook } from '@/lib/reports'
 import { useSession } from '@/lib/session'
+import { usePeriod } from '@/lib/use-period'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import { Progress } from '@/components/ui/progress'
@@ -16,28 +20,29 @@ import { Textarea } from '@/components/ui/textarea'
 import { Track, type TrackSegment } from '@/components/ui/track'
 
 /**
- * The employee's own week: what the server holds about them, in their words.
+ * The employee's own days: what the server holds about them, in their words.
  */
 export function MyDay() {
   const { t } = useTranslation()
-  return <WeekView title={t('myDay.title')} load={api.myDays} />
+  const title = useCallback((unit: PeriodUnit) => t(`myDay.title.${unit}`), [t])
+  return <WeekView title={title} load={api.myDays} exportable />
 }
 
 /**
- * A week of one person's days, whoever they are.
+ * A period of one person's days, whoever they are.
  *
  * Shared by the personal page and the manager's drill-down: both render the
  * same answer from the server (`/me/days` and `/users/{id}/days` are the same
  * shape by design), and a second copy of this would drift from the first.
  *
- * The screen shows a week at a time and lets one day be opened. Where the
- * installation's privacy level withheld something, it says so in that spot
- * rather than rendering an empty list - which is the whole reason the endpoint
- * reports `not_stored` (ADR 0011).
+ * The screen shows a day, a week or a month at a time (ADR 0023) and lets one
+ * day be opened. Where the installation's privacy level withheld something,
+ * it says so in that spot rather than rendering an empty list - which is the
+ * whole reason the endpoint reports `not_stored` (ADR 0011).
  *
  * A manager's notes sit on the line of the day they are written on, whether or
- * not that day was ever worked (ADR 0021). `?date=` opens the week of that day
- * with it expanded, which is where a notice about one day points.
+ * not that day was ever worked (ADR 0021). `?date=` opens the period around
+ * that day with it expanded, which is where a notice about one day points.
  *
  * A day's report stands on its line too (ADR 0022): the person reports a
  * finished day from here, and on the drill-down its manager answers it.
@@ -47,8 +52,10 @@ export function WeekView({
   subtitle,
   load,
   writeFor,
+  exportable = false,
 }: {
-  title: string
+  /** The heading, by the unit on screen: "My week", "My month". */
+  title: (unit: PeriodUnit) => string
   subtitle?: ReactNode
   load: (from: string, to: string) => Promise<DaysResponse>
   /**
@@ -57,81 +64,91 @@ export function WeekView({
    * day, and the server would refuse it.
    */
   writeFor?: string
+  /**
+   * Whether the period can be downloaded from here: the personal page. The
+   * drill-down's person is in the team's export, which is downloaded from
+   * the team screen.
+   */
+  exportable?: boolean
 }) {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   // Read once, on arrival: the link asks for a day, and from then on the
   // arrows are the reader's.
   const [asked] = useState(() => askedDay(params.get('date')))
-  const [monday, setMonday] = useState(() => startOfWeek(asked ? atMidday(asked) : new Date()))
+  const [period, setPeriod] = usePeriod()
   // The answer carries the range it is for. Clearing it in the effect instead
-  // would be a second render pass on every week change - and worse, a late
-  // answer for the week just left would land as if it were this one's.
-  const [loaded, setLoaded] = useState<{ range: string; answer: DaysResponse | null } | null>(null)
+  // would be a second render pass on every period change - and worse, a late
+  // answer for the period just left would land as if it were this one's. The
+  // period before rides along for the comparison.
+  const [loaded, setLoaded] = useState<{ range: string; answer: DaysResponse | null; before: DaysResponse | null } | null>(null)
   const [selected, setSelected] = useState<string | null>(asked)
-  // Bumped when a note is written or withdrawn, so the week is asked for
+  // Bumped when a note is written or withdrawn, so the period is asked for
   // again and shows what the server now holds rather than a local guess.
   const [revision, setRevision] = useState(0)
   const reload = useCallback(() => setRevision((current) => current + 1), [])
 
-  const dates = useMemo(() => weekDates(monday), [monday])
-  const from = dates[0]
-  const to = dates[6]
+  // Whole periods: what a period still running is measured against is the
+  // norm that has come due, answered beside the whole norm (ADR 0023).
+  const { from, to } = period
+  const { from: beforeFrom, to: beforeTo } = shiftPeriod(period, -1)
   const range = `${from}:${to}`
+  const dates = useMemo(() => periodDates({ unit: 'day', from, to }), [from, to])
+  const today = isoDate(new Date())
 
   useEffect(() => {
     let cancelled = false
-    load(from, to)
-      .then((value) => {
-        if (!cancelled) setLoaded({ range: `${from}:${to}`, answer: value })
+    const key = `${from}:${to}`
+    Promise.all([
+      load(from, to),
+      // A failed comparison costs the comparison, not the page.
+      load(beforeFrom, beforeTo).catch(() => null),
+    ])
+      .then(([answer, before]) => {
+        if (!cancelled) setLoaded({ range: key, answer, before })
       })
       .catch(() => {
         // `null` for this range means it was asked for and failed, which the
         // render tells apart from a range still in flight.
-        if (!cancelled) setLoaded({ range: `${from}:${to}`, answer: null })
+        if (!cancelled) setLoaded({ range: key, answer: null, before: null })
       })
     return () => {
       cancelled = true
     }
-  }, [from, to, load, revision])
+  }, [from, to, beforeFrom, beforeTo, load, revision])
 
   const current = loaded?.range === range ? loaded : null
   const answer = current?.answer ?? null
   const failed = current !== null && current.answer === null
 
-  const goto = useCallback((weeks: number) => {
-    setMonday((current) => shiftWeeks(current, weeks))
-    // The open day belongs to the week that is leaving.
-    setSelected(null)
-  }, [])
+  const goto = useCallback(
+    (next: Period) => {
+      setPeriod(next)
+      // The open day belongs to the period that is leaving.
+      setSelected(null)
+    },
+    [setPeriod],
+  )
 
   const byDate = useMemo(() => new Map(answer?.days.map((day) => [day.date, day]) ?? []), [answer])
   const notes = useMemo(() => notesByDate(answer?.notes ?? []), [answer])
-  const today = isoDate(new Date())
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      {/* Stacked on a phone, side by side from `sm`. The week's arrows are a
-          row of their own below the title rather than squeezed beside it: at
-          320px the title, the dates and three controls on one line leave the
+      {/* Stacked on a phone, side by side from `sm`. The period's controls are
+          a row of their own below the title rather than squeezed beside it: at
+          320px the title, the dates and the controls on one line leave the
           title two words wide. */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold">{title}</h1>
+          <h1 className="text-lg font-semibold">{title(period.unit)}</h1>
           {subtitle}
-          <p className="mt-1 font-mono text-xs text-faint tabular">
-            {from} — {to}
-          </p>
+          <PeriodRange period={period} />
         </div>
-        <PeriodPicker
-          previousLabel={t('myDay.previousWeek')}
-          nextLabel={t('myDay.nextWeek')}
-          onPrevious={() => goto(-1)}
-          onNext={() => goto(1)}
-          onNow={() => setMonday(startOfWeek(new Date()))}
-        >
-          {t('myDay.thisWeek')}
-        </PeriodPicker>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <PeriodControls period={period} onChange={goto} />
+          {exportable && <ExportMenu subject="me" period={period} />}
+        </div>
       </header>
 
       {failed && <p className="text-sm text-bad">{t('common.error')}</p>}
@@ -139,7 +156,7 @@ export function WeekView({
 
       {answer && (
         <>
-          <WeekTotal answer={answer} />
+          <PeriodTotal answer={answer} before={current?.before ?? null} unit={period.unit} />
 
           <Panel className="divide-y divide-line">
             {dates.map((date) => (
@@ -176,40 +193,59 @@ export function WeekView({
 }
 
 /**
- * The week's worked hours against what it asked for.
+ * The period's worked hours against what it asked for.
  *
  * The two figures sit side by side and the bar divides them - the server
  * answers a pair rather than a percentage, because "32h of 40h" and "80%" are
  * not the same sentence and only one of them survives a part-time week
- * (ADR 0017).
+ * (ADR 0017). The share appears once, as the figure that moves against the
+ * period before: September and August have different norms, and their shares
+ * are what compare (ADR 0023).
  */
-function WeekTotal({ answer }: { answer: DaysResponse }) {
+function PeriodTotal({ answer, before, unit }: { answer: DaysResponse; before: DaysResponse | null; unit: PeriodUnit }) {
   const { t } = useTranslation()
   // Open days contribute nothing rather than a partial figure: the total says
   // how much work is on the record, and a running day is not on it yet.
   const worked = answer.worked_seconds
   const paused = answer.days.reduce((sum, day) => sum + day.paused_seconds, 0)
-  const norm = answer.progress.norm_seconds
+  // What has come due, which the hours are measured against: the whole norm
+  // of a period that is over, and the part behind today of one still running
+  // (ADR 0023). The whole norm is said beside it while they differ.
+  const norm = answer.progress.due_seconds
+  const whole = answer.progress.norm_seconds
   const over = worked - norm
+  const share = shareOfNorm(worked, norm)
+  const change = shareChange(share, before ? shareOfNorm(before.worked_seconds, before.progress.due_seconds) : null)
 
   return (
     <Panel className="space-y-4 p-4 sm:p-5">
       <StatRow>
         <StatTile label={t('myDay.worked')} value={duration(worked)} tone="accent" />
-        <StatTile label={t('myDay.norm')} value={norm > 0 ? duration(norm) : '—'} />
+        <StatTile
+          label={t('myDay.norm')}
+          value={norm > 0 ? duration(norm) : '—'}
+          delta={whole > norm ? t(`myDay.wholeNorm.${unit}`, { hours: duration(whole) }) : undefined}
+        />
+        {share !== null && (
+          <StatTile
+            label={t('myDay.ofNorm')}
+            value={percent(share)}
+            delta={change !== null ? `${points(change)} ${t(`period.versus.${unit}`)}` : undefined}
+          />
+        )}
         <StatTile label={t('myDay.paused')} value={duration(paused)} />
         <StatTile label={t('myDay.daysRecorded')} value={String(answer.days.length)} />
       </StatRow>
 
       {norm > 0 ? (
         <Progress
-          // Clamped at the norm so the bar stays a bar: a week worked over its
-          // norm would otherwise fill past the track and say nothing about how
-          // far over it went. The figure beside it is not clamped, and that is
-          // where the overtime is stated.
+          // Clamped at the norm so the bar stays a bar: a period worked over
+          // its norm would otherwise fill past the track and say nothing about
+          // how far over it went. The figure beside it is not clamped, and
+          // that is where the overtime is stated.
           value={Math.min(worked, norm)}
           max={norm}
-          label={t('myDay.progressLabel')}
+          label={t(`myDay.progressLabel.${unit}`)}
           // Over the norm is not a warning tone. Nothing on this screen calls
           // a number good or bad - it says what happened, and how much of it
           // was due (ADR 0017).
@@ -221,10 +257,10 @@ function WeekTotal({ answer }: { answer: DaysResponse }) {
           </span>
         </Progress>
       ) : (
-        // A week that owes nothing - a full week of leave, or a rate of zero.
-        // Said in words rather than drawn as an empty bar, which would read as
-        // "nothing done" instead of "nothing due".
-        <p className="text-xs text-faint">{t('myDay.noNorm')}</p>
+        // A period that owes nothing - a weekend, a full week of leave, a
+        // rate of zero - or nothing yet. Said in words rather than drawn as an
+        // empty bar, which would read as "nothing done" instead of "nothing due".
+        <p className="text-xs text-faint">{whole > 0 ? t('myDay.nothingDueYet') : t(`myDay.noNorm.${unit}`)}</p>
       )}
 
       {answer.progress.work_rate !== 1 && (
