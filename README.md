@@ -28,7 +28,7 @@ included, so the loop is closed end to end.
 ```console
 $ docker compose up -d
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.26.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.27.0"}
 
 # An agent back from three days offline - the middle day is impossible, and
 # the others land anyway.
@@ -56,11 +56,15 @@ can be seen before an agent is installed anywhere.
   and signals naming who is worth a look - and a note on any day, "your day
   off on Friday is approved", told to the person it is for. Where a team signs
   off on hours, the days people report wait for their manager's approval.
-- **A personal page for every employee.** Their own week, drawn as a timeline
-  of work and the pauses in it, against the hours it asked for - and an inbox
+- **A personal page for every employee.** Their own day, week or month, drawn
+  as a timeline of work and the pauses in it, against the hours it asked for - and an inbox
   of what the server told them: an alert about their day, a manager's note on
   one, a day approved or sent back, a machine added to their account, a change
   to what is stored.
+- **Periods that compare and leave as files.** A day, a week or a month, each
+  person against their own norm and against the period before - never ranked by
+  hours - and downloaded as an Excel workbook or CSV, for the team or for
+  yourself.
 - **A production calendar and a norm.** Holidays, shortened eves and
   transferred weekends; a full day per installation and a share of it per
   person, so half time reads as half time rather than as half-hearted.
@@ -89,12 +93,13 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.26.0, in daily use on a small team's own stand. The ingest contract,
+v0.27.0, in daily use on a small team's own stand. The ingest contract,
 dashboards, roles, departments, the audit log, the privacy manifest, the
 production calendar, alerts that arrive without being asked for - in the web
 UI and in a Slack, Mattermost or Telegram chat - notices to the employee they
 are about, a manager's notes on a day, days reported and approved where a team
-signs off on hours, and a phone layout all hold end to end. What landed in each
+signs off on hours, periods compared and exported, and a phone layout all hold
+end to end. What landed in each
 version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 

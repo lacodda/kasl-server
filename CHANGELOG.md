@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.27.0] - 2026-10-10
+
+### Bug Fixes
+- Count a period's hours the way its days do
+
+### Features
+- Download a range of hours as a workbook or CSV
+- Answer the part of the norm that has come due
+- Show a day, a week or a month, and compare it
+
 ## [0.26.0] - 2026-10-06
 
 ### Dependencies
