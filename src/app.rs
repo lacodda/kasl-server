@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, calendar, config::Config, demo, department, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy, reports,
-    signals, team, web, webhooks,
+    admin, alerts, audit, auth, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy,
+    reports, signals, team, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -55,10 +55,21 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // days here: a report is true either way, and where approval is on it
         // is also the question to a manager (ADR 0022).
         .route("/me/reports", post(reports::submit_own))
+        // A person's own hours as files - the same tables a manager exports,
+        // with one row of people (ADR 0023).
+        .route("/me/export.xlsx", get(export::my_workbook))
+        .route("/me/export/summary.csv", get(export::my_summary))
+        .route("/me/export/days.csv", get(export::my_days))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
         .route("/team/days", get(team::days))
+        // The same range as files: the summary the table shows and the days
+        // under it. Named as files, so a browser saves them as what they are
+        // (ADR 0023).
+        .route("/team/export.xlsx", get(export::team_workbook))
+        .route("/team/export/summary.csv", get(export::team_summary))
+        .route("/team/export/days.csv", get(export::team_days))
         // What the team is doing right now, polled on a timer. Split from
         // `/team/days` on purpose: this one is asked every half minute and
         // must stay cheap enough to be (ADR 0014).

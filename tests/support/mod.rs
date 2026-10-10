@@ -373,6 +373,21 @@ impl TestServer {
         read_response(self.router().oneshot(request).await.expect("the router should answer")).await
     }
 
+    /// GETs a file carrying a cookie: the status, the headers and the raw
+    /// bytes, for answers that are not JSON - the exports.
+    pub async fn get_file_with_cookie(&self, path: &str, cookie: Option<&str>) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut request = Request::get(path);
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie_pair(cookie));
+        }
+        let request = request.body(Body::empty()).expect("the request should build");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = response.into_body().collect().await.expect("the body should read").to_bytes();
+        (status, headers, bytes.to_vec())
+    }
+
     /// GETs a path with an arbitrary Authorization header.
     pub async fn get_with_header(&self, path: &str, authorization: Option<&str>) -> (StatusCode, Value) {
         let mut request = Request::get(path);

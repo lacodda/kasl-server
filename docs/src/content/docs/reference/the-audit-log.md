@@ -26,6 +26,12 @@ it is, with the report's id and date - never the reason, which the report keeps
 where the person reads it. Turning approval on or off is
 `reports.approval_changed`, with both values.
 
+Downloading other people's hours is recorded as `hours.exported`, with the
+file (`workbook`, `summary.csv` or `days.csv`), the range and how many people it
+held: of everything read on this server, it is the one read after which the data
+has left it. Downloading your own is not recorded. See
+[exporting hours](/kasl-server/reference/exporting-hours/).
+
 Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
 `limit` (500 at most) and `offset`. "Everything that happened to this person" is
 `?target_id=...`.

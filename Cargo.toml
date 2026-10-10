@@ -59,6 +59,11 @@ rusqlite = { version = "0.39.0", features = ["bundled", "chrono"] }
 # arrives at 7.999999 hours turns into an argument about a cent at the end
 # of the month (ADR 0017).
 rust_decimal = { version = "1.43.0", features = ["serde-float"] }
+# The Excel export (ADR 0023). A workbook is a zip of XML parts with a
+# shared-strings table, styles and a date system of its own; this writes all of
+# it and nothing else, and has no default features. `chrono` lets a date go in
+# as the date it is rather than as a serial number computed here.
+rust_xlsxwriter = { version = "0.99.1", features = ["chrono"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -99,6 +104,9 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 uuid = { version = "1.27.0", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
 rusqlite = { version = "0.39.0", features = ["bundled"] }
+# The export tests open the workbook the server wrote. The features the
+# workbook writer already builds it with, so nothing new is compiled.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 # Line-table debug info keeps backtraces readable while cutting the .pdb weight
 # that dominates target/debug. Full debug info is a one-line revert when needed.

@@ -52,6 +52,7 @@ pub mod action {
     pub const REPORT_RETURNED: &str = "report.returned";
     pub const DAY_APPROVAL_CHANGED: &str = "reports.approval_changed";
     pub const WEBHOOK_TESTED: &str = "webhook.tested";
+    pub const HOURS_EXPORTED: &str = "hours.exported";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 

@@ -200,14 +200,21 @@ const NEWEST_FIRST: &str = "r.submitted_at DESC, r.id DESC";
 /// What a day's report says now. An older report of the same day is history -
 /// a correction made since, or an answer given to figures that are gone.
 pub async fn for_range(executor: impl PgExecutor<'_>, user_id: Uuid, range: &Range) -> Result<Vec<Report>, sqlx::Error> {
+    for_people(executor, &[user_id], range).await
+}
+
+/// The same, for several people at once: the days export reads a whole team's
+/// reports in one query rather than one per person. Ordered by person, then
+/// day.
+pub async fn for_people(executor: impl PgExecutor<'_>, user_ids: &[Uuid], range: &Range) -> Result<Vec<Report>, sqlx::Error> {
     // `AssertSqlSafe` on constants in this module; the values are bound.
     let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT DISTINCT ON (r.date) {COLUMNS}, {CHANGED} AS changed
+        "SELECT DISTINCT ON (r.user_id, r.date) {COLUMNS}, {CHANGED} AS changed
          {JOINS}
-         WHERE r.user_id = $1 AND r.date BETWEEN $2 AND $3
-         ORDER BY r.date, {NEWEST_FIRST}"
+         WHERE r.user_id = ANY($1) AND r.date BETWEEN $2 AND $3
+         ORDER BY r.user_id, r.date, {NEWEST_FIRST}"
     )))
-    .bind(user_id)
+    .bind(user_ids)
     .bind(range.from)
     .bind(range.to)
     .fetch_all(executor)

@@ -58,3 +58,7 @@ approval](/kasl-server/reference/reports-and-approval/).
 
 A range covers at most 400 days; a wider one, or one that runs backwards, is a
 `400` naming the span asked for rather than a truncated answer.
+
+The same range downloads as a workbook or as CSV -
+`GET /api/v1/me/export.xlsx`, `/me/export/summary.csv` and
+`/me/export/days.csv`. See [exporting hours](/kasl-server/reference/exporting-hours/).
