@@ -83,8 +83,9 @@ enum Pattern {
     PartTime,
     /// Working right now: a day open on today's date.
     Open,
-    /// Steady, and then a day left open since yesterday morning: kasl still
-    /// running on a machine nobody is at.
+    /// Steady, and then the last day worked left open - yesterday's on a
+    /// weekday, Friday's on a weekend: kasl still running on a machine nobody
+    /// is at.
     ///
     /// The state the "day not closed" alert exists for, and one no other
     /// pattern produces. `Open` cannot double as it - that row is somebody
@@ -1040,39 +1041,28 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
     }
 
     if pattern == Pattern::Stranded {
-        // Yesterday morning, and never closed. Not "a long day": the day is
+        // The last day worked, and never closed. Not "a long day": the day is
         // still open now, which is what makes every total it will eventually
         // produce wrong, and what the alert is about.
         //
-        // The last finished day above lands on yesterday for a weekday run, so
-        // this replaces it rather than sitting beside it - one person has one
-        // day per date, and the second would be refused at ingest.
-        let stranded_date = today - Duration::days(1);
-        // Keeps the day's own lunch and tasks: what makes it stranded is the
-        // missing `ended_at`, not an empty day. A bare row would also be a day
-        // with no pauses and no tasks, which is a shape the employee's own
-        // screen does not otherwise produce and would be a second, accidental
-        // fiction.
-        let salvaged = days.iter().position(|day| day.date == stranded_date).map(|at| days.remove(at));
-        let (start, pauses, tasks) = match salvaged {
-            Some(day) => (
-                day.start,
-                // Pauses that ended: the ones inside the day that was actually
-                // worked. An open pause would say somebody is on a break right
-                // now, on a machine nobody has touched since yesterday.
-                day.pauses.into_iter().filter(|pause| pause.end.is_some()).collect(),
-                day.tasks,
-            ),
-            None => (stranded_date.and_time(minutes(8 * 60 + 40)), Vec::new(), Vec::new()),
-        };
-        days.push(AgentDay {
-            date: stranded_date,
-            start,
-            end: None,
-            pauses,
-            kind: WorkdayKind::Work,
-            tasks,
-        });
+        // The last day *worked*, not yesterday's date. Yesterday is a Saturday
+        // on a Sunday and a Sunday on a Monday, and on any day it can be a day
+        // off or a gap - and a day stranded on a date nobody worked is a bare
+        // row with no lunch and no tasks, on a weekend for a team that works
+        // weekdays: a second, accidental fiction, and one the employee's own
+        // screen shows first. The day is turned open where it stands, so it
+        // keeps its lunch and its tasks - what makes it stranded is the
+        // missing `ended_at`, not an empty day.
+        let last_worked = days.iter_mut().rev().find(|day| day.kind == WorkdayKind::Work);
+        // Eight weeks of weekdays always hold one; without it there is simply
+        // nothing to strand, and the person reads as steady.
+        if let Some(day) = last_worked {
+            day.end = None;
+            // Pauses that ended: the ones inside the day that was actually
+            // worked. An open pause would say somebody is on a break right now,
+            // on a machine nobody has touched since.
+            day.pauses.retain(|pause| pause.end.is_some());
+        }
     }
 
     if pattern == Pattern::Open {
@@ -1370,6 +1360,36 @@ mod tests {
         assert_eq!(open.date, today);
         assert!(open.start <= now.with_timezone(&person.offset()).naive_local());
         assert_eq!(days.iter().filter(|day| day.end.is_none()).count(), 1);
+    }
+
+    #[test]
+    fn the_stranded_day_is_the_last_day_worked_on_any_day_of_the_week() {
+        // The stand is born on whatever day it is born on. Stranding
+        // yesterday's date left a bare open row on Saturday when the demo
+        // started on a Sunday - no lunch, no tasks, a weekend for a team that
+        // works weekdays - and the same on any date that was a day off or a
+        // gap. Every weekday of a week, across many generator seeds so the
+        // days off land everywhere.
+        let person = person(Pattern::Stranded);
+        for date in ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11"] {
+            let now = at(date, "12:00:00");
+            for index in 0..40 {
+                let days = days_for(person, Pattern::Stranded, index, now);
+                let open: Vec<&AgentDay> = days.iter().filter(|day| day.end.is_none()).collect();
+                assert_eq!(open.len(), 1, "one day is stranded when seeded on {date} (seed {index})");
+                let open = open[0];
+                let last_worked = days.iter().filter(|day| day.kind == WorkdayKind::Work).map(|day| day.date).max();
+                assert_eq!(Some(open.date), last_worked, "seeded on {date} (seed {index})");
+                assert!(
+                    !matches!(open.date.weekday(), Weekday::Sat | Weekday::Sun),
+                    "stranded on a weekend: {}",
+                    open.date
+                );
+                assert!(!open.pauses.is_empty(), "the stranded day keeps its lunch: {}", open.date);
+                assert!(!open.tasks.is_empty(), "the stranded day keeps its tasks: {}", open.date);
+                assert!(open.pauses.iter().all(|pause| pause.end.is_some()), "nobody is on a break on {}", open.date);
+            }
+        }
     }
 
     #[test]
