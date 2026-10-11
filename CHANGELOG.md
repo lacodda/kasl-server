@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Bug Fixes
 - Carry the mark on the executable, the sites and their unfurls
+- Strand the last day worked, not yesterday's date
 
 ### Documentation
 - Show a manager's week on the demo team
