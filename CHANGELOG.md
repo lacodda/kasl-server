@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.27.1] - 2026-10-11
+
+### Bug Fixes
+- Carry the mark on the executable, the sites and their unfurls
+
+### Documentation
+- Show a manager's week on the demo team
+
 ## [0.27.0] - 2026-10-10
 
 ### Bug Fixes
