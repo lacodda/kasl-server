@@ -46,6 +46,8 @@ The web UI is served by the same binary on the same port - open
 `KASL_DEMO=true docker compose up -d` seeds a fictional team so the dashboards
 can be seen before an agent is installed anywhere.
 
+<p align="center"><img src="https://github.com/lacodda/kasl-server/raw/main/assets/screenshot.png" alt="A manager's week on the demo team: two days left open, two people whose hours are falling, the team at 79% of its norm, and each person's hours against their own norm with who is working right now" width="860"></p>
+
 ## What you get
 
 - **A door that survives a bad connection.** One day or a backlog in one
