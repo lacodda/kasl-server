@@ -43,6 +43,24 @@ PostgreSQL-backed database job, a frontend job, and an MSRV build against the
 `rust-version` declared in `Cargo.toml`. A green terminal here means a green
 pull request.
 
+## The mark
+
+The SVGs in `assets/` - `logo.svg`, `logo-m.svg`, `logo-s.svg` and
+`banner.svg` - are the brand's masters and are not edited by hand. Everything
+else is derived from them: the Windows icon `build.rs` embeds in the
+executable, the PNGs, the social preview, and the copies the docs site and the
+web UI serve. After a master changes, regenerate the lot:
+
+```console
+$ cd docs && node export-assets.mjs
+```
+
+`tests/brand_assets.rs` reads the results back - which of the three masters
+each icon size was cut from, judged by its pixels, and whether every copy still
+matches - so a stale or mis-cut export fails the gate rather than a screen.
+`assets/screenshot.png` is the one picture not generated: it is the demo's team
+screen (`KASL_DEMO=true`), signed in as the manager, at 1120 px and 2x.
+
 ## Architecture decisions
 
 Anything that would be asked about again later is written down in

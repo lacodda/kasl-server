@@ -18,6 +18,22 @@ export default defineConfig({
 				alt: 'kasl-server',
 			},
 			favicon: '/favicon.svg',
+			// The touch icon and the unfurl picture are written by
+			// export-assets.mjs. og:image is absolute because Open Graph wants it
+			// so; the file it names is the one GitHub shows for the repository.
+			head: [
+				{ tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/kasl-server/apple-touch-icon.png' } },
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image',
+						content: 'https://raw.githubusercontent.com/lacodda/kasl-server/main/assets/social-preview.png',
+					},
+				},
+				{ tag: 'meta', attrs: { property: 'og:image:width', content: '1280' } },
+				{ tag: 'meta', attrs: { property: 'og:image:height', content: '640' } },
+				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+			],
 			customCss: ['./src/styles/brand.css'],
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/lacodda/kasl-server' }],
 			editLink: {

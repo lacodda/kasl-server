@@ -4,7 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 180px, cut from the full mark: a home-screen tile is not an icon in a
+         list, and the filled hex that reads at 16px is a coloured blob here.
+         The personal page is meant for a phone, so this is the icon a pinned
+         page wears. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>kasl-server</title>
+    <meta
+      name="description"
+      content="Team server for kasl: collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages"
+    />
+
+    <!--
+      What a link to an installation unfurls into, in a chat or a tracker.
+
+      The picture is addressed absolutely, on GitHub, rather than as a file of
+      this installation: Open Graph wants an absolute URL, and a self-hosted
+      server does not know at build time the address it will be reached at.
+      An unfurl is fetched by the chat's own bot, never by a person's browser,
+      so nobody signing in loads anything from GitHub.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="kasl-server" />
+    <meta property="og:title" content="kasl-server" />
+    <meta
+      property="og:description"
+      content="Team server for kasl: collects work-time data from employees' kasl agents and turns it into dashboards, reports, and personal pages"
+    />
+    <meta property="og:image" content="https://raw.githubusercontent.com/lacodda/kasl-server/main/assets/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

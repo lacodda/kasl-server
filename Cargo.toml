@@ -20,7 +20,11 @@ include = [
     "src/**",
     "migrations/**",
     "tests/**",
-    "assets/**",
+    # The icon is a build input on Windows (build.rs); the SVG masters ride
+    # along as the mark itself. The rasters stay out: they serve GitHub and
+    # the two websites, and would only weigh down every download of the crate.
+    "assets/*.svg",
+    "assets/icon.ico",
     "tools/**",
     "frontend/dist/**",
     "build.rs",
@@ -95,6 +99,11 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.27.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 
+# Embeds assets/icon.ico in the Windows executable (build.rs). Declared for a
+# Windows host only: every other build would compile it for nothing.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.31"
+
 [dev-dependencies]
 http-body-util = "0.1.5"
 tower = { version = "0.5.3", features = ["util"] }
@@ -107,6 +116,10 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 # The export tests open the workbook the server wrote. The features the
 # workbook writer already builds it with, so nothing new is compiled.
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# The brand gate decodes the icon's images and reads their pixels: the defect
+# it guards against - every entry cut from one master - leaves a container
+# that is perfectly well-formed. PNG is the only format read.
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 # Line-table debug info keeps backtraces readable while cutting the .pdb weight
 # that dominates target/debug. Full debug info is a one-line revert when needed.
