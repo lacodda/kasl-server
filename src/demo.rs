@@ -591,8 +591,7 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     // history is. A demo with an empty calendar would show every weekday at a
     // full norm, which is the one case the feature does not need to exist for.
     let today = now.date_naive();
-    for (weeks_ago, kind, note) in HOLIDAY_WEEKS_AGO {
-        let date = weekday_near(today - Duration::weeks(weeks_ago), kind);
+    for (date, kind, note) in demo_calendar(now) {
         sqlx::query("INSERT INTO calendar_days (date, kind, note) VALUES ($1, $2, $3) ON CONFLICT (date) DO NOTHING")
             .bind(date)
             .bind(kind)
@@ -785,6 +784,21 @@ enum Filing {
     LateTwice,
     /// Every day but one.
     ForgetsOne,
+}
+
+/// The demo's production calendar: the dates of [`HOLIDAY_WEEKS_AGO`], placed
+/// relative to `now`.
+///
+/// One function for the rows the seed writes and the days the agents keep, so
+/// the team rests on the holiday and works the transferred Saturday. Before
+/// 0.28 the two were decided apart, and the timesheet drew every person as
+/// owing a Saturday nobody had been told to work.
+fn demo_calendar(now: DateTime<Utc>) -> Vec<(chrono::NaiveDate, CalendarDayKind, &'static str)> {
+    let today = now.date_naive();
+    HOLIDAY_WEEKS_AGO
+        .iter()
+        .map(|&(weeks_ago, kind, note)| (weekday_near(today - Duration::weeks(weeks_ago), kind), kind, note))
+        .collect()
 }
 
 /// A date of the sort the kind needs, near the one asked for.
@@ -1044,9 +1058,18 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
     // Wednesday to Friday of the week before last; see [`ON_LEAVE`].
     let this_monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
     let leave = (this_monday - Duration::days(12))..=(this_monday - Duration::days(10));
+    let calendar = demo_calendar(now);
+    let marked = |date: chrono::NaiveDate, wanted: CalendarDayKind| calendar.iter().any(|&(on, kind, _)| on == date && kind == wanted);
 
     for offset in 0..(today - first).num_days() {
         let date = first + Duration::days(offset);
+
+        // Nobody works the holiday, and everybody works the Saturday the
+        // calendar moved into the week.
+        if marked(date, CalendarDayKind::Holiday) {
+            continue;
+        }
+        let working_weekend = marked(date, CalendarDayKind::WorkingWeekend);
 
         if pattern == ON_LEAVE && leave.contains(&date) {
             days.push(AgentDay {
@@ -1062,7 +1085,7 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
             continue;
         }
 
-        if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
+        if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) && !working_weekend {
             continue;
         }
         if pattern == Pattern::Silent && date >= today - Duration::days(7) {
@@ -1416,14 +1439,27 @@ mod tests {
     }
 
     #[test]
-    fn days_end_yesterday_and_skip_weekends() {
+    fn days_end_yesterday_and_follow_the_demo_calendar() {
         let now = at("2026-08-29", "10:00:00");
         let person = person(Pattern::Steady);
         let days = days_for(person, Pattern::Steady, 4, now);
         let today = now.with_timezone(&person.offset()).date_naive();
+        let calendar = demo_calendar(now);
+        let on = |wanted: CalendarDayKind| calendar.iter().find(|(_, kind, _)| *kind == wanted).map(|(date, _, _)| *date).unwrap();
+
+        // The team works the transferred Saturday and rests on the holiday:
+        // the calendar and the agents agree, or the timesheet draws a whole
+        // team owing a day it was never told to work.
+        assert!(
+            days.iter().any(|day| day.date == on(CalendarDayKind::WorkingWeekend)),
+            "the working Saturday is worked"
+        );
+        assert!(days.iter().all(|day| day.date != on(CalendarDayKind::Holiday)), "the holiday is not");
+
         for day in &days {
             assert!(day.date < today, "{} is not in the past", day.date);
-            assert!(!matches!(day.date.weekday(), Weekday::Sat | Weekday::Sun), "{} is a weekend", day.date);
+            let weekend = matches!(day.date.weekday(), Weekday::Sat | Weekday::Sun);
+            assert!(!weekend || day.date == on(CalendarDayKind::WorkingWeekend), "{} is a weekend", day.date);
             assert!(day.end.is_some(), "every past day is closed");
             let end = day.end.unwrap();
             for pause in &day.pauses {
