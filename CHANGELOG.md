@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.28.0] - 2026-10-15
+
+### Bug Fixes
+- Rest on the holiday and work the transferred Saturday
+
+### Dependencies
+- Take the week's updates, hold typescript at 6
+
+### Documentation
+- Describe the timesheet and the report deadline
+- Say the status in one short paragraph
+
+### Features
+- Answer a month date by date, and file it as a grid
+- File reports in time, two late, one forgotten, and some leave
+- Show the month as a timesheet, its reports and its shape
+
 ## [0.27.1] - 2026-10-11
 
 ### Bug Fixes
