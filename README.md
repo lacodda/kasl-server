@@ -96,15 +96,10 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.27.1, in daily use on a small team's own stand. The ingest contract,
-dashboards, roles, departments, the audit log, the privacy manifest, the
-production calendar, alerts that arrive without being asked for - in the web
-UI and in a Slack, Mattermost or Telegram chat - notices to the employee they
-are about, a manager's notes on a day, days reported and approved where a team
-signs off on hours, periods compared and exported, the month as a timesheet,
-and a phone layout all hold
-end to end. What landed in each
-version:
+v0.27.1, in daily use on a small team's own stand. Everything above holds end
+to end - ingest, dashboards, the calendar and the norm, alerts in the web UI
+and in chat, notices, notes, approval, exports, the monthly timesheet and the
+phone layout. What landed in each version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 
 ## Documentation
