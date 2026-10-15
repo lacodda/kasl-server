@@ -470,6 +470,26 @@ const REPORTED_DAYS: i64 = 14;
 /// born on - a Monday's included.
 const WAITING_DAYS: i64 = 4;
 
+/// Who files a day late on the demo, and who forgets one.
+///
+/// A report is on time when it arrives before the next working day begins
+/// (ADR 0024). The demo backdates every report to a few minutes after its day
+/// ended - the seed writes them all at once, today, and left at that moment
+/// every one of them would be late - and then makes two of one person's
+/// arrive the next morning and leaves one of another's out, so the matrix of
+/// reports shows all three marks to the manager a visitor is offered.
+const LATE_REPORTER: &str = "aiko.tanaka";
+const FORGETFUL_REPORTER: &str = "sofia.reyes";
+
+/// Who is away on the demo: three days of vacation, Wednesday to Friday of the
+/// week before last.
+///
+/// The week before last rather than last week: the signals compare the last
+/// complete week with the person's own median, and a week of leave read there
+/// as an unusual week is a defect of the signals, not something the demo
+/// should put on its front page.
+const ON_LEAVE: Pattern = Pattern::Breaks;
+
 /// Why the newest answered day of the employee a visitor is offered came back,
 /// so the bell of that account carries the notice and the day carries the
 /// words.
@@ -665,7 +685,12 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         is_admin: false,
     };
     for prefix in REPORTERS {
-        seeded.reports += seed_reports(pool, member(prefix), reviewer, today, prefix == REPORTERS[0]).await?;
+        let filing = match prefix {
+            LATE_REPORTER => Filing::LateTwice,
+            FORGETFUL_REPORTER => Filing::ForgetsOne,
+            _ => Filing::OnTime,
+        };
+        seeded.reports += seed_reports(pool, member(prefix), reviewer, today, prefix == REPORTERS[0], filing).await?;
     }
 
     audit::Entry::new(audit::action::DEMO_SEEDED)
@@ -683,16 +708,21 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
     Ok(seeded)
 }
 
-/// Reports one person's finished days of the last two weeks, and answers the
-/// older ones: approved, and - where `returns_one` - the newest of those sent
-/// back instead. Returns how many days were reported.
-async fn seed_reports(pool: &PgPool, user_id: Uuid, reviewer: Reviewer, today: chrono::NaiveDate, returns_one: bool) -> Result<usize> {
-    let dates: Vec<chrono::NaiveDate> =
-        sqlx::query_scalar("SELECT date FROM workdays WHERE user_id = $1 AND date >= $2 AND ended_at IS NOT NULL ORDER BY date")
+/// Reports one person's finished days of work of the last two weeks, and
+/// answers the older ones: approved, and - where `returns_one` - the newest of
+/// those sent back instead. `filing` says how the person files them (see
+/// [`LATE_REPORTER`]). Returns how many days were reported.
+async fn seed_reports(pool: &PgPool, user_id: Uuid, reviewer: Reviewer, today: chrono::NaiveDate, returns_one: bool, filing: Filing) -> Result<usize> {
+    // Days of work only: a day of leave asks for no report (ADR 0024).
+    let mut dates: Vec<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT date FROM workdays WHERE user_id = $1 AND date >= $2 AND ended_at IS NOT NULL AND kind = 'work' ORDER BY date")
             .bind(user_id)
             .bind(today - Duration::days(REPORTED_DAYS))
             .fetch_all(pool)
             .await?;
+    if filing == Filing::ForgetsOne && dates.len() > 2 {
+        dates.remove(2);
+    }
 
     let mut tx = pool.begin().await?;
     let mut answered = Vec::new();
@@ -703,6 +733,32 @@ async fn seed_reports(pool: &PgPool, user_id: Uuid, reviewer: Reviewer, today: c
         if (today - *date).num_days() > WAITING_DAYS {
             answered.push(submitted.report.id);
         }
+    }
+
+    // Each report a few minutes after its day ended, as `kasl report --send`
+    // files it - and, for the late one, the two oldest the next morning,
+    // forty minutes after the next working day began.
+    sqlx::query(
+        "UPDATE reports r SET submitted_at = w.ended_at + interval '6 minutes'
+         FROM workdays w WHERE w.user_id = r.user_id AND w.date = r.date AND r.user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    if filing == Filing::LateTwice {
+        let late: Vec<chrono::NaiveDate> = dates.iter().take(2).copied().collect();
+        sqlx::query(
+            "UPDATE reports r SET submitted_at = coalesce((
+                 SELECT n.started_at FROM workdays n
+                 WHERE n.user_id = r.user_id AND n.date > r.date AND n.kind = 'work'
+                 ORDER BY n.date LIMIT 1
+             ) + interval '40 minutes', r.submitted_at)
+             WHERE r.user_id = $1 AND r.date = ANY($2)",
+        )
+        .bind(user_id)
+        .bind(&late)
+        .execute(&mut *tx)
+        .await?;
     }
 
     let returned = if returns_one { answered.pop() } else { None };
@@ -718,6 +774,17 @@ async fn seed_reports(pool: &PgPool, user_id: Uuid, reviewer: Reviewer, today: c
     }
     tx.commit().await?;
     Ok(dates.len())
+}
+
+/// How a reporter on the demo files their days.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Filing {
+    /// Every day, minutes after it ends.
+    OnTime,
+    /// The two oldest the next morning.
+    LateTwice,
+    /// Every day but one.
+    ForgetsOne,
 }
 
 /// A date of the sort the kind needs, near the one asked for.
@@ -974,8 +1041,26 @@ fn days_for(person: &Person, pattern: Pattern, index: u64, now: DateTime<Utc>) -
     let mut next_task_id = 1;
     let mut days = Vec::new();
 
+    // Wednesday to Friday of the week before last; see [`ON_LEAVE`].
+    let this_monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    let leave = (this_monday - Duration::days(12))..=(this_monday - Duration::days(10));
+
     for offset in 0..(today - first).num_days() {
         let date = first + Duration::days(offset);
+
+        if pattern == ON_LEAVE && leave.contains(&date) {
+            days.push(AgentDay {
+                date,
+                // Filed the way a day off is: at the hour the day would have
+                // started, with no hours on it.
+                start: date.and_time(minutes(9 * 60)),
+                end: Some(date.and_time(minutes(9 * 60))),
+                pauses: Vec::new(),
+                tasks: Vec::new(),
+                kind: WorkdayKind::Vacation,
+            });
+            continue;
+        }
 
         if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
             continue;

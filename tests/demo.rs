@@ -753,3 +753,62 @@ async fn a_real_installation_is_never_regenerated() {
 
     server.close().await;
 }
+
+#[tokio::test]
+async fn the_demo_timesheet_shows_leave_and_every_mark_on_any_day_of_the_week() {
+    // The marks hang on the seed's "today", like everything in the demo: two
+    // reports late, one forgotten, three days of leave, whichever weekday the
+    // stand was born on - checked on all seven, because a demo that only
+    // works on Saturdays passes a test written on one (0.27.1).
+    for back in 0..7 {
+        let Some(db) = TestDb::create().await else { return };
+        let now = Utc::now() - Duration::days(back);
+        demo::seed(&db.pool, now).await.expect("seeding should succeed");
+        let server = TestServer::wrap(db);
+        let manager = signed_in(&server, &showcased(UserRole::Manager)).await;
+
+        // The reported days and the leave reach three weeks back, which can
+        // be last month.
+        let today = now.date_naive();
+        let window = today - Duration::days(21);
+        let mut months = vec![window.format("%Y-%m").to_string(), today.format("%Y-%m").to_string()];
+        months.dedup();
+
+        let mut cells: Vec<(String, serde_json::Value)> = Vec::new();
+        for month in &months {
+            let (status, body) = server.get_with_cookie(&format!("/api/v1/team/timesheet?month={month}"), Some(&manager)).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            for row in body["rows"].as_array().unwrap() {
+                let name = row["display_name"].as_str().unwrap().to_string();
+                for cell in row["days"].as_array().unwrap() {
+                    cells.push((name.clone(), cell.clone()));
+                }
+            }
+        }
+
+        // Within the fortnight the reporters file; older days were never
+        // reported by anybody.
+        let reported_since = (today - Duration::days(14)).to_string();
+        let count = |name: &str, test: &dyn Fn(&serde_json::Value) -> bool| {
+            cells
+                .iter()
+                .filter(|(who, cell)| who == name && cell["date"].as_str().unwrap() >= reported_since.as_str() && test(cell))
+                .count()
+        };
+        let worked_and = |filed: &'static str| move |cell: &serde_json::Value| cell["state"] == "worked" && cell["filed"] == filed;
+
+        let on = format!("seeded on {today} ({})", today.weekday());
+        assert_eq!(
+            cells.iter().filter(|(who, cell)| who == "Aiko Tanaka" && cell["kind"] == "vacation").count(),
+            3,
+            "three days of leave, {on}"
+        );
+        assert_eq!(count("Aiko Tanaka", &worked_and("late")), 2, "two days reported the next morning, {on}");
+        assert_eq!(count("Sofia Reyes", &worked_and("missing")), 1, "one day forgotten, {on}");
+        assert_eq!(count("Tomas Verhoeven", &worked_and("missing")), 0, "every day reported, {on}");
+        assert!(count("Tomas Verhoeven", &worked_and("on_time")) > 0, "{on}");
+        assert_eq!(count("Lukas Brandt", &worked_and("on_time")), 0, "reports nothing, {on}");
+
+        server.close().await;
+    }
+}
