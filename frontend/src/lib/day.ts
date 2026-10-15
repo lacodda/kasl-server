@@ -64,6 +64,12 @@ export function weekdayName(date: string): string {
   return new Date(`${date}T12:00:00`).toLocaleDateString(locale(), { weekday: 'short' })
 }
 
+/** A `YYYY-MM` month as its name and year, in the app's language: "October 2026". */
+export function monthName(month: string): string {
+  // The 1st at midday, so no zone shifts the label into a neighbouring month.
+  return new Date(`${month}-01T12:00:00`).toLocaleDateString(locale(), { month: 'long', year: 'numeric' })
+}
+
 /**
  * The locale for dates and times: the app's language, not the machine's.
  *

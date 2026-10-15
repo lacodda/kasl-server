@@ -15,7 +15,7 @@
   "nav": {
     "myDay": "My day",
     "team": "Team",
-    "heatmap": "The month",
+    "month": "The month",
     "privacy": "My data",
     "signOut": "Sign out",
     "sections": "Sections",
@@ -126,28 +126,91 @@
     },
     "left": "Left"
   },
-  "heatmap": {
+  "month": {
     "title": "The month",
-    "thisMonth": "This month",
-    "previousMonth": "Previous month",
-    "nextMonth": "Next month",
+    "previous": "Previous month",
+    "next": "Next month",
+    "now": "This month",
+    "download": "Download timesheet",
     "person": "Person",
-    "total": "Total",
+    "plan": "Full day, {{hours}} h",
     "noData": "no data",
-    "caption": "Hours worked by each person on each day of {{month}}.",
+    "view": {
+      "label": "View",
+      "timesheet": "Timesheet",
+      "reports": "Reports",
+      "shape": "Shape"
+    },
+    "caption": {
+      "timesheet": "Hours worked by each person on each day of {{month}}, with days away and days owed but not recorded.",
+      "reports": "Whether each day of {{month}} was reported, and in time.",
+      "shape": "Hours worked by each person on each day of {{month}}, as shades."
+    },
+    "calendar": {
+      "holiday": "Holiday",
+      "short_day": "Short day",
+      "working_weekend": "Working weekend"
+    },
+    "code": {
+      "vacation": "V",
+      "sick": "S",
+      "day_off": "O"
+    },
+    "kind": {
+      "work": "work",
+      "vacation": "vacation",
+      "sick": "sick leave",
+      "day_off": "day off"
+    },
+    "total": {
+      "worked": "Worked",
+      "due": "Due",
+      "away": "Away",
+      "unrecorded": "No record",
+      "onTime": "On time",
+      "late": "Late",
+      "missing": "Missing",
+      "approved": "Approved"
+    },
     "cell": {
-      "worked": "{{date}} - {{hours}}",
+      "worked": "{{date}} - {{hours}} worked",
       "open": "{{date}} - day still running",
-      "none": "{{date}} - nothing recorded",
-      "weekend": "{{date}} - weekend, nothing recorded"
+      "away": "{{date}} - {{kind}}",
+      "unrecorded": "{{date}} - owed, nothing recorded",
+      "ahead": "{{date}} - {{hours}} to come",
+      "free": "{{date}} - nothing owed",
+      "none": "{{date}} - nothing recorded"
+    },
+    "filed": {
+      "on_time": "{{date}} - reported in time",
+      "late": "{{date}} - reported late",
+      "missing": "{{date}} - not reported",
+      "pending": "{{date}} - not due yet"
     },
     "legend": {
+      "vacation": "Vacation",
+      "sick": "Sick leave",
+      "dayOff": "Day off",
+      "unrecorded": "Owed, nothing recorded",
+      "open": "Day still running",
+      "ahead": "Still to come, at their norm",
+      "rest": "Weekend or holiday",
+      "due": "Hours in tenths. Due is what the month has asked so far: the days before today, and today once its day is closed. The downloaded timesheet has the exact figures.",
+      "onTime": "Reported in time",
+      "late": "Reported late",
+      "missing": "Not reported",
+      "pending": "Not due yet",
+      "approved": "Approved",
+      "attention": "Returned, or changed since it was reported",
+      "deadline": "A day's report is in time when it arrives before the person's next working day begins. A date owed with nothing recorded counts as not reported.",
+      "deadlineNoApproval": "A day's report is in time when it arrives before the person's next working day begins. A date owed with nothing recorded counts as not reported. This server does not ask for days to be approved."
+    },
+    "shape": {
       "less": "Less",
       "more": "More",
       "busiest": "the far end = {{hours}}, the busiest day here",
       "none": "Nothing recorded",
-      "open": "Day still running",
-      "weekend": "Weekend"
+      "away": "Away"
     }
   },
   "alerts": {
@@ -395,6 +458,7 @@
     "workbook": "Excel workbook",
     "summaryCsv": "Summary as CSV",
     "daysCsv": "Days as CSV",
+    "timesheet": "Timesheet for the month",
     "failed": "The file could not be downloaded"
   }
 }

@@ -32,7 +32,7 @@ export function destinations(managesPeople: boolean): Destination[] {
     ...(managesPeople
       ? ([
           { to: '/team', label: 'nav.team', icon: 'team' },
-          { to: '/month', label: 'nav.heatmap', icon: 'month' },
+          { to: '/month', label: 'nav.month', icon: 'month' },
         ] as const)
       : []),
     // For everyone, not only the people who may change it: the calendar is

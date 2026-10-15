@@ -7,7 +7,7 @@ import { InboxProvider, useInbox } from '@/lib/inbox'
 import { useSession } from '@/lib/session'
 import { Calendar } from '@/pages/Calendar'
 import { Dashboard, PersonWeek } from '@/pages/Dashboard'
-import { Heatmap } from '@/pages/Heatmap'
+import { Month } from '@/pages/Month'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Notifications } from '@/pages/Notifications'
@@ -59,7 +59,7 @@ export function App() {
           {/* Guarded on the server too - these routes answer 403 to an
               employee. Hiding them here is for tidiness, not for safety. */}
           {managesPeople && <Route path="/team" element={<Dashboard />} />}
-          {managesPeople && <Route path="/month" element={<Heatmap />} />}
+          {managesPeople && <Route path="/month" element={<Month />} />}
           {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
           {/* No tab: the phone's bar holds five screens and has five. Reached
               from the alerts band, next to what it delivers. */}

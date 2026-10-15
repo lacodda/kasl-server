@@ -293,37 +293,86 @@ export interface LiveTeamResponse {
   stale_after_seconds: number
 }
 
-/** One day of one person's month, as the heatmap draws it. */
-export interface HeatmapCell {
+/**
+ * What a date was for one person (ADR 0024).
+ *
+ * Decided by the server, not here: which dates were owed and which have come
+ * due is the norm's rule, and a second copy of it in the browser is a second
+ * chance to disagree with the file a manager downloads.
+ */
+export type CellState =
+  /** A finished day of work, with hours behind it. */
+  | 'worked'
+  /** A day of work still running: no total yet. */
+  | 'open'
+  /** Leave, illness or a day off - `kind` says which. Owes nothing. */
+  | 'away'
+  /** Owed, come due, and nothing recorded. Never a zero. */
+  | 'unrecorded'
+  /** Owed, and not come due yet. */
+  | 'ahead'
+  /** Owed nothing and nothing recorded: a weekend, a holiday. */
+  | 'free'
+
+/** Whether a day was reported before the person's next working day began. */
+export type Filed = 'on_time' | 'late' | 'missing' | 'pending'
+
+/** One date of one person's month. */
+export interface TimesheetCell {
   date: string
-  /**
-   * `null` for a day still open - it has no total yet. A cell that is absent
-   * from the row is different again: nothing was recorded on that date, and
-   * the grid must not draw the two the same way.
-   */
+  state: CellState
+  /** What the agent recorded; `null` where nothing was. */
+  kind: WorkdayKind | null
+  /** `null` for an open day and for a date with nothing on it. */
   worked_seconds: number | null
-  open: boolean
+  /** What the date asked of this person. A row's cells add up to its norm. */
+  norm_seconds: number
+  /** Only where a report is asked for. */
+  filed: Filed | null
+  /** Where the day's newest report stands, when it has one. */
+  report: ReportStatus | null
 }
 
-/** One person's month. */
-export interface HeatmapRow {
-  user_id: string
-  display_name: string
-  department: string | null
-  /** Only the dates with a workday, ascending. Empty is a real answer. */
-  days: HeatmapCell[]
-  /** The longest finished day in this row; `null` when there is none. */
-  busiest_seconds: number | null
-  worked_seconds: number
+/** One date of the month as the calendar has it. */
+export interface TimesheetColumn {
+  date: string
+  /** What the date is worth at a full day: the plan. */
+  hours: number
+  calendar: CalendarDayKind | null
+  note: string | null
+  weekend: boolean
 }
 
-export interface HeatmapResponse {
+/** A row's dates counted by what they were. */
+export interface TimesheetCounts {
+  vacation: number
+  sick: number
+  day_off: number
+  unrecorded: number
+  on_time: number
+  late: number
+  missing: number
+  pending: number
+  approved: number
+}
+
+/** One person's month: the team table's row, and a cell for every date. */
+export interface TimesheetRow extends Member {
+  days: TimesheetCell[]
+  counts: TimesheetCounts
+}
+
+export interface TimesheetResponse {
   month: string
   from: string
   to: string
-  rows: HeatmapRow[]
-  /** The busiest day anywhere in the grid - the scale every cell shares. */
-  busiest_seconds: number | null
+  /** The server's date, which "come due" is measured by. */
+  today: string
+  standard_hours: number
+  /** Whether an unanswered report waits for a manager, or for nobody. */
+  day_approval: boolean
+  dates: TimesheetColumn[]
+  rows: TimesheetRow[]
 }
 
 /**
@@ -565,6 +614,11 @@ export function exportUrl(subject: ExportSubject, file: ExportFile, from: string
   return `/api/v1${path}?from=${from}&to=${to}`
 }
 
+/** Where a month's timesheet downloads from, as a workbook (ADR 0024). */
+export function timesheetUrl(subject: ExportSubject, month: string): string {
+  return `/api/v1/${subject}/timesheet.xlsx?month=${month}`
+}
+
 /** The file name a `Content-Disposition` header gives, if it gives one. */
 export function attachmentName(disposition: string | null): string | null {
   return disposition?.match(/filename="([^"]+)"/)?.[1] ?? null
@@ -578,11 +632,20 @@ export function attachmentName(disposition: string | null): string | null {
  * the bytes under the name the server chose.
  */
 export async function downloadExport(subject: ExportSubject, file: ExportFile, from: string, to: string): Promise<void> {
-  const response = await fetch(exportUrl(subject, file, from, to), { credentials: 'same-origin' })
+  await download(exportUrl(subject, file, from, to), `kasl-${subject}-${from}-to-${to}`)
+}
+
+/** Downloads a month's timesheet workbook - the grid a company files. */
+export async function downloadTimesheet(subject: ExportSubject, month: string): Promise<void> {
+  await download(timesheetUrl(subject, month), `kasl-${subject}-timesheet-${month}.xlsx`)
+}
+
+async function download(url: string, fallbackName: string): Promise<void> {
+  const response = await fetch(url, { credentials: 'same-origin' })
   if (!response.ok) throw new ApiError(response.status, response.statusText)
 
   const blob = await response.blob()
-  const name = attachmentName(response.headers.get('Content-Disposition')) ?? `kasl-${subject}-${from}-to-${to}`
+  const name = attachmentName(response.headers.get('Content-Disposition')) ?? fallbackName
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
   link.download = name
@@ -701,13 +764,15 @@ export const api = {
   teamLive: () => request<LiveTeamResponse>('/team/live'),
 
   /**
-   * The team's month, a cell per person per recorded day.
+   * The team's month as a record: every date of everybody's month, and what
+   * it was (ADR 0024). One answer behind every view of the month screen, so
+   * the timesheet, the reports and the shape cannot disagree.
    *
    * `month` is `YYYY-MM`. The server refuses anything else rather than
    * guessing - a caller who sent a date would otherwise get a plausible answer
    * to a question they did not ask.
    */
-  teamHeatmap: (month: string) => request<HeatmapResponse>(`/team/heatmap?month=${month}`),
+  teamTimesheet: (month: string) => request<TimesheetResponse>(`/team/timesheet?month=${month}`),
 
   /**
    * What the server thinks is worth a look. Asked once with the dashboard

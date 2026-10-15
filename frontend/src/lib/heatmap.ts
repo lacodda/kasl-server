@@ -1,19 +1,20 @@
 /**
- * Turning a month's cells into a grid.
+ * Turning a month's cells into a grid of squares: the shape of a month.
  *
  * The arithmetic lives here rather than in the component for the reason the
  * live status does: a cell that quietly falls through to the wrong shade is
  * exactly the kind of defect a screenshot passes over, and a function can be
  * asserted where a `<div>` cannot.
  *
- * The rule the whole screen rests on: **a square has four meanings, and only
- * one of them is a number.** Nothing recorded, a day still running, a finished
- * day, and a date outside the person's data are four different facts, and a
- * heatmap that paints the first as the palest shade of the third tells a
- * manager somebody worked nothing when nobody said so.
+ * The rule the whole view rests on: **a square has several meanings, and only
+ * one of them is a number.** Nothing recorded, a day still running, a day away
+ * and a finished day are different facts, and a heatmap that paints the first
+ * as the palest shade of the last tells a manager somebody worked nothing when
+ * nobody said so (ADR 0015). Since 0.28 the squares are drawn from the month's
+ * timesheet (ADR 0024), so the shape and the record of a month are one answer.
  */
 
-import type { HeatmapCell, HeatmapRow } from '@/lib/api'
+import type { TimesheetColumn, TimesheetRow, WorkdayKind } from '@/lib/api'
 
 /** What one square of the grid is. */
 export type CellKind =
@@ -21,6 +22,8 @@ export type CellKind =
   | 'none'
   /** A day still open on the agent, so it has no total yet. */
   | 'open'
+  /** A day the person was away: recorded, but not worked, and not shaded. */
+  | 'away'
   /** A finished day, with hours behind it. */
   | 'worked'
 
@@ -34,31 +37,13 @@ export interface Square {
    * there is no figure to place on the scale.
    */
   intensity: number | null
-  /** Saturday or Sunday, from the date itself. */
-  weekend: boolean
-}
-
-/** Every date of a month, as `YYYY-MM-DD`. */
-export function monthDates(from: string, to: string): string[] {
-  const dates: string[] = []
-  // Stepped as text through a UTC date so no local zone can shift a day: a
-  // date here is a label, not a moment (ADR 0003).
-  const cursor = new Date(`${from}T00:00:00Z`)
-  const last = new Date(`${to}T00:00:00Z`)
-  while (cursor <= last) {
-    dates.push(cursor.toISOString().slice(0, 10))
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
-  return dates
-}
-
-/** Whether a `YYYY-MM-DD` date falls on a Saturday or a Sunday. */
-export function isWeekend(date: string): boolean {
-  // Deliberately only the weekend, never "day off": which days a company
-  // actually rests is a calendar this server does not have until v0.21, and
-  // guessing it would mark someone's ordinary Saturday shift as unusual.
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
-  return weekday === 0 || weekday === 6
+  /** Which kind of day away, for a square that is one. */
+  away: WorkdayKind | null
+  /**
+   * Owed nothing at a full day: a weekend nobody moved, or a holiday. The
+   * calendar's fact, never a claim that anybody was off.
+   */
+  rest: boolean
 }
 
 /** The day-of-month number a column is labelled with. */
@@ -66,32 +51,54 @@ export function dayOfMonth(date: string): number {
   return Number(date.slice(8, 10))
 }
 
+/** Whether a column owes nothing at a full day. */
+export function isRest(column: TimesheetColumn): boolean {
+  return column.hours === 0
+}
+
+/**
+ * The busiest finished day of work anywhere in the month: the ceiling every
+ * square shares. `null` when nobody finished one.
+ *
+ * A day away is never the busiest, whatever the agent filed on it: shading by
+ * its hours would draw a day of sick leave as the shortest day worked.
+ */
+export function busiest(rows: TimesheetRow[]): number | null {
+  let top: number | null = null
+  for (const row of rows) {
+    for (const cell of row.days) {
+      if (cell.state === 'worked' && cell.worked_seconds !== null) top = Math.max(top ?? 0, cell.worked_seconds)
+    }
+  }
+  return top
+}
+
 /**
  * One person's row as squares, one per date of the month.
  *
- * `busiest` is the grid's shared ceiling, so two rows can be compared with
- * each other. A per-row scale would paint a quiet week and a heavy one
- * identically - each would have its own darkest square - which is the one
- * thing a heatmap is for.
+ * `ceiling` is the grid's shared one, so two rows can be compared with each
+ * other. A per-row scale would paint a quiet week and a heavy one identically
+ * - each would have its own darkest square - which is the one thing a heatmap
+ * is for.
  */
-export function squares(row: HeatmapRow, dates: string[], busiest: number | null): Square[] {
-  const byDate = new Map<string, HeatmapCell>(row.days.map((cell) => [cell.date, cell]))
+export function squares(row: TimesheetRow, columns: TimesheetColumn[], ceiling: number | null): Square[] {
+  return row.days.map((cell, at) => {
+    const rest = columns[at] ? isRest(columns[at]) : false
+    const base = { date: cell.date, seconds: null, intensity: null, away: null, rest }
 
-  return dates.map((date) => {
-    const cell = byDate.get(date)
-    const weekend = isWeekend(date)
-
-    if (!cell) return { date, kind: 'none', seconds: null, intensity: null, weekend }
-    if (cell.open || cell.worked_seconds === null) {
-      return { date, kind: 'open', seconds: null, intensity: null, weekend }
-    }
-
-    return {
-      date,
-      kind: 'worked',
-      seconds: cell.worked_seconds,
-      intensity: scale(cell.worked_seconds, busiest),
-      weekend,
+    switch (cell.state) {
+      case 'worked':
+        // Belt and braces on the one field a screen must never guess at: a
+        // finished day without a total would otherwise render as a square
+        // whose hours are unknown.
+        if (cell.worked_seconds === null) return { ...base, kind: 'open' }
+        return { ...base, kind: 'worked', seconds: cell.worked_seconds, intensity: scale(cell.worked_seconds, ceiling) }
+      case 'open':
+        return { ...base, kind: 'open' }
+      case 'away':
+        return { ...base, kind: 'away', away: cell.kind }
+      default:
+        return { ...base, kind: 'none' }
     }
   })
 }
@@ -103,9 +110,9 @@ export function squares(row: HeatmapRow, dates: string[], busiest: number | null
  * square indistinguishable from an empty one would file it under "no data" -
  * the confusion this whole module exists to prevent.
  */
-export function scale(seconds: number, busiest: number | null): number {
-  if (busiest === null || busiest <= 0) return 1
-  return Math.min(1, Math.max(0.15, seconds / busiest))
+export function scale(seconds: number, ceiling: number | null): number {
+  if (ceiling === null || ceiling <= 0) return 1
+  return Math.min(1, Math.max(0.15, seconds / ceiling))
 }
 
 /**
@@ -136,4 +143,9 @@ export function shiftMonth(month: string, by: number): string {
 /** The current month as `YYYY-MM`, in the reader's own zone. */
 export function currentMonth(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Whether a string is a month this client can ask for: `YYYY-MM`. */
+export function isMonth(value: string | null): value is string {
+  return value !== null && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
 }

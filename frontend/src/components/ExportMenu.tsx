@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download } from 'lucide-react'
-import { downloadExport, type ExportFile, type ExportSubject } from '@/lib/api'
+import { downloadExport, downloadTimesheet, type ExportFile, type ExportSubject } from '@/lib/api'
 import { isoDate } from '@/lib/day'
 import { elapsed, type Period } from '@/lib/period'
 import { Button } from '@/components/ui/button'
@@ -22,21 +22,28 @@ const FILES: { file: ExportFile; label: string }[] = [
  * get wrong. A menu rather
  * than three buttons - the workbook is what most people want, and the two CSVs
  * are for whoever feeds a program.
+ *
+ * A month also offers its timesheet: the grid a company files (ADR 0024). A
+ * timesheet is a month or nothing, so a week or a day does not offer one.
  */
 export function ExportMenu({ subject, period }: { subject: ExportSubject; period: Period }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
-  const download = (file: ExportFile) => {
+  const run = (work: () => Promise<void>) => {
     setBusy(true)
     setFailed(false)
+    work()
+      .catch(() => setFailed(true))
+      .finally(() => setBusy(false))
+  }
+
+  const download = (file: ExportFile) => {
     // What the screen shows: a period still running is exported to today, so
     // the file holds no dates that are due but have not come yet.
     const { from, to } = elapsed(period, isoDate(new Date())) ?? period
-    downloadExport(subject, file, from, to)
-      .catch(() => setFailed(true))
-      .finally(() => setBusy(false))
+    run(() => downloadExport(subject, file, from, to))
   }
 
   return (
@@ -65,6 +72,14 @@ export function ExportMenu({ subject, period }: { subject: ExportSubject; period
               <MenuItem onClick={() => download(file)}>{t(label)}</MenuItem>
             </Fragment>
           ))}
+          {period.unit === 'month' && (
+            <>
+              <MenuSeparator />
+              {/* The whole month, its days to come included: a timesheet is
+                  filed by the month, and the grid shows what is still owed. */}
+              <MenuItem onClick={() => run(() => downloadTimesheet(subject, period.from.slice(0, 7)))}>{t('export.timesheet')}</MenuItem>
+            </>
+          )}
         </MenuPopup>
       </Menu>
     </div>
