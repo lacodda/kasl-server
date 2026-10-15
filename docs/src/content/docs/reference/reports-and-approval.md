@@ -146,6 +146,15 @@ of your days", listing them with the figures they were approved at.
 `report.returned` - who and which day, and the reason is the sentence. See
 [what you are told](/kasl-server/reference/what-you-are-told/).
 
+## Late, and not at all
+
+Whether a day was reported in time is read in
+[the timesheet](/kasl-server/reference/the-timesheet/#reported-in-time): a
+report is on time when it arrives before the person's next working day begins,
+and a finished day with no report once that day has begun is missing. The
+first report of a day decides when it was filed; the newest decides where it
+stands.
+
 ## What else keeps a record
 
 The [audit log](/kasl-server/reference/the-audit-log/) records

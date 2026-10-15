@@ -51,6 +51,12 @@ belongs. The notice opens that week.
 days; the last few working days wait in the band on her dashboard, the older
 ones are approved, and one of the employee's days came back with a reason - so
 both notices are behind the employee's bell, and the day shows what to do.
+Each report is filed minutes after its day ended, except that one person sends
+two the next morning and another forgets one - so the
+[timesheet's](/kasl-server/reference/the-timesheet/) matrix of reports shows a
+late day and a missing one - and one person took three days of vacation the
+week before last. The team rests on the calendar's holiday and works the
+Saturday it moved into the week.
 
 **The team keeps reaching today.** The history is generated from the day it
 is seeded, and nothing moves it afterwards — so a stand left running for a

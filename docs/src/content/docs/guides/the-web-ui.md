@@ -15,14 +15,22 @@ manager's dashboard - a row per person with their hours, a bar against their own
 norm, and a status that says what the server knows, under a band naming the
 people the server thinks are worth a look; clicking a row opens that person's
 twelve-week chart and their days, in the same component the personal page uses.
-**The month** is the same team as a
-grid - a square per person per day, shaded by hours, with weekends marked from
-the calendar and nothing recorded drawn as an empty square rather than as a
-worked day of zero. Its five shades come from the design system rather than
-from this product's own gold: mixed from the accent, the faintest step cleared
-the empty square by 1.49:1, which made "barely worked" and "nobody reported"
-the same square to anyone scanning the grid - and the empty square is the one
-a manager is scanning for. The system's ramp clears it by 2.1:1. **My data** renders the
+**The month** is the same team a date at a time, three ways over one
+[timesheet](/kasl-server/reference/the-timesheet/). **Timesheet** shows the
+hours of each day worked in tenths, a letter for each day away, `?` where a
+date was owed and nothing was recorded, and what is still to come at each
+person's norm, with the month's totals against what has come due - and
+**Download timesheet** files it as a workbook. **Reports** is the matrix of
+whether each day was reported in time: ✓ before the next working day began, L
+after it, ✗ not at all, filled green where a manager approved it. **Shape** is
+the heatmap - a square per person per day, shaded by hours, with rest days
+marked from the calendar and nothing recorded drawn as an empty square rather
+than as a worked day of zero. Its five shades come from the design system
+rather than from this product's own gold: mixed from the accent, the faintest
+step cleared the empty square by 1.49:1, which made "barely worked" and "nobody
+reported" the same square to anyone scanning the grid - and the empty square is
+the one a manager is scanning for. The system's ramp clears it by 2.1:1. The
+month and the view are in the address, so either can be linked. **My data** renders the
 manifest from what the server actually enforces ([ADR 0011](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0011-the-privacy-manifest.md))
 rather than describing it again in the page, so the two cannot disagree.
 
@@ -107,8 +115,8 @@ and the timeline takes the full width beneath them, because the desktop's three
 columns would leave the bar about eighty pixels wide, which is a smudge rather
 than a drawing of a day. The team's rows do the same. The month keeps its grid
 and scrolls sideways inside its own box, with the names frozen at the left -
-a month of squares is wider than a phone at any arrangement, and the alternative
-is a shape that is no longer a month.
+a month of dates is wider than a phone at any arrangement, and the alternative
+is a grid that is no longer a month.
 
 The trend chart drops the per-column week labels, which do not fit - twelve
 columns is eighteen pixels each, and `Jun 22` needs twenty-eight - and names

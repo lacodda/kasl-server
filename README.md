@@ -54,8 +54,9 @@ can be seen before an agent is installed anywhere.
   request; each day is written on its own, so one bad row does not block the
   rest.
 - **Dashboards for a manager.** The team's hours, a drill-down into anyone's
-  days, a live column of who is working right now, the month as a heatmap,
-  and signals naming who is worth a look - and a note on any day, "your day
+  days, a live column of who is working right now, the month as a timesheet
+  of hours, leave and late or missing reports or as a heatmap, and signals
+  naming who is worth a look - and a note on any day, "your day
   off on Friday is approved", told to the person it is for. Where a team signs
   off on hours, the days people report wait for their manager's approval.
 - **A personal page for every employee.** Their own day, week or month, drawn
@@ -100,7 +101,8 @@ dashboards, roles, departments, the audit log, the privacy manifest, the
 production calendar, alerts that arrive without being asked for - in the web
 UI and in a Slack, Mattermost or Telegram chat - notices to the employee they
 are about, a manager's notes on a day, days reported and approved where a team
-signs off on hours, periods compared and exported, and a phone layout all hold
+signs off on hours, periods compared and exported, the month as a timesheet,
+and a phone layout all hold
 end to end. What landed in each
 version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).

@@ -101,6 +101,15 @@ row stays in view, every column has a filter, dates are dates and hours are
 numbers. Each hour figure is stored exactly and shown to two places, so a column
 sums to the summary to the second.
 
+## A month as a timesheet
+
+A month also downloads as a timesheet - the grid a company files, a row per
+person and a column per date, with a second sheet saying whether each day was
+reported in time: `GET /api/v1/team/timesheet.xlsx?month=YYYY-MM` and
+`GET /api/v1/me/timesheet.xlsx?month=YYYY-MM`. The export menu offers it
+whenever the screen shows a month. What is in it is on
+[its own page](/kasl-server/reference/the-timesheet/).
+
 ## Recorded
 
 Downloading other people's hours is written to
