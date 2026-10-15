@@ -13,37 +13,32 @@
 //!   reading a manager reaches for is the wrong one of the two.
 //! * **An open day has no total.** `worked_seconds` is `null` while the day is
 //!   running, as `/me/days` answers it. A half-lived day is not a short day.
-//! * **The server does not own the scale.** It answers seconds; what counts as
-//!   a full day is a norm, and this installation has none until v0.21. A
-//!   threshold shipped in the API would be an invention that is hard to take
-//!   back.
+//! * **The server does not own the scale.** It answers seconds and the
+//!   busiest day; how dark a square is belongs to the screen.
+//!
+//! Since 0.28 it is a projection of the month's timesheet (ADR 0024) rather
+//! than a query of its own: the same people - including somebody who worked
+//! in the month and has left since - and the same figures, read from
+//! `workday_figures`, so the shape and the record of one month cannot
+//! disagree about anybody.
 
 use axum::{
     Json,
     extract::{Query, State},
     response::IntoResponse,
 };
-use chrono::{Datelike, NaiveDate};
-use serde::{Deserialize, Serialize};
+use chrono::NaiveDate;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    admin::{VISIBLE_USERS, require_manager_or_admin},
+    admin::require_manager_or_admin,
     app::AppState,
+    calendar::WorkdayKind,
     error::ApiError,
     login::CurrentUser,
-    model::UserRole,
+    timesheet::{self, MonthQuery},
 };
-
-/// The month being asked for, as `YYYY-MM`.
-///
-/// A month rather than a free range: the screen pages by month, the calendar
-/// resolves its own length so February is never off by a day, and anyone who
-/// wants an arbitrary span already has `/me/days`.
-#[derive(Debug, Deserialize)]
-pub struct MonthQuery {
-    pub month: String,
-}
 
 /// One day of one person's month.
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -56,6 +51,10 @@ pub struct Cell {
     pub worked_seconds: Option<i64>,
     /// Whether the day is still running on the agent.
     pub open: bool,
+    /// The kind of day the agent recorded. A day of sick leave is a cell -
+    /// something was recorded - but not a day worked, and a reader shading it
+    /// by its hours would draw it as the shortest working day of the month.
+    pub kind: WorkdayKind,
 }
 
 /// One person's month.
@@ -67,8 +66,8 @@ pub struct Row {
     /// Only the dates with a workday, ascending. An empty vector is a real
     /// answer: this person recorded nothing this month.
     pub days: Vec<Cell>,
-    /// The longest finished day in this row, in seconds, or `null` when the
-    /// row has no finished day.
+    /// The longest finished day of work in this row, in seconds, or `null`
+    /// when the row has none.
     pub busiest_seconds: Option<i64>,
     /// The month's total across finished days.
     pub worked_seconds: i64,
@@ -93,255 +92,174 @@ pub struct Heatmap {
 /// Answers the team's month.
 pub async fn month(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
-    let (from, to) = month_bounds(&query.month)?;
+    let timesheet = timesheet::build(&state.pool, &user, &query.month, None).await?;
 
-    let is_admin = user.role == UserRole::Admin;
-
-    // Grouped in the database rather than folded in Rust: the alternative
-    // fetches every workday of the month for the whole team and reassembles it
-    // here, which is the same rows over the wire for nothing.
-    //
-    // `AssertSqlSafe` because the only interpolation is `VISIBLE_USERS`, a
-    // constant in `admin`; every value from the request is bound below.
-    let cells: Vec<CellRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT u.id AS user_id, u.display_name, d.name AS department,
-                w.date, w.ended_at IS NULL AS open,
-                CASE WHEN w.ended_at IS NULL THEN NULL
-                     ELSE greatest(extract(epoch FROM (w.ended_at - w.started_at))::bigint - paused.seconds, 0)
-                END AS worked_seconds
-         FROM users u
-         LEFT JOIN departments d ON d.id = u.department_id
-         LEFT JOIN workdays w ON w.user_id = u.id AND w.date BETWEEN $3 AND $4
-         LEFT JOIN LATERAL (
-             -- Stored pauses where they exist; the day's own totals where a
-             -- narrower policy summarized them away (ADR 0011). One or the
-             -- other, never both, so an hour cannot be counted twice.
-             SELECT CASE
-                 WHEN EXISTS (SELECT 1 FROM pauses p WHERE p.workday_id = w.id)
-                 THEN (SELECT coalesce(sum(p.duration_seconds), 0)::bigint FROM pauses p WHERE p.workday_id = w.id)
-                 ELSE coalesce(w.paused_seconds, 0)::bigint
-             END AS seconds
-         ) AS paused ON true
-         WHERE u.active AND {VISIBLE_USERS}
-         ORDER BY u.display_name, u.email, w.date"
-    )))
-    .bind(is_admin)
-    .bind(user.user_id)
-    .bind(from)
-    .bind(to)
-    .fetch_all(&state.pool)
-    .await?;
-
-    let rows = into_rows(cells);
+    let rows: Vec<Row> = timesheet.rows.iter().map(row).collect();
     let busiest_seconds = rows.iter().filter_map(|row| row.busiest_seconds).max();
 
     Ok(Json(Heatmap {
-        month: query.month,
-        from,
-        to,
+        month: timesheet.month,
+        from: timesheet.from,
+        to: timesheet.to,
         rows,
         busiest_seconds,
     }))
 }
 
-/// The first and last date of a `YYYY-MM` month.
-///
-/// Separate from the handler so the parsing - and its refusals - can be read
-/// and tested without a database behind them. The end comes from the calendar
-/// rather than from adding 30 days, which is where February goes wrong.
-pub fn month_bounds(month: &str) -> Result<(NaiveDate, NaiveDate), ApiError> {
-    let shape = || ApiError::bad_request(format!("`month` must be YYYY-MM, got `{month}`"));
+/// One person's month as the heatmap answers it: the dates something was
+/// recorded on, and nothing else.
+fn row(person: &timesheet::Row) -> Row {
+    let days: Vec<Cell> = person
+        .days
+        .iter()
+        .filter_map(|cell| {
+            Some(Cell {
+                date: cell.date,
+                worked_seconds: cell.worked_seconds,
+                open: cell.state == timesheet::CellState::Open,
+                // Only a recorded date has a kind; the rest are not cells here.
+                kind: cell.kind?,
+            })
+        })
+        .collect();
 
-    // Parsed as a whole date so `2026-08-15` is refused rather than silently
-    // read as August: a caller passing a date means to ask something this
-    // endpoint does not answer, and quietly widening it hides their mistake.
-    let (year, rest) = month.split_once('-').ok_or_else(shape)?;
-    if rest.len() != 2 || year.len() != 4 {
-        return Err(shape());
+    let busiest_seconds = days
+        .iter()
+        .filter(|day| day.kind == WorkdayKind::Work)
+        .filter_map(|day| day.worked_seconds)
+        .max();
+
+    Row {
+        user_id: person.member.id,
+        display_name: person.member.display_name.clone(),
+        department: person.member.department.clone(),
+        days,
+        busiest_seconds,
+        // The summary's figure: the month's worked seconds, to the second.
+        worked_seconds: person.member.worked_seconds,
     }
-    let first = NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").map_err(|_| shape())?;
-
-    // The first of the next month, stepped back one day: the only arithmetic
-    // that gets December and February right without a table of lengths.
-    let next = if first.month() == 12 {
-        NaiveDate::from_ymd_opt(first.year() + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(first.year(), first.month() + 1, 1)
-    };
-    let last = next.and_then(|next| next.pred_opt()).ok_or_else(shape)?;
-
-    Ok((first, last))
-}
-
-/// A row of the query: a person, and one of their days where they have any.
-///
-/// The `LEFT JOIN` means a person with nothing recorded still arrives, with
-/// every day column null. That is the row a manager most needs to see, so it
-/// is carried through rather than filtered out.
-#[derive(Debug, sqlx::FromRow)]
-struct CellRow {
-    user_id: Uuid,
-    display_name: String,
-    department: Option<String>,
-    date: Option<NaiveDate>,
-    open: Option<bool>,
-    worked_seconds: Option<i64>,
-}
-
-/// Folds the flat rows into one entry per person.
-///
-/// Relies on the query's `ORDER BY` grouping each person's rows together, so
-/// this is a single pass rather than a map keyed by id - and the order the
-/// database chose is the order the screen draws.
-fn into_rows(cells: Vec<CellRow>) -> Vec<Row> {
-    let mut rows: Vec<Row> = Vec::new();
-
-    for cell in cells {
-        if rows.last().map(|row| row.user_id) != Some(cell.user_id) {
-            rows.push(Row {
-                user_id: cell.user_id,
-                display_name: cell.display_name,
-                department: cell.department,
-                days: Vec::new(),
-                busiest_seconds: None,
-                worked_seconds: 0,
-            });
-        }
-
-        let row = rows.last_mut().expect("a row was just pushed for this person");
-
-        // No date means the outer join found nothing for this person - the
-        // person is the answer, the day is not.
-        let Some(date) = cell.date else { continue };
-
-        if let Some(seconds) = cell.worked_seconds {
-            row.worked_seconds += seconds;
-            row.busiest_seconds = Some(row.busiest_seconds.map_or(seconds, |busiest: i64| busiest.max(seconds)));
-        }
-
-        row.days.push(Cell {
-            date,
-            worked_seconds: cell.worked_seconds,
-            // A day that arrived without the flag is treated as finished: the
-            // column it comes from is `NOT NULL`, so this cannot happen, and
-            // guessing "open" would put a running day on a month long past.
-            open: cell.open.unwrap_or(false),
-        });
-    }
-
-    rows
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rust_decimal::Decimal;
 
-    fn bounds(month: &str) -> (NaiveDate, NaiveDate) {
-        month_bounds(month).expect("a valid month")
-    }
+    use super::*;
+    use crate::{
+        team::Member,
+        timesheet::{CellState, Counts},
+    };
 
     fn date(text: &str) -> NaiveDate {
         text.parse().expect("a test date")
     }
 
-    #[test]
-    fn a_month_ends_where_the_calendar_says() {
-        // The three lengths, and the one only a leap year gets right.
-        assert_eq!(bounds("2026-01"), (date("2026-01-01"), date("2026-01-31")));
-        assert_eq!(bounds("2026-04"), (date("2026-04-01"), date("2026-04-30")));
-        assert_eq!(bounds("2026-02"), (date("2026-02-01"), date("2026-02-28")));
-        assert_eq!(bounds("2024-02"), (date("2024-02-01"), date("2024-02-29")));
-    }
-
-    #[test]
-    fn december_rolls_into_the_next_year() {
-        // The month after December is not month 13 - arithmetic that forgets
-        // this answers an empty grid every January.
-        assert_eq!(bounds("2026-12"), (date("2026-12-01"), date("2026-12-31")));
-    }
-
-    #[test]
-    fn a_month_that_is_not_a_month_is_refused() {
-        // `2026-08-15` among them: a caller passing a date is asking for
-        // something else, and widening it to the month hides their mistake.
-        for bad in ["2026", "2026-13", "2026-00", "August", "2026-08-15", "26-08", ""] {
-            let error = month_bounds(bad).unwrap_err();
-            assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST, "`{bad}` should be refused");
-            assert!(error.to_string().contains("YYYY-MM"), "the message should say the shape: {error}");
+    fn member(worked_seconds: i64) -> Member {
+        Member {
+            id: Uuid::nil(),
+            display_name: "Ann".into(),
+            email: "ann@example.test".into(),
+            department: None,
+            active: true,
+            days_recorded: 0,
+            worked_seconds,
+            paused_seconds: 0,
+            last_day: None,
+            day_open: false,
+            last_seen_at: None,
+            agents: 0,
+            work_rate: Decimal::ONE,
+            norm_seconds: 0,
+            due_seconds: 0,
+            days_away: 0,
         }
     }
 
-    fn cell(user: Uuid, name: &str, date: Option<&str>, worked: Option<i64>, open: bool) -> CellRow {
-        CellRow {
-            user_id: user,
-            display_name: name.to_string(),
-            department: None,
-            date: date.map(|text| text.parse().expect("a test date")),
-            open: date.map(|_| open),
+    fn cell(text: &str, state: CellState, kind: Option<WorkdayKind>, worked: Option<i64>) -> timesheet::Cell {
+        timesheet::Cell {
+            date: date(text),
+            state,
+            kind,
             worked_seconds: worked,
+            norm_seconds: 0,
+            filed: None,
+            report: None,
+        }
+    }
+
+    fn person(days: Vec<timesheet::Cell>, worked_seconds: i64) -> timesheet::Row {
+        timesheet::Row {
+            member: member(worked_seconds),
+            counts: Counts::default(),
+            days,
         }
     }
 
     #[test]
     fn a_person_with_nothing_recorded_is_still_a_row() {
         // The empty row is the case the screen exists for: an employee whose
-        // agent never reported must be visible, not quietly dropped.
-        let nobody = Uuid::new_v4();
-        let rows = into_rows(vec![cell(nobody, "Nobody", None, None, false)]);
+        // agent never reported must be visible, not quietly dropped - and the
+        // dates owed and unrecorded are absent cells, never zeroes.
+        let row = row(&person(
+            vec![
+                cell("2026-09-01", CellState::Unrecorded, None, None),
+                cell("2026-09-05", CellState::Free, None, None),
+                cell("2026-09-30", CellState::Ahead, None, None),
+            ],
+            0,
+        ));
 
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].days.is_empty(), "no days, rather than a day with no date");
-        assert_eq!(rows[0].worked_seconds, 0);
-        assert_eq!(rows[0].busiest_seconds, None, "no finished day means no busiest one");
+        assert!(row.days.is_empty(), "no days, rather than days with nothing in them");
+        assert_eq!(row.worked_seconds, 0);
+        assert_eq!(row.busiest_seconds, None, "no finished day means no busiest one");
     }
 
     #[test]
     fn an_open_day_is_a_cell_without_a_total() {
-        // It counts as a day recorded and contributes nothing to the totals: a
-        // day still running has no figure, and treating its hours-so-far as
-        // one would draw a full day as a short one.
-        let person = Uuid::new_v4();
-        let rows = into_rows(vec![
-            cell(person, "Ann", Some("2026-09-01"), Some(28_800), false),
-            cell(person, "Ann", Some("2026-09-02"), None, true),
-        ]);
+        let row = row(&person(
+            vec![
+                cell("2026-09-01", CellState::Worked, Some(WorkdayKind::Work), Some(28_800)),
+                cell("2026-09-02", CellState::Open, Some(WorkdayKind::Work), None),
+            ],
+            28_800,
+        ));
 
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].days.len(), 2);
-        assert_eq!(rows[0].days[1].worked_seconds, None);
-        assert!(rows[0].days[1].open);
-        assert_eq!(rows[0].worked_seconds, 28_800, "the open day adds nothing");
-        assert_eq!(rows[0].busiest_seconds, Some(28_800));
+        assert_eq!(row.days.len(), 2);
+        assert_eq!(row.days[1].worked_seconds, None);
+        assert!(row.days[1].open);
+        assert!(!row.days[0].open);
+        assert_eq!(row.busiest_seconds, Some(28_800));
     }
 
     #[test]
-    fn each_persons_days_land_on_their_own_row() {
-        let ann = Uuid::new_v4();
-        let bob = Uuid::new_v4();
-        let rows = into_rows(vec![
-            cell(ann, "Ann", Some("2026-09-01"), Some(3_600), false),
-            cell(ann, "Ann", Some("2026-09-02"), Some(7_200), false),
-            cell(bob, "Bob", Some("2026-09-01"), Some(1_800), false),
-        ]);
+    fn a_day_away_is_a_cell_with_its_kind_and_never_the_busiest() {
+        // Before 0.28 a sick day arrived as a day with no hours and no kind,
+        // and a screen shading by hours drew it as a very short day worked.
+        let row = row(&person(
+            vec![
+                cell("2026-09-01", CellState::Worked, Some(WorkdayKind::Work), Some(3_600)),
+                cell("2026-09-02", CellState::Away, Some(WorkdayKind::Sick), Some(36_000)),
+            ],
+            3_600,
+        ));
 
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].days.len(), 2);
-        assert_eq!(rows[0].worked_seconds, 10_800);
-        assert_eq!(rows[0].busiest_seconds, Some(7_200), "the longest day, not the last one");
-        assert_eq!(rows[1].days.len(), 1);
-        assert_eq!(rows[1].worked_seconds, 1_800);
+        assert_eq!(row.days[1].kind, WorkdayKind::Sick);
+        assert_eq!(row.busiest_seconds, Some(3_600), "the busiest day is a day of work");
     }
 
     #[test]
     fn the_busiest_day_is_the_largest_not_the_latest() {
-        // Guards the fold against `busiest = seconds` overwriting on every
-        // row, which a month of ascending dates would hide.
-        let person = Uuid::new_v4();
-        let rows = into_rows(vec![
-            cell(person, "Ann", Some("2026-09-01"), Some(36_000), false),
-            cell(person, "Ann", Some("2026-09-02"), Some(3_600), false),
-        ]);
+        // Guards against `busiest = seconds` overwriting on every day, which a
+        // month of ascending dates would hide.
+        let row = row(&person(
+            vec![
+                cell("2026-09-01", CellState::Worked, Some(WorkdayKind::Work), Some(36_000)),
+                cell("2026-09-02", CellState::Worked, Some(WorkdayKind::Work), Some(3_600)),
+            ],
+            39_600,
+        ));
 
-        assert_eq!(rows[0].busiest_seconds, Some(36_000));
+        assert_eq!(row.busiest_seconds, Some(36_000));
+        assert_eq!(row.worked_seconds, 39_600, "the summary's total, to the second");
     }
 }

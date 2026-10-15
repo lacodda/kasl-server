@@ -32,6 +32,7 @@ pub mod reports;
 pub mod session;
 pub mod signals;
 pub mod team;
+pub mod timesheet;
 pub mod web;
 pub mod webhooks;
 

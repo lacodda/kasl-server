@@ -578,7 +578,7 @@ async fn export(State(state): State<AppState>, user: CurrentUser, Query(range): 
 ///
 /// `no-store`: the body is people's working hours, and a shared machine's
 /// cache is not where a copy of them should outlive the download.
-fn download(body: Vec<u8>, content_type: &'static str, file_name: &str) -> Response {
+pub(crate) fn download(body: Vec<u8>, content_type: &'static str, file_name: &str) -> Response {
     let disposition = format!("attachment; filename=\"{file_name}\"");
     let mut response = body.into_response();
     let headers = response.headers_mut();

@@ -13,7 +13,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     admin, alerts, audit, auth, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy,
-    reports, signals, team, web, webhooks,
+    reports, signals, team, timesheet, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -60,6 +60,11 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/me/export.xlsx", get(export::my_workbook))
         .route("/me/export/summary.csv", get(export::my_summary))
         .route("/me/export/days.csv", get(export::my_days))
+        // The person's own month as a timesheet, and the same as a workbook:
+        // what `kasl timesheet` files from their machine, as the server has it
+        // (ADR 0024).
+        .route("/me/timesheet", get(timesheet::my_month))
+        .route("/me/timesheet.xlsx", get(timesheet::my_workbook))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
@@ -70,6 +75,11 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/team/export.xlsx", get(export::team_workbook))
         .route("/team/export/summary.csv", get(export::team_summary))
         .route("/team/export/days.csv", get(export::team_days))
+        // The month as a record: every date of everybody's month, what it
+        // was, and whether it was reported in time - the grid a company
+        // files, and the workbook it files it as (ADR 0024).
+        .route("/team/timesheet", get(timesheet::team_month))
+        .route("/team/timesheet.xlsx", get(timesheet::team_workbook))
         // What the team is doing right now, polled on a timer. Split from
         // `/team/days` on purpose: this one is asked every half minute and
         // must stay cheap enough to be (ADR 0014).

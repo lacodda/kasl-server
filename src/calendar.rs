@@ -136,8 +136,13 @@ impl Calendar {
         &self.days
     }
 
+    /// What the calendar says about one date, when it says anything.
+    pub fn day(&self, date: NaiveDate) -> Option<&CalendarDay> {
+        self.days.binary_search_by_key(&date, |day| day.date).ok().map(|at| &self.days[at])
+    }
+
     fn kind_of(&self, date: NaiveDate) -> Option<CalendarDayKind> {
-        self.days.binary_search_by_key(&date, |day| day.date).ok().map(|at| self.days[at].kind)
+        self.day(date).map(|day| day.kind)
     }
 
     /// The hours a date is worth at full rate.
@@ -180,7 +185,7 @@ impl Calendar {
 }
 
 /// Whether a date falls on a weekend, before the calendar has its say.
-fn is_weekend(date: NaiveDate) -> bool {
+pub fn is_weekend(date: NaiveDate) -> bool {
     matches!(date.weekday(), Weekday::Sat | Weekday::Sun)
 }
 

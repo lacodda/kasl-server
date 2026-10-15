@@ -280,7 +280,7 @@ async fn a_month_that_is_not_a_month_is_refused_rather_than_guessed() {
 }
 
 #[tokio::test]
-async fn a_deactivated_person_leaves_the_grid() {
+async fn a_deactivated_person_stays_on_the_months_they_worked() {
     let Some(server) = TestServer::start().await else { return };
     let team = team(&server).await;
 
@@ -304,9 +304,16 @@ async fn a_deactivated_person_leaves_the_grid() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
 
+    // March is a record of what happened in it: their day is in it, and the
+    // month must not change shape because they have gone since (ADR 0024).
     let (status, body) = server.get_with_cookie("/api/v1/team/heatmap?month=2026-03", team.admin.as_deref()).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(!names(&body).contains(&"inside"), "a former employee is not on this month's grid: {body}");
+    assert_eq!(row(&body, "inside")["days"].as_array().map(Vec::len), Some(1), "{body}");
+
+    // A month they did not work is not theirs.
+    let (status, body) = server.get_with_cookie("/api/v1/team/heatmap?month=2026-04", team.admin.as_deref()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!names(&body).contains(&"inside"), "a former employee is not on a month after they left: {body}");
 
     // Their days are still in the database - leaving the dashboard is not
     // erasure, and the dashboard's own test says the same about `/team/days`.
