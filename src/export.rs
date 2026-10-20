@@ -327,7 +327,7 @@ fn to_csv(table: &Table) -> String {
     out
 }
 
-fn push_csv_line(out: &mut String, fields: &[String]) {
+pub(crate) fn push_csv_line(out: &mut String, fields: &[String]) {
     for (at, field) in fields.iter().enumerate() {
         if at > 0 {
             out.push(',');
@@ -377,7 +377,7 @@ fn hours_text(seconds: i64) -> String {
 /// fields are prefixed with an apostrophe when they start that way; numbers
 /// are never touched, and a negative one stays a number. The workbook needs
 /// none of this: its strings are written as strings.
-fn defuse(text: &str) -> String {
+pub(crate) fn defuse(text: &str) -> String {
     if text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
         format!("'{text}")
     } else {
@@ -531,7 +531,7 @@ async fn export(State(state): State<AppState>, user: CurrentUser, Query(range): 
     me::validate_range(&range)?;
 
     let only = (subject == Subject::Me).then_some(user.user_id);
-    let (members, _) = team::members(&state.pool, &user, &range, only).await?;
+    let (members, _) = team::members(&state.pool, user.reader(), &range, only).await?;
 
     let stem = format!("kasl-{}-{}-to-{}", subject.slug(), range.from, range.to);
     let (body, content_type, file_name) = match file {
@@ -695,6 +695,7 @@ mod tests {
             display_name: "Ada".into(),
             email: "ada@example.test".into(),
             department: None,
+            department_id: None,
             active: true,
             days_recorded: 0,
             worked_seconds: 0,

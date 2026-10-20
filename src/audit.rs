@@ -53,6 +53,11 @@ pub mod action {
     pub const DAY_APPROVAL_CHANGED: &str = "reports.approval_changed";
     pub const WEBHOOK_TESTED: &str = "webhook.tested";
     pub const HOURS_EXPORTED: &str = "hours.exported";
+    /// A standing export: from here on the hours its owner may see can be
+    /// read from a dashboard. Stands for every read the token makes, which are
+    /// not recorded one by one (ADR 0025).
+    pub const READ_TOKEN_ISSUED: &str = "read_token.issued";
+    pub const READ_TOKEN_REVOKED: &str = "read_token.revoked";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 

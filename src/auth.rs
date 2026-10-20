@@ -61,7 +61,7 @@ impl FromRequestParts<AppState> for AuthenticatedAgent {
 }
 
 /// Extracts the credentials from `Authorization: Bearer <token>`.
-fn bearer_token(parts: &Parts) -> Option<String> {
+pub(crate) fn bearer_token(parts: &Parts) -> Option<String> {
     let header = parts.headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
     // The scheme is case-insensitive per RFC 7235, and clients differ.
     let (scheme, token) = header.split_once(' ')?;

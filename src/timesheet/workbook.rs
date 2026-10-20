@@ -403,6 +403,7 @@ mod tests {
                     display_name: "Ada".into(),
                     email: "ada@example.test".into(),
                     department: None,
+                    department_id: None,
                     active: true,
                     days_recorded: 1,
                     worked_seconds: 27_000,

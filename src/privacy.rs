@@ -128,6 +128,11 @@ pub struct Manifest {
     /// empty when nothing does - an absent list and an empty one would read
     /// the same, and only one of them is a promise (ADR 0019).
     pub sent_elsewhere: Vec<SentElsewhere>,
+    /// The dashboard tools reading people's hours from here with somebody's
+    /// read token (ADR 0025). What `sent_elsewhere` is for a push, this is for
+    /// a pull: the hours leave either way, and the employee is owed the same
+    /// statement - always present, empty when nothing reads them.
+    pub read_elsewhere: Vec<ReadElsewhere>,
     /// How long it is kept, stated plainly rather than implied.
     pub retention: &'static str,
     /// What changing the level does - and does not do - to what is already
@@ -154,6 +159,63 @@ pub struct SentElsewhere {
     pub about: String,
     /// What each message carries.
     pub what: Vec<&'static str>,
+}
+
+/// One live read token that reaches other people, told in the employee's
+/// terms: what it is for, whose access it reads with, and whom it reaches.
+#[derive(Debug, Serialize)]
+pub struct ReadElsewhere {
+    /// What its owner named it: "Grafana", "the finance sheet".
+    pub through: String,
+    /// Whose access it reads with: "Priya Raman, a manager".
+    pub by: String,
+    /// About whom: everyone, or the people of the departments its owner runs.
+    pub about: String,
+    /// What it can read.
+    pub what: Vec<&'static str>,
+}
+
+/// What a read token of scope `hours` can read about a person - the columns
+/// of the BI API, in the employee's words. Never a task or a pause's reason:
+/// the BI API serves neither.
+const READ_BY_A_TOKEN: [&str; 2] = [
+    "your name, email, department and share of a full day",
+    "your days, date by date: when each began and ended, the hours worked and paused, whether it was work, leave, illness or a day off, and whether you reported it in time",
+];
+
+/// The live read tokens that reach anybody but their owner.
+///
+/// Read through the same facts the tokens are: a token whose owner is
+/// deactivated or no longer a manager reads nothing, so it is not listed; a
+/// manager who runs no department reads only themselves, so neither is theirs.
+async fn read_elsewhere(pool: &sqlx::PgPool) -> Result<Vec<ReadElsewhere>, ApiError> {
+    let rows: Vec<(String, String, crate::model::UserRole, Option<String>)> = sqlx::query_as(
+        "SELECT t.name, u.display_name, u.role,
+                (SELECT string_agg(d.name, ', ' ORDER BY d.name) FROM departments d WHERE d.manager_id = u.id) AS departments
+         FROM read_tokens t
+         JOIN users u ON u.id = t.owner_id
+         WHERE t.revoked_at IS NULL AND u.active AND u.role <> 'employee'
+         ORDER BY t.created_at",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|(through, owner, role, departments)| {
+            let (by, about) = match (role, departments) {
+                (crate::model::UserRole::Admin, _) => (format!("{owner}, an administrator"), "everyone".to_string()),
+                (_, Some(departments)) => (format!("{owner}, a manager"), format!("people in {departments}")),
+                (_, None) => return None,
+            };
+            Some(ReadElsewhere {
+                through,
+                by,
+                about,
+                what: READ_BY_A_TOKEN.to_vec(),
+            })
+        })
+        .collect())
 }
 
 /// The destinations, as the manifest tells them.
@@ -319,6 +381,9 @@ pub fn manifest(level: PrivacyLevel, updated_at: Option<DateTime<Utc>>, webhooks
             "administrators of this installation",
         ],
         sent_elsewhere: sent_elsewhere(webhooks),
+        // Read from the database, not the configuration: filled in by
+        // `current`, which has a pool to read it with.
+        read_elsewhere: Vec::new(),
         retention: "Kept for as long as the installation keeps it: there is no automatic deletion. A deactivated account keeps its history rather than losing it.",
         on_change: "Changing this setting affects what arrives from now on. Narrowing it does not erase what is already stored, and widening it does not bring back what was dropped.",
         updated_at,
@@ -349,7 +414,9 @@ async fn current(state: &AppState) -> Result<Manifest, ApiError> {
     let row: (PrivacyLevel, DateTime<Utc>) = sqlx::query_as("SELECT privacy_level, updated_at FROM settings WHERE singleton")
         .fetch_one(&state.pool)
         .await?;
-    Ok(manifest(row.0, Some(row.1), &state.webhooks))
+    let mut manifest = manifest(row.0, Some(row.1), &state.webhooks);
+    manifest.read_elsewhere = read_elsewhere(&state.pool).await?;
+    Ok(manifest)
 }
 
 /// Sets the level. Administrators only, and recorded.

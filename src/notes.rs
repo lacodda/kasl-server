@@ -137,7 +137,7 @@ pub async fn create(
 ) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
 
-    if !team::may_read(&state.pool, &user, target).await? {
+    if !team::may_read(&state.pool, user.reader(), target).await? {
         // The drill-down's 404, for the drill-down's reason: a manager probing
         // ids must not be able to tell a person in another department from
         // one who does not exist (ADR 0009).
@@ -253,7 +253,7 @@ pub async fn withdraw(State(state): State<AppState>, user: CurrentUser, Path(id)
         // Somebody who can see the day sees the note on it, and is told why
         // they cannot take it back. Anybody else gets the answer a note that
         // does not exist gets: whose days carry notes is not theirs to learn.
-        return Err(if team::may_read(&state.pool, &user, subject).await? {
+        return Err(if team::may_read(&state.pool, user.reader(), subject).await? {
             ApiError::new(StatusCode::FORBIDDEN, "only whoever wrote a note, or an administrator, can withdraw it")
         } else {
             ApiError::new(StatusCode::NOT_FOUND, "no such note")

@@ -319,7 +319,7 @@ pub async fn create_agent(
         Some(true) => {}
     }
 
-    let token = generate_token();
+    let token = generate_token(AGENT_TOKEN_PREFIX);
     // The person is told in the same transaction: a machine that can file days
     // under somebody's name is exactly what they would want to hear about if
     // it was not theirs (ADR 0020).
@@ -471,6 +471,27 @@ pub fn require_manager_or_admin(user: &CurrentUser) -> Result<(), ApiError> {
 /// administrator alone (ADR 0009).
 pub const VISIBLE_USERS: &str = "($1 OR u.id = $2 OR u.department_id IN (SELECT id FROM departments WHERE manager_id = $2))";
 
+/// Whose eyes a read of other people's data is made with: the two binds
+/// [`VISIBLE_USERS`] takes.
+///
+/// A person signed in is one reader; a read token is another, reading with its
+/// owner's eyes (ADR 0025). One type for both, so the rule of who sees whom is
+/// applied the same way whichever door a read came in through - a second
+/// reading of it for tokens would be the second copy that rule exists to
+/// avoid.
+#[derive(Debug, Clone, Copy)]
+pub struct Reader {
+    pub user_id: Uuid,
+    pub role: UserRole,
+}
+
+impl Reader {
+    /// The first bind of [`VISIBLE_USERS`].
+    pub fn is_admin(self) -> bool {
+        self.role == UserRole::Admin
+    }
+}
+
 /// Hashes a password after checking it is long enough to be one.
 fn hash_new_password(password: &str) -> Result<String, ApiError> {
     if password.chars().count() < MIN_PASSWORD_LENGTH {
@@ -479,15 +500,20 @@ fn hash_new_password(password: &str) -> Result<String, ApiError> {
     session::hash_password(password).map_err(Into::into)
 }
 
-/// A new agent token: 32 bytes of entropy, hex.
+/// The prefix of an agent token, which writes somebody's days.
+pub(crate) const AGENT_TOKEN_PREFIX: &str = "kasl_";
+
+/// A new token: 32 bytes of entropy, hex, after `prefix`.
 ///
 /// Prefixed so that a token found in a log or a config file is recognisable as
-/// one, and so a leaked-secret scanner has something to match on.
-fn generate_token() -> String {
+/// one - and as which kind: an agent's writes somebody's days, a read token
+/// reads the team's (ADR 0025) - and so a leaked-secret scanner has something
+/// to match on.
+pub(crate) fn generate_token(prefix: &str) -> String {
     use rand::RngExt;
 
     let bytes: [u8; 32] = rand::rng().random();
-    bytes.iter().fold(String::from("kasl_"), |mut acc, byte| {
+    bytes.iter().fold(String::from(prefix), |mut acc, byte| {
         use std::fmt::Write;
         let _ = write!(acc, "{byte:02x}");
         acc
@@ -530,10 +556,10 @@ mod tests {
 
     #[test]
     fn a_token_is_long_random_and_recognisable() {
-        let token = generate_token();
+        let token = generate_token(AGENT_TOKEN_PREFIX);
         assert!(token.starts_with("kasl_"), "a token in a log should be identifiable: {token}");
         assert_eq!(token.len(), 5 + 64, "32 bytes as hex");
-        assert_ne!(token, generate_token(), "two tokens must never be the same");
+        assert_ne!(token, generate_token(AGENT_TOKEN_PREFIX), "two tokens must never be the same");
     }
 
     #[test]

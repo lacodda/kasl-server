@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    admin::Reader,
     app::AppState,
     audit,
     error::ApiError,
@@ -71,6 +72,14 @@ impl FromRequestParts<AppState> for CurrentUser {
 }
 
 impl CurrentUser {
+    /// The reader this person is, for the reads scoped by who sees whom.
+    pub fn reader(&self) -> Reader {
+        Reader {
+            user_id: self.user_id,
+            role: self.role,
+        }
+    }
+
     /// Refuses anyone who is not an administrator.
     ///
     /// Roles get their own milestone; this is the one check that cannot wait,

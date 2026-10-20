@@ -398,6 +398,21 @@ impl TestServer {
         read_response(self.router().oneshot(request).await.expect("the router should answer")).await
     }
 
+    /// GETs a file with an arbitrary Authorization header: the status, the
+    /// headers and the raw bytes - what a BI tool reading CSV receives.
+    pub async fn get_file_with_header(&self, path: &str, authorization: Option<&str>) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut request = Request::get(path);
+        if let Some(value) = authorization {
+            request = request.header(header::AUTHORIZATION, value);
+        }
+        let request = request.body(Body::empty()).expect("the request should build");
+        let response = self.router().oneshot(request).await.expect("the router should answer");
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = response.into_body().collect().await.expect("the body should read").to_bytes();
+        (status, headers, bytes.to_vec())
+    }
+
     /// POSTs carrying a cookie, returning the status, any `Set-Cookie`, and the body.
     pub async fn post_with_cookie(&self, path: &str, cookie: Option<&str>, body: Value) -> (StatusCode, Option<String>, Value) {
         let mut request = Request::post(path).header(header::CONTENT_TYPE, "application/json");

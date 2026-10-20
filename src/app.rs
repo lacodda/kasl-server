@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy,
+    admin, alerts, audit, auth, bi, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy,
     reports, signals, team, timesheet, web, webhooks,
 };
 
@@ -137,6 +137,11 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         .route("/users/{id}", patch(admin::update_user))
         .route("/users/{id}/agents", get(admin::list_agents).post(admin::create_agent))
         .route("/agents/{id}", delete(admin::revoke_agent))
+        // Tokens a dashboard reads the BI API with. A manager's or an
+        // administrator's own, reading with their eyes; listed to their owner,
+        // and every one of them to an administrator (ADR 0025).
+        .route("/read-tokens", get(bi::token::list).post(bi::token::issue))
+        .route("/read-tokens/{id}", delete(bi::token::revoke))
         // Departments: what gives a manager a boundary to be in charge of.
         .route("/departments", get(department::list).post(department::create))
         .route("/departments/{id}", patch(department::update).delete(department::delete))
@@ -186,13 +191,28 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // someone who has not signed in (ADR 0013).
         .route("/demo/accounts", get(demo::accounts));
 
+    // What a dashboard tool reads, with a read token rather than a session.
+    // Versioned apart from `/api/v1`, which is the web UI's and grows with its
+    // screens: a dashboard built on this breaks silently, so within `v1` a
+    // dataset only ever gains columns (ADR 0025). Each dataset twice - the
+    // same table as JSON and as CSV.
+    let api_bi_v1 = Router::new()
+        .route("/people", get(bi::people_json))
+        .route("/people.csv", get(bi::people_csv))
+        .route("/departments", get(bi::departments_json))
+        .route("/departments.csv", get(bi::departments_csv))
+        .route("/days", get(bi::days_json))
+        .route("/days.csv", get(bi::days_csv))
+        .route("/summary", get(bi::summary_json))
+        .route("/summary.csv", get(bi::summary_csv));
+
     Router::new()
         .route("/health", get(health))
         // Anything under `/api` that no route matched is a client's mistake and
         // has to look like one. Without this the web UI's fallback would catch
         // it and answer a misspelled endpoint with `200` and an HTML page -
         // which a kasl agent would read as success.
-        .nest("/api", Router::new().nest("/v1", api_v1).fallback(unknown_endpoint))
+        .nest("/api", Router::new().nest("/v1", api_v1).nest("/bi/v1", api_bi_v1).fallback(unknown_endpoint))
         // The web UI, compiled into the binary. Last on purpose: it answers
         // everything the API did not claim, so a real endpoint always wins
         // over the single-page app's own routing (ADR 0012).

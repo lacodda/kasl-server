@@ -92,7 +92,7 @@ pub struct Heatmap {
 /// Answers the team's month.
 pub async fn month(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
-    let timesheet = timesheet::build(&state.pool, &user, &query.month, None).await?;
+    let timesheet = timesheet::build(&state.pool, user.reader(), &query.month, None).await?;
 
     let rows: Vec<Row> = timesheet.rows.iter().map(row).collect();
     let busiest_seconds = rows.iter().filter_map(|row| row.busiest_seconds).max();
@@ -160,6 +160,7 @@ mod tests {
             display_name: "Ann".into(),
             email: "ann@example.test".into(),
             department: None,
+            department_id: None,
             active: true,
             days_recorded: 0,
             worked_seconds,

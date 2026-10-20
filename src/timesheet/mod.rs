@@ -41,7 +41,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    admin::require_manager_or_admin,
+    admin::{Reader, require_manager_or_admin},
     app::AppState,
     audit,
     calendar::{self, Calendar, CalendarDayKind, Norm, WorkdayKind},
@@ -263,7 +263,10 @@ pub(crate) struct Recorded {
     pub(crate) user_id: Uuid,
     pub(crate) date: NaiveDate,
     pub(crate) kind: WorkdayKind,
+    pub(crate) started_at: DateTime<Utc>,
+    pub(crate) ended_at: Option<DateTime<Utc>>,
     pub(crate) worked_seconds: Option<i64>,
+    pub(crate) paused_seconds: i64,
     pub(crate) open: bool,
     /// When the person's next working day began, if one has.
     pub(crate) next_started_at: Option<DateTime<Utc>>,
@@ -279,7 +282,8 @@ async fn recorded(pool: &PgPool, ids: &[Uuid], range: &Range) -> Result<Vec<Reco
     // Both are subqueries on the indexes they need: `workdays (user_id, date)`
     // and `reports (user_id, date, submitted_at)`.
     Ok(sqlx::query_as(
-        "SELECT f.user_id, f.date, f.kind, f.worked_seconds, f.ended_at IS NULL AS open,
+        "SELECT f.user_id, f.date, f.kind, f.started_at, f.ended_at, f.worked_seconds, f.paused_seconds,
+                f.ended_at IS NULL AS open,
                 (SELECT n.started_at FROM workdays n
                   WHERE n.user_id = f.user_id AND n.date > f.date AND n.kind = 'work'
                   ORDER BY n.date LIMIT 1) AS next_started_at,
@@ -356,48 +360,105 @@ fn columns(calendar: &Calendar, from: NaiveDate, to: NaiveDate, standard_hours: 
         .collect()
 }
 
-/// A month for everyone `reader` may see, or - with `only` - for one person.
+/// Everything a stretch of the record is drawn from: the people a reader may
+/// see over a range, the calendar of its dates, and what was recorded and
+/// reported on them.
 ///
-/// The visibility rule is [`team::members`]'s, applied there and nowhere
-/// else: everything after it is scoped to the people it listed.
-pub async fn build(pool: &PgPool, reader: &CurrentUser, month: &str, only: Option<Uuid>) -> Result<Timesheet, ApiError> {
+/// The month's timesheet is one reading of it and the BI days are another
+/// (ADR 0025): both ask [`Sheet::cell`] what a date was, so the rule has one
+/// home whichever shape it leaves in.
+pub(crate) struct Sheet {
+    /// The summary's rows (ADR 0023), in its order.
+    pub(crate) members: Vec<Member>,
+    pub(crate) standard_hours: Decimal,
+    /// The server's date, which "come due" is measured by (ADR 0023).
+    pub(crate) today: NaiveDate,
+    /// Every date of the range, as the calendar has it.
+    pub(crate) dates: Vec<Column>,
+    calendar: Calendar,
+    days: HashMap<(Uuid, NaiveDate), Recorded>,
+    reports: HashMap<(Uuid, NaiveDate), Status>,
+}
+
+impl Sheet {
+    /// The range for everyone `reader` may see, or - with `only` - for one
+    /// person.
+    ///
+    /// The visibility rule is [`team::members`]'s, applied there and nowhere
+    /// else: everything after it is scoped to the people it listed. The range
+    /// is the caller's to have checked.
+    pub(crate) async fn load(pool: &PgPool, reader: Reader, range: &Range, only: Option<Uuid>) -> Result<Self, ApiError> {
+        let (members, standard_hours) = team::members(pool, reader, range, only).await?;
+        let ids: Vec<Uuid> = members.iter().map(|member| member.id).collect();
+
+        let calendar = Calendar::load(pool, range.from, range.to).await?;
+        let today = Norm::today(pool).await?;
+        let dates = columns(&calendar, range.from, range.to, standard_hours);
+
+        // Looked up by person and date: a scan per date would be people x
+        // dates x days, the shape of loop that is fine for a team of five.
+        let days: HashMap<(Uuid, NaiveDate), Recorded> = recorded(pool, &ids, range)
+            .await?
+            .into_iter()
+            .map(|day| ((day.user_id, day.date), day))
+            .collect();
+        let reports: HashMap<(Uuid, NaiveDate), Status> = reports::for_people(pool, &ids, range)
+            .await?
+            .into_iter()
+            .map(|report| ((report.user_id, report.date), report.status))
+            .collect();
+
+        Ok(Self {
+            members,
+            standard_hours,
+            today,
+            dates,
+            calendar,
+            days,
+            reports,
+        })
+    }
+
+    /// What `date` was for `member`: [`cell`], given what the sheet holds.
+    pub(crate) fn cell(&self, member: &Member, date: NaiveDate) -> Cell {
+        let owed = self.calendar.norm_seconds(date, self.standard_hours, member.work_rate);
+        let key = (member.id, date);
+        cell(date, self.today, self.days.get(&key), owed, self.reports.get(&key).copied())
+    }
+
+    /// The day recorded under `member` on `date`, if one was.
+    pub(crate) fn recorded(&self, member: &Member, date: NaiveDate) -> Option<&Recorded> {
+        self.days.get(&(member.id, date))
+    }
+}
+
+/// A month for everyone `reader` may see, or - with `only` - for one person.
+pub async fn build(pool: &PgPool, reader: Reader, month: &str, only: Option<Uuid>) -> Result<Timesheet, ApiError> {
     let (from, to) = month_bounds(month)?;
-    let range = Range { from, to };
-
-    let (members, standard_hours) = team::members(pool, reader, &range, only).await?;
-    let ids: Vec<Uuid> = members.iter().map(|member| member.id).collect();
-
-    let calendar = Calendar::load(pool, from, to).await?;
-    let today = Norm::today(pool).await?;
+    let sheet = Sheet::load(pool, reader, &Range { from, to }, only).await?;
     let day_approval = reports::approval_enabled(pool).await?;
-    let dates = columns(&calendar, from, to, standard_hours);
 
-    // Looked up by person and date: a scan per date would be people x dates x
-    // days, the shape of loop that is fine for a team of five.
-    let days: HashMap<(Uuid, NaiveDate), Recorded> = recorded(pool, &ids, &range)
-        .await?
-        .into_iter()
-        .map(|day| ((day.user_id, day.date), day))
+    // The cells first, while the sheet still lends its members out; then the
+    // members move into the rows they head.
+    let cells: Vec<Vec<Cell>> = sheet
+        .members
+        .iter()
+        .map(|member| sheet.dates.iter().map(|column| sheet.cell(member, column.date)).collect())
         .collect();
-    let reports: HashMap<(Uuid, NaiveDate), Status> = reports::for_people(pool, &ids, &range)
-        .await?
-        .into_iter()
-        .map(|report| ((report.user_id, report.date), report.status))
-        .collect();
-
+    let Sheet {
+        members,
+        standard_hours,
+        today,
+        dates,
+        ..
+    } = sheet;
     let rows = members
         .into_iter()
-        .map(|member| {
-            let cells: Vec<Cell> = dates
-                .iter()
-                .map(|column| {
-                    let owed = calendar.norm_seconds(column.date, standard_hours, member.work_rate);
-                    let key = (member.id, column.date);
-                    cell(column.date, today, days.get(&key), owed, reports.get(&key).copied())
-                })
-                .collect();
-            let counts = Counts::of(&cells);
-            Row { member, days: cells, counts }
+        .zip(cells)
+        .map(|(member, days)| Row {
+            counts: Counts::of(&days),
+            member,
+            days,
         })
         .collect();
 
@@ -418,7 +479,7 @@ pub async fn build(pool: &PgPool, reader: &CurrentUser, month: &str, only: Optio
 /// `GET /api/v1/team/timesheet?month=YYYY-MM`
 pub async fn team_month(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<impl IntoResponse, ApiError> {
     require_manager_or_admin(&user)?;
-    Ok(Json(build(&state.pool, &user, &query.month, None).await?))
+    Ok(Json(build(&state.pool, user.reader(), &query.month, None).await?))
 }
 
 /// `GET /api/v1/me/timesheet?month=YYYY-MM`
@@ -426,13 +487,13 @@ pub async fn team_month(State(state): State<AppState>, user: CurrentUser, Query(
 /// The same month with one row - the reader's. What `kasl timesheet` files
 /// from the person's own machine, as the server has it.
 pub async fn my_month(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(build(&state.pool, &user, &query.month, Some(user.user_id)).await?))
+    Ok(Json(build(&state.pool, user.reader(), &query.month, Some(user.user_id)).await?))
 }
 
 /// `GET /api/v1/team/timesheet.xlsx?month=YYYY-MM`
 pub async fn team_workbook(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<Response, ApiError> {
     require_manager_or_admin(&user)?;
-    let timesheet = build(&state.pool, &user, &query.month, None).await?;
+    let timesheet = build(&state.pool, user.reader(), &query.month, None).await?;
     let file = workbook::write(&timesheet)?;
 
     // Other people's hours leaving the server with the reader: the read the
@@ -458,7 +519,7 @@ pub async fn team_workbook(State(state): State<AppState>, user: CurrentUser, Que
 
 /// `GET /api/v1/me/timesheet.xlsx?month=YYYY-MM`
 pub async fn my_workbook(State(state): State<AppState>, user: CurrentUser, Query(query): Query<MonthQuery>) -> Result<Response, ApiError> {
-    let timesheet = build(&state.pool, &user, &query.month, Some(user.user_id)).await?;
+    let timesheet = build(&state.pool, user.reader(), &query.month, Some(user.user_id)).await?;
     let file = workbook::write(&timesheet)?;
     Ok(export::download(
         file,
@@ -492,7 +553,10 @@ mod tests {
             user_id: Uuid::nil(),
             date: date("2026-09-14"),
             kind: WorkdayKind::Work,
+            started_at: at("2026-09-14T09:00:00Z"),
+            ended_at: Some(at("2026-09-14T17:00:00Z")),
             worked_seconds: Some(27_000),
+            paused_seconds: 1_800,
             open: false,
             next_started_at: Some(at("2026-09-15T09:00:00Z")),
             first_reported_at: None,

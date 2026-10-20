@@ -42,11 +42,16 @@ use std::io::{BufRead, Write};
 /// from here, so a backup of an installation's production calendar restored as
 /// an installation with no calendar at all - a full header, a plausible row
 /// count, and the norms silently wrong on every holiday.
-pub const TABLES: [&str; 16] = [
+pub const TABLES: [&str; 17] = [
     "users",
     "departments",
     "agents",
     "sessions",
+    // Who a dashboard reads with. Hashes only, like the agents' tokens, and
+    // carried for the same reason: a restored installation whose Grafana
+    // stopped answering would look broken for no reason the operator could
+    // see (ADR 0025).
+    "read_tokens",
     "workdays",
     "pauses",
     "tasks",
@@ -436,6 +441,7 @@ mod tests {
             ("notifications", "reports"),
             ("day_notes", "users"),
             ("agents", "users"),
+            ("read_tokens", "users"),
             ("sessions", "users"),
             ("workdays", "users"),
             ("pauses", "workdays"),

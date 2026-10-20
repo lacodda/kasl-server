@@ -33,7 +33,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    admin::{VISIBLE_USERS, require_manager_or_admin},
+    admin::{Reader, VISIBLE_USERS, require_manager_or_admin},
     app::AppState,
     calendar::{Calendar, Norm},
     error::ApiError,
@@ -52,6 +52,10 @@ pub struct Member {
     pub display_name: String,
     pub email: String,
     pub department: Option<String>,
+    /// The department's id beside its name: what a BI tool joins the people
+    /// and their days on, where a renamed department would break a join by
+    /// name (ADR 0025).
+    pub department_id: Option<Uuid>,
     /// Whether the account is still in use. A deactivated person appears only
     /// in a range they have days in - their hours belong to that period.
     pub active: bool,
@@ -122,7 +126,7 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
     require_manager_or_admin(&user)?;
     me::validate_range(&range)?;
 
-    let (members, standard_hours) = members(&state.pool, &user, &range, None).await?;
+    let (members, standard_hours) = members(&state.pool, user.reader(), &range, None).await?;
     let level = Policy::load(&state.pool).await?.level();
 
     Ok(Json(Team {
@@ -151,9 +155,7 @@ pub async fn days(State(state): State<AppState>, user: CurrentUser, Query(range)
 ///
 /// Answers the installation's full day beside the rows, since every norm in
 /// them was computed from it.
-pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, only: Option<Uuid>) -> Result<(Vec<Member>, Decimal), ApiError> {
-    let is_admin = reader.role == UserRole::Admin;
-
+pub(crate) async fn members(pool: &PgPool, reader: Reader, range: &Range, only: Option<Uuid>) -> Result<(Vec<Member>, Decimal), ApiError> {
     // `date` here is the employee's own local date, as their agent recorded it,
     // and "today" is the server's. They can differ by a day at the edges; for
     // "is a day open" that is the right approximation - the alternative needs a
@@ -166,7 +168,7 @@ pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, 
     // `AssertSqlSafe` because the only interpolation is `VISIBLE_USERS`, a
     // constant in `admin`; every value from the request is bound below.
     let members: Vec<Member> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT u.id, u.display_name, u.email, u.active, d.name AS department,
+        "SELECT u.id, u.display_name, u.email, u.active, d.name AS department, u.department_id,
                 u.work_rate,
                 w.days_away,
                 w.days_recorded,
@@ -208,7 +210,7 @@ pub(crate) async fn members(pool: &PgPool, reader: &CurrentUser, range: &Range, 
            AND {VISIBLE_USERS}
          ORDER BY u.display_name, u.email"
     )))
-    .bind(is_admin)
+    .bind(reader.is_admin())
     .bind(reader.user_id)
     .bind(range.from)
     .bind(range.to)
@@ -294,7 +296,7 @@ pub async fn user_days(
     require_manager_or_admin(&user)?;
     me::validate_range(&range)?;
 
-    if !may_read(&state.pool, &user, target).await? {
+    if !may_read(&state.pool, user.reader(), target).await? {
         // Not "no such user": a manager probing ids should not be able to tell
         // an employee in another department from one who does not exist.
         return Err(ApiError::new(StatusCode::NOT_FOUND, "no such user"));
@@ -347,9 +349,9 @@ pub async fn live(State(state): State<AppState>, user: CurrentUser) -> Result<im
 /// Asked of the database with the same clause the listing uses, rather than
 /// reasoned about in Rust: the rule and the check cannot drift if they are the
 /// same string.
-pub(crate) async fn may_read(pool: &PgPool, reader: &CurrentUser, target: Uuid) -> Result<bool, ApiError> {
+pub(crate) async fn may_read(pool: &PgPool, reader: Reader, target: Uuid) -> Result<bool, ApiError> {
     let visible: Option<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT u.id FROM users u WHERE u.id = $3 AND {VISIBLE_USERS}")))
-        .bind(reader.role == UserRole::Admin)
+        .bind(reader.is_admin())
         .bind(reader.user_id)
         .bind(target)
         .fetch_optional(pool)
