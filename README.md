@@ -28,7 +28,7 @@ included, so the loop is closed end to end.
 ```console
 $ docker compose up -d
 $ curl http://127.0.0.1:8080/health
-{"database":"ok","demo":false,"status":"ok","version":"0.28.0"}
+{"database":"ok","demo":false,"status":"ok","version":"0.29.0"}
 
 # An agent back from three days offline - the middle day is impossible, and
 # the others land anyway.
@@ -99,10 +99,10 @@ including backups and the administrator account: [Installing it](https://lacodda
 
 ## Status
 
-v0.28.0, in daily use on a small team's own stand. Everything above holds end
+v0.29.0, in daily use on a small team's own stand. Everything above holds end
 to end - ingest, dashboards, the calendar and the norm, alerts in the web UI
-and in chat, notices, notes, approval, exports, the monthly timesheet and the
-phone layout. What landed in each version:
+and in chat, notices, notes, approval, exports, the monthly timesheet, the BI
+API and the phone layout. What landed in each version:
 [CHANGELOG](https://github.com/lacodda/kasl-server/blob/main/CHANGELOG.md).
 
 ## Documentation

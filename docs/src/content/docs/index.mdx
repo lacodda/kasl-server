@@ -32,6 +32,11 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 		team's hours, a live column of who is working right now, the month as a
 		timesheet and as a grid, and a band naming who is worth a look and why.
 	</Card>
+	<Card title="Hours a dashboard can read" icon="laptop">
+		Grafana, Power Query or a script reads the team's days and totals from
+		`/api/bi/v1` with a read token that sees only what its owner sees, in
+		columns that stay where they are.
+	</Card>
 	<Card title="One binary, self-hosted" icon="document">
 		The same binary serves the API and the web UI on the same port. Installing
 		it is a compose file and a published image rather than a build.
@@ -43,4 +48,5 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 - **[Getting Started](/kasl-server/getting-started/)** - bring up the server and post a day.
 - **[The API](/kasl-server/reference/api/)** - the ingest contract agents talk to.
 - **[The web UI](/kasl-server/guides/the-web-ui/)** - what a manager and an employee each see.
+- **[The BI API](/kasl-server/reference/the-bi-api/)** - the team's hours for Grafana and other dashboard tools.
 - **[What the server stores about you](/kasl-server/concepts/what-the-server-stores-about-you/)** - the privacy manifest, at three levels.
