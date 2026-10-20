@@ -8,6 +8,11 @@ person, with the figures the team screen shows for the same range. **Days** has
 a row per person and date. The workbook holds both tables as sheets; each CSV
 file holds one table.
 
+These are files for a person to download. A dashboard that should read the
+same hours on its own, every few minutes, reads [the BI API](/kasl-server/reference/the-bi-api/)
+instead: the same summary and the same days, with a read token, in columns that
+stay put.
+
 | File | Who may download it |
 | --- | --- |
 | `GET /api/v1/team/export.xlsx` | managers and administrators: everyone they may see |

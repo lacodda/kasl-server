@@ -26,6 +26,9 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
  "sent_elsewhere":[{"to":"a Slack channel (team)","about":"everyone",
                     "what":["alerts about you as they are raised and cleared: your name, your department, and the figure behind each one - ...",
                             "the name of whoever answered an alert about you"]}],
+ "read_elsewhere":[{"through":"Team Grafana","by":"Priya Raman, a manager","about":"people in Engineering",
+                    "what":["your name, email, department and share of a full day",
+                            "your days, date by date: when each began and ended, the hours worked and paused, ..."]}],
  "retention":"Kept for as long as the installation keeps it: there is no automatic deletion. ...",
  "on_change":"Changing this setting affects what arrives from now on. ..."}
 ```
@@ -42,6 +45,14 @@ through, so it cannot list a channel that is not there or miss one that is.
 Nothing configured, and the list is empty rather than absent: an empty list is
 a promise, a missing one is not. See
 [Sending alerts to a chat](/kasl-server/guides/sending-alerts-to-a-chat/).
+
+**So is what is read from outside.** `read_elsewhere` names every dashboard
+tool that reads people's hours from here with a
+[read token](/kasl-server/reference/the-bi-api/): what its owner called it, whose
+access it reads with, whom that reaches, and what it can read - never a task or
+the reason for a pause, which the BI API does not serve. A token whose owner
+may no longer read the team reads nothing, and is not listed; nor is one that
+reaches only its own owner. Empty, like `sent_elsewhere`, rather than absent.
 
 ## Three levels
 

@@ -32,6 +32,12 @@ held: of everything read on this server, it is the one read after which the data
 has left it. Downloading your own is not recorded. See
 [exporting hours](/kasl-server/reference/exporting-hours/).
 
+A [read token](/kasl-server/reference/the-bi-api/) is recorded as
+`read_token.issued` and `read_token.revoked`, with its name and scope. The reads
+made with it are not: a dashboard asks every few minutes, and the issue entry
+stands for all of them - from that moment, the hours its owner may see can be
+read from wherever the token is.
+
 Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
 `limit` (500 at most) and `offset`. "Everything that happened to this person" is
 `?target_id=...`.

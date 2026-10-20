@@ -97,6 +97,12 @@ sheet and a sheet of days, or either table as CSV. The team screen exports the
 team, the personal page exports your own hours; a period still running is
 exported to today. See [exporting hours](/kasl-server/reference/exporting-hours/).
 
+The team's export menu ends with **Read from a dashboard tool…**: the screen
+where a manager or an administrator issues a read token for Grafana, Power
+Query or a script, sees which tokens are being read with, and revokes the ones
+that are not. A token reads exactly what its owner sees on these screens. See
+[the BI API](/kasl-server/reference/the-bi-api/).
+
 ## On a phone
 
 Every screen works at 320px, and none of them is a cut-down version of itself:

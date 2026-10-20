@@ -4,7 +4,9 @@ description: The ingest contract - uploading a day or a backlog, and telling age
 ---
 
 `/api/v1` from the first endpoint: agents update on their own schedule, so a
-path keeps meaning what it meant when the agent calling it shipped.
+path keeps meaning what it meant when the agent calling it shipped. This page
+is the agents' side of it; dashboard tools read
+[the BI API](/kasl-server/reference/the-bi-api/), a contract of its own.
 
 **`POST /api/v1/days`** — upload one day. Requires `Authorization: Bearer
 <token>`. The body is the workday with its pauses and tasks; `ended_at` is

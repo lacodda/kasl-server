@@ -68,6 +68,9 @@ can be seen before an agent is installed anywhere.
   person against their own norm and against the period before - never ranked by
   hours - and downloaded as an Excel workbook or CSV, for the team or for
   yourself.
+- **Hours a dashboard can read.** Grafana, Power Query or a script reads the
+  team's days and totals with a read token that sees only what its owner sees,
+  in columns that stay where they are.
 - **A production calendar and a norm.** Holidays, shortened eves and
   transferred weekends; a full day per installation and a share of it per
   person, so half time reads as half time rather than as half-hearted.

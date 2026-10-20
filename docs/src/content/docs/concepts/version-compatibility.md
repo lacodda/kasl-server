@@ -49,6 +49,12 @@ notice - `note.added` in 0.25.0, `report.approved` and `report.returned` in
 sentence the server wrote, which for a note is the note and for a returned day
 is the reason.
 
+**Dashboards have a contract of their own.** `/api/bi/v1`, which Grafana and
+other BI tools read with a read token (0.29.0), is versioned apart from
+`/api/v1`: within `v1` a dataset only gains columns at its end, and anything
+else is `/api/bi/v2`. No agent calls it. See
+[the BI API](/kasl-server/reference/the-bi-api/).
+
 **Releasing a contract change.** A change to the shape of what agents send or
 receive lands in both products before either is tagged: the server's endpoint
 and the docs here, then kasl's client and this table's new row. The order
