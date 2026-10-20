@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router'
 import { Download } from 'lucide-react'
 import { downloadExport, downloadTimesheet, type ExportFile, type ExportSubject } from '@/lib/api'
 import { isoDate } from '@/lib/day'
@@ -25,9 +26,13 @@ const FILES: { file: ExportFile; label: string }[] = [
  *
  * A month also offers its timesheet: the grid a company files (ADR 0024). A
  * timesheet is a month or nothing, so a week or a day does not offer one.
+ *
+ * The team's menu ends with the way to read the same hours from a dashboard
+ * tool: a read token is this export kept going (ADR 0025).
  */
 export function ExportMenu({ subject, period }: { subject: ExportSubject; period: Period }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -78,6 +83,12 @@ export function ExportMenu({ subject, period }: { subject: ExportSubject; period
               {/* The whole month, its days to come included: a timesheet is
                   filed by the month, and the grid shows what is still owed. */}
               <MenuItem onClick={() => run(() => downloadTimesheet(subject, period.from.slice(0, 7)))}>{t('export.timesheet')}</MenuItem>
+            </>
+          )}
+          {subject === 'team' && (
+            <>
+              <MenuSeparator />
+              <MenuItem onClick={() => void navigate('/read-tokens')}>{t('export.dashboardTool')}</MenuItem>
             </>
           )}
         </MenuPopup>

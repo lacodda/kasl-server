@@ -106,6 +106,31 @@ export function Privacy() {
         )}
       </Section>
 
+      {/* The same promise for what is read from outside rather than sent: a
+          dashboard reading people's hours with somebody's token takes them
+          off this server as surely as a webhook does (ADR 0025). */}
+      <Section title={t('privacy.readElsewhere')}>
+        {manifest.read_elsewhere.length === 0 ? (
+          <p className="text-sm text-dim">{t('privacy.readNowhere')}</p>
+        ) : (
+          <div className="space-y-4">
+            {manifest.read_elsewhere.map((reader, at) => (
+              <div key={`${reader.through}-${at}`}>
+                <p className="text-sm">{reader.through}</p>
+                <p className="mt-0.5 text-xs text-faint">{t('privacy.readBy', { by: reader.by, about: reader.about })}</p>
+                <ul className="mt-1.5 space-y-1">
+                  {reader.what.map((item) => (
+                    <li key={item} className="text-sm text-dim">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       <Section title={t('privacy.retention')}>
         <p className="text-sm text-dim">{manifest.retention}</p>
       </Section>

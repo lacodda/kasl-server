@@ -258,7 +258,10 @@
     "updatedAt": "Policy last changed",
     "sentElsewhere": "Sent outside this server",
     "sentNowhere": "Nothing about you is sent anywhere else. What is kept stays on this server.",
-    "about": "About {{about}}"
+    "about": "About {{about}}",
+    "readElsewhere": "Read from outside this server",
+    "readNowhere": "No dashboard tool reads people's hours from here.",
+    "readBy": "With the access of {{by}} · about {{about}}"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -459,6 +462,33 @@
     "summaryCsv": "Summary as CSV",
     "daysCsv": "Days as CSV",
     "timesheet": "Timesheet for the month",
+    "dashboardTool": "Read from a dashboard tool…",
     "failed": "The file could not be downloaded"
+  },
+  "readTokens": {
+    "title": "Dashboard tools",
+    "subtitle": "A read token lets Grafana, Power Query or a script read the hours you can see here - the same people, nothing more. It reads with your access as it is at each request, and stops when your access does.",
+    "nameLabel": "What will read with it",
+    "namePlaceholder": "Grafana",
+    "issue": "Issue a token",
+    "issued": "The token for {{name}}",
+    "tokenLabel": "Read token",
+    "copy": "Copy",
+    "copied": "Copied. It is shown only this once - the server keeps nothing it could show again.",
+    "selectToCopy": "This page cannot reach the clipboard. Select the token and copy it - it is shown only this once.",
+    "shownOnce": "Shown only this once: the server keeps its hash, not the token.",
+    "pointAt": "Point the tool at these, as JSON - or add .csv after the name:",
+    "header": "With the token in this header:",
+    "yours": "Your tokens",
+    "everyone": "Every token",
+    "none": "No tokens yet.",
+    "created": "Issued {{at}}",
+    "lastUsed": "last read with {{at}}",
+    "neverUsed": "never read with",
+    "revokedAt": "revoked {{at}}",
+    "revoke": "Revoke",
+    "confirmRevoke": "Revoke for good",
+    "keep": "Keep",
+    "guide": "How to build a Grafana dashboard on these"
   }
 }

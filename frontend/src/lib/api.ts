@@ -39,6 +39,22 @@ export interface PrivacyManifest {
    * absent when nothing does - an empty list is a promise.
    */
   sent_elsewhere: SentElsewhere[]
+  /**
+   * The dashboard tools reading people's hours from here with somebody's read
+   * token (ADR 0025). Empty rather than absent when none does.
+   */
+  read_elsewhere: ReadElsewhere[]
+}
+
+/** One dashboard tool that reads people's hours. Never the token. */
+export interface ReadElsewhere {
+  /** What its owner named it: "Grafana". */
+  through: string
+  /** "Priya Raman, a manager" */
+  by: string
+  /** "everyone", or "people in Design" */
+  about: string
+  what: string[]
 }
 
 /** One place the server sends messages about people. Never an address. */
@@ -688,6 +704,34 @@ async function request<T>(path: string, init?: Options): Promise<T> {
   return (await response.json()) as T
 }
 
+/** What a read token may read - the server's `read_scope`. */
+export type ReadScope = 'hours'
+
+/**
+ * A token a dashboard tool reads the BI API with (ADR 0025), as the list
+ * shows it. Never the token itself: that is answered once, at issue.
+ */
+export interface ReadToken {
+  id: string
+  name: string
+  scope: ReadScope
+  owner_id: string
+  /** The owner's display name - an administrator lists everyone's. */
+  owner: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+/** What issuing answers: the only time the token is shown. */
+export interface IssuedReadToken {
+  id: string
+  name: string
+  scope: ReadScope
+  token: string
+  notice: string
+}
+
 export interface Health {
   status: string
   version: string
@@ -895,4 +939,16 @@ export const api = {
   /** Turns approval on or off. Administrators only. */
   setDayApproval: (enabled: boolean) =>
     request<{ enabled: boolean }>('/reports/approval', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+
+  /**
+   * The reader's read tokens, live ones first - or everyone's, to an
+   * administrator. Managers and administrators.
+   */
+  readTokens: () => request<ReadToken[]>('/read-tokens'),
+
+  /** Issues the reader a token that reads with their eyes. */
+  issueReadToken: (name: string) => request<IssuedReadToken>('/read-tokens', { method: 'POST', body: JSON.stringify({ name }) }),
+
+  /** Ends a token: its owner's, or anybody's for an administrator. */
+  revokeReadToken: (id: string) => request<void>(`/read-tokens/${id}`, { method: 'DELETE' }),
 }

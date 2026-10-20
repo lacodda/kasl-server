@@ -12,6 +12,7 @@ import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
 import { Notifications } from '@/pages/Notifications'
 import { Privacy } from '@/pages/Privacy'
+import { ReadTokens } from '@/pages/ReadTokens'
 import { Webhooks } from '@/pages/Webhooks'
 import { Button } from '@/components/ui/button'
 import { destinations, type Destination } from '@/lib/navigation'
@@ -61,6 +62,9 @@ export function App() {
           {managesPeople && <Route path="/team" element={<Dashboard />} />}
           {managesPeople && <Route path="/month" element={<Month />} />}
           {managesPeople && <Route path="/team/:id" element={<PersonWeek />} />}
+          {/* No tab either: reached from the export menu, next to the files
+              it is the standing version of (ADR 0025). */}
+          {managesPeople && <Route path="/read-tokens" element={<ReadTokens />} />}
           {/* No tab: the phone's bar holds five screens and has five. Reached
               from the alerts band, next to what it delivers. */}
           {user.role === 'admin' && <Route path="/webhooks" element={<Webhooks />} />}
