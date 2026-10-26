@@ -52,7 +52,9 @@ tool that reads people's hours from here with a
 access it reads with, whom that reaches, and what it can read - never a task or
 the reason for a pause, which the BI API does not serve. A token whose owner
 may no longer read the team reads nothing, and is not listed; nor is one that
-reaches only its own owner. Empty, like `sent_elsewhere`, rather than absent.
+reaches only its own owner, nor a token for
+[the server's metrics](/kasl-server/reference/server-metrics/), which name
+nobody. Empty, like `sent_elsewhere`, rather than absent.
 
 ## Three levels
 

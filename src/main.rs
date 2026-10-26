@@ -308,7 +308,10 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     // does not have to be looking, and the first thing a server that was down
     // overnight should do is notice what happened while it was.
     let webhooks = std::sync::Arc::new(config.webhooks.clone());
-    kasl_server::alerts::run_sweeps(pool.clone(), webhooks.clone());
+    // One count for the whole process: the router's requests and the timed
+    // tasks' runs land in the same `/metrics` (ADR 0026).
+    let recorder = std::sync::Arc::new(kasl_server::metrics::Recorder::new());
+    kasl_server::alerts::run_sweeps(pool.clone(), webhooks.clone(), recorder.clone());
 
     // Named at startup, by label and kind and never by address: "is the
     // design channel wired up" should be answerable from the log, and the
@@ -326,14 +329,14 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     }
     // Always started, even with no destinations: a delivery queued before a
     // variable was removed still has to be given up on in writing.
-    kasl_server::webhooks::run_dispatcher(pool.clone(), webhooks);
+    kasl_server::webhooks::run_dispatcher(pool.clone(), webhooks, recorder.clone());
 
     let listener = TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("failed to bind {}", config.addr))?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %config.addr, max_batch_days = config.max_batch_days, max_body_bytes = config.max_body_bytes, "kasl-server listening");
 
-    axum::serve(listener, app::router_with(pool, &config))
+    axum::serve(listener, app::router_with(pool, &config, recorder))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;

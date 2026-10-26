@@ -39,7 +39,7 @@ use axum::{
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::PgConnection;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 pub use destination::{Destination, EventKind, Kind, PREFIX};
@@ -369,13 +369,57 @@ pub struct Overview {
     pub links: bool,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-struct Counts {
-    destination: String,
-    pending: i64,
-    delivered: i64,
-    abandoned: i64,
-    last_delivered_at: Option<DateTime<Utc>>,
+/// One configured destination's queue, as its rows hold it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Queue {
+    pub destination: String,
+    /// Neither delivered nor given up on: still being tried.
+    pub pending: i64,
+    pub delivered: i64,
+    pub abandoned: i64,
+    pub last_delivered_at: Option<DateTime<Utc>>,
+    /// When the oldest delivery still pending was queued.
+    pub oldest_pending_at: Option<DateTime<Utc>>,
+}
+
+/// Every configured destination's queue, in the configuration's order - one
+/// with no rows yet at zero.
+///
+/// The one reading of the queue: the webhooks screen and `/metrics` both take
+/// it from here, so the page and the graph cannot disagree (ADR 0026). Rows of
+/// a destination no longer configured are left out; the dispatcher gives them
+/// up on its next pass.
+pub async fn queues(pool: &PgPool, webhooks: &Webhooks) -> Result<Vec<Queue>, sqlx::Error> {
+    let counted: Vec<Queue> = sqlx::query_as(
+        "SELECT destination,
+                count(*) FILTER (WHERE delivered_at IS NULL AND abandoned_at IS NULL) AS pending,
+                count(*) FILTER (WHERE delivered_at IS NOT NULL) AS delivered,
+                count(*) FILTER (WHERE abandoned_at IS NOT NULL) AS abandoned,
+                max(delivered_at) AS last_delivered_at,
+                min(created_at) FILTER (WHERE delivered_at IS NULL AND abandoned_at IS NULL) AS oldest_pending_at
+         FROM webhook_deliveries GROUP BY destination",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(webhooks
+        .destinations
+        .iter()
+        .map(|destination| {
+            counted
+                .iter()
+                .find(|queue| queue.destination == destination.name)
+                .cloned()
+                .unwrap_or_else(|| Queue {
+                    destination: destination.name.clone(),
+                    pending: 0,
+                    delivered: 0,
+                    abandoned: 0,
+                    last_delivered_at: None,
+                    oldest_pending_at: None,
+                })
+        })
+        .collect())
 }
 
 /// Answers the destinations and the recent deliveries. Administrators only:
@@ -383,16 +427,7 @@ struct Counts {
 pub async fn overview(State(state): State<AppState>, user: CurrentUser) -> Result<impl IntoResponse, ApiError> {
     user.require_admin()?;
 
-    let counts: Vec<Counts> = sqlx::query_as(
-        "SELECT destination,
-                count(*) FILTER (WHERE delivered_at IS NULL AND abandoned_at IS NULL) AS pending,
-                count(*) FILTER (WHERE delivered_at IS NOT NULL) AS delivered,
-                count(*) FILTER (WHERE abandoned_at IS NOT NULL) AS abandoned,
-                max(delivered_at) AS last_delivered_at
-         FROM webhook_deliveries GROUP BY destination",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let queues = queues(&state.pool, &state.webhooks).await?;
 
     let failures: Vec<(String, String, DateTime<Utc>)> = sqlx::query_as(
         "SELECT DISTINCT ON (destination) destination, last_error, coalesce(abandoned_at, next_attempt_at)
@@ -409,8 +444,8 @@ pub async fn overview(State(state): State<AppState>, user: CurrentUser) -> Resul
         .webhooks
         .destinations
         .iter()
-        .map(|destination| {
-            let count = counts.iter().find(|count| count.destination == destination.name);
+        .zip(&queues)
+        .map(|(destination, queue)| {
             let failure = failures.iter().find(|(name, ..)| *name == destination.name);
             DestinationView {
                 name: destination.name.clone(),
@@ -422,10 +457,10 @@ pub async fn overview(State(state): State<AppState>, user: CurrentUser) -> Resul
                     .department
                     .as_ref()
                     .map(|wanted| departments.iter().any(|name| name.eq_ignore_ascii_case(wanted))),
-                pending: count.map_or(0, |count| count.pending),
-                delivered: count.map_or(0, |count| count.delivered),
-                abandoned: count.map_or(0, |count| count.abandoned),
-                last_delivered_at: count.and_then(|count| count.last_delivered_at),
+                pending: queue.pending,
+                delivered: queue.delivered,
+                abandoned: queue.abandoned,
+                last_delivered_at: queue.last_delivered_at,
                 last_error: failure.map(|(_, error, _)| error.clone()),
                 last_error_at: failure.map(|(.., at)| *at),
             }

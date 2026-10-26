@@ -1,20 +1,22 @@
-//! Read tokens: the credential a BI tool holds (ADR 0025).
+//! Read tokens: the credential a tool reads the server with - a dashboard the
+//! team's hours (ADR 0025), Prometheus the server's own health (ADR 0026).
 //!
-//! A dashboard cannot sign in, so it presents a bearer token the way an agent
-//! does - but a read token is not an agent's. An agent's writes one person's
-//! days; a read token reads what its owner may see, and nothing else. Three
-//! rules shape it:
+//! A tool cannot sign in, so it presents a bearer token the way an agent does -
+//! but a read token is not an agent's. An agent's writes one person's days; a
+//! read token reads what its scope names, with its owner's authority, and
+//! nothing else. Three rules shape it:
 //!
 //! * **It reads with its owner's eyes, as they are now.** The owner's role and
 //!   department are read on every request through [`Reader`], so a token
 //!   narrows when its owner's authority does and stops when their account is
 //!   deactivated - no second list of who a token may see to keep in step.
-//! * **Its scope is part of its type.** A route takes `ReadToken<Hours>`, and a
-//!   token of any other scope is refused before the handler runs. The finance
-//!   milestone adds a scope for the money; a route cannot forget to check,
-//!   because a route that does not name a scope has no reader at all.
-//! * **It is issued by whoever will read with it.** A manager or an
-//!   administrator, for themselves; an administrator may revoke anybody's.
+//! * **Its scope is part of its type.** A route takes `ReadToken<Hours>` or
+//!   `ReadToken<Metrics>`, and a token of any other scope is refused before the
+//!   handler runs. A route cannot forget to check, because a route that does
+//!   not name a scope has no reader at all.
+//! * **It is issued by whoever will read with it**, for themselves, if their
+//!   role may hold its scope ([`ReadScope::held_by`]); an administrator may
+//!   revoke anybody's.
 
 use std::marker::PhantomData;
 
@@ -48,6 +50,23 @@ pub const READ_TOKEN_PREFIX: &str = "kasl_read_";
 pub enum ReadScope {
     /// The team's hours: everything `/api/bi/v1` answers.
     Hours,
+    /// The server's own health: `/metrics`. Nobody's data.
+    Metrics,
+}
+
+impl ReadScope {
+    /// Whether somebody in `role` may hold a token of this scope - asked when
+    /// one is issued and again on every request made with it, so a demotion
+    /// ends the reading at once.
+    ///
+    /// The hours are whoever reads the team on the screens; the server's health
+    /// describes the installation, which is the administrator's.
+    pub fn held_by(self, role: UserRole) -> bool {
+        match self {
+            ReadScope::Hours => role != UserRole::Employee,
+            ReadScope::Metrics => role == UserRole::Admin,
+        }
+    }
 }
 
 /// A scope as a type, for the extractor to check.
@@ -62,9 +81,16 @@ impl Scope for Hours {
     const SCOPE: ReadScope = ReadScope::Hours;
 }
 
+/// The marker for [`ReadScope::Metrics`].
+pub struct Metrics;
+
+impl Scope for Metrics {
+    const SCOPE: ReadScope = ReadScope::Metrics;
+}
+
 /// A request made with a live read token of scope `S`.
 ///
-/// Taken as a handler argument, like [`crate::auth::AuthenticatedAgent`]: a BI
+/// Taken as a handler argument, like [`crate::auth::AuthenticatedAgent`]: a
 /// route without it has nobody to read for.
 pub struct ReadToken<S: Scope> {
     pub id: Uuid,
@@ -101,11 +127,11 @@ impl<S: Scope> FromRequestParts<AppState> for ReadToken<S> {
         if scope != S::SCOPE {
             return Err(ApiError::new(StatusCode::FORBIDDEN, "this token's scope does not cover this"));
         }
-        // Issued by a manager who has since become an employee: the screens
-        // refuse them the team now, and so does everything that reads with
-        // their eyes.
-        if role == UserRole::Employee {
-            return Err(ApiError::new(StatusCode::FORBIDDEN, "the token's owner may no longer read the team"));
+        // Issued by a manager who has since become an employee, or by an
+        // administrator who has since become a manager: the screens refuse
+        // them what the token reads now, and so does the token.
+        if !scope.held_by(role) {
+            return Err(ApiError::new(StatusCode::FORBIDDEN, "the token's owner may no longer read this"));
         }
 
         // Best-effort, as an agent's last-seen stamp is: failing to record the
@@ -146,6 +172,8 @@ pub struct TokenRow {
 #[derive(Debug, Deserialize)]
 pub struct NewToken {
     pub name: String,
+    /// What it reads. Required: a default would be the scope nobody chose.
+    pub scope: ReadScope,
 }
 
 /// What issuing answers: the one time the token is shown.
@@ -186,9 +214,12 @@ pub async fn issue(State(state): State<AppState>, user: CurrentUser, Json(new): 
     if name.is_empty() {
         return Err(ApiError::bad_request("a token needs a name; what will read with it is the usual one"));
     }
+    let scope = new.scope;
+    if !scope.held_by(user.role) {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "your role may not hold a token of this scope"));
+    }
 
     let token = generate_token(READ_TOKEN_PREFIX);
-    let scope = ReadScope::Hours;
     let id: Uuid = sqlx::query_scalar("INSERT INTO read_tokens (owner_id, name, scope, token_hash) VALUES ($1, $2, $3, $4) RETURNING id")
         .bind(user.user_id)
         .bind(name)
@@ -281,5 +312,17 @@ mod tests {
     #[test]
     fn the_scope_is_snake_case_on_the_wire() {
         assert_eq!(serde_json::to_string(&ReadScope::Hours).unwrap(), "\"hours\"");
+        assert_eq!(serde_json::to_string(&ReadScope::Metrics).unwrap(), "\"metrics\"");
+    }
+
+    #[test]
+    fn the_hours_are_the_team_s_readers_and_the_metrics_the_administrator_s() {
+        assert!(!ReadScope::Hours.held_by(UserRole::Employee));
+        assert!(ReadScope::Hours.held_by(UserRole::Manager));
+        assert!(ReadScope::Hours.held_by(UserRole::Admin));
+
+        assert!(!ReadScope::Metrics.held_by(UserRole::Employee));
+        assert!(!ReadScope::Metrics.held_by(UserRole::Manager));
+        assert!(ReadScope::Metrics.held_by(UserRole::Admin));
     }
 }

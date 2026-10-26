@@ -70,6 +70,7 @@ use crate::{
     calendar::{Calendar, WorkdayKind},
     error::ApiError,
     login::CurrentUser,
+    metrics::{Recorder, Task},
     model::UserRole,
     notifications,
     webhooks::{self, AlertPayload, Event, EventKind, Webhooks},
@@ -891,7 +892,7 @@ const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 6
 /// not leave a server running with its alerts permanently frozen, and the next
 /// sweep reconciles from scratch anyway - there is no state carried between
 /// them to be corrupted by a skipped one.
-pub fn run_sweeps(pool: PgPool, webhooks: std::sync::Arc<Webhooks>) {
+pub fn run_sweeps(pool: PgPool, webhooks: std::sync::Arc<Webhooks>, recorder: std::sync::Arc<Recorder>) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
         // The first tick is immediate: a server that has just started should
@@ -901,7 +902,9 @@ pub fn run_sweeps(pool: PgPool, webhooks: std::sync::Arc<Webhooks>) {
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            match sweep(&pool, Utc::now(), &webhooks).await {
+            let swept = sweep(&pool, Utc::now(), &webhooks).await;
+            recorder.record_run(Task::AlertSweep, swept.is_ok());
+            match swept {
                 Ok(swept) if swept.raised > 0 || swept.resolved > 0 => {
                     tracing::info!(raised = swept.raised, resolved = swept.resolved, open = swept.unchanged, "swept the alerts");
                 }

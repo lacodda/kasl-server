@@ -218,7 +218,9 @@ async fn cast(server: &TestServer) -> Cast {
 
 /// Issues a token to whoever holds `cookie`, and answers it.
 async fn issue(server: &TestServer, cookie: Option<&str>, name: &str) -> (String, String) {
-    let (status, _, body) = server.post_with_cookie("/api/v1/read-tokens", cookie, json!({ "name": name })).await;
+    let (status, _, body) = server
+        .post_with_cookie("/api/v1/read-tokens", cookie, json!({ "name": name, "scope": "hours" }))
+        .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     (body["id"].as_str().unwrap().to_string(), body["token"].as_str().unwrap().to_string())
 }
@@ -297,14 +299,14 @@ async fn only_someone_who_reads_the_team_gets_a_token() {
     let cast = cast(&server).await;
 
     let (status, _, body) = server
-        .post_with_cookie("/api/v1/read-tokens", cast.employee.as_deref(), json!({ "name": "mine" }))
+        .post_with_cookie("/api/v1/read-tokens", cast.employee.as_deref(), json!({ "name": "mine", "scope": "hours" }))
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     let (status, body) = server.get_with_cookie("/api/v1/read-tokens", cast.employee.as_deref()).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 
     let (status, _, body) = server
-        .post_with_cookie("/api/v1/read-tokens", cast.manager.as_deref(), json!({ "name": "   " }))
+        .post_with_cookie("/api/v1/read-tokens", cast.manager.as_deref(), json!({ "name": "   ", "scope": "hours" }))
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "a token needs a name: {body}");
 }

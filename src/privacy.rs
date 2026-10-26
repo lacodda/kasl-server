@@ -22,6 +22,7 @@ use crate::{
     auth::AuthenticatedAgent,
     error::ApiError,
     login::CurrentUser,
+    read_token::ReadScope,
     webhooks::{EventKind, Kind, Webhooks},
 };
 
@@ -183,18 +184,31 @@ const READ_BY_A_TOKEN: [&str; 2] = [
     "your days, date by date: when each began and ended, the hours worked and paused, whether it was work, leave, illness or a day off, and whether you reported it in time",
 ];
 
+/// What a token of `scope` can read about a person, or `None` when it reads
+/// nobody. A match rather than a list beside the scopes: a scope added later
+/// does not compile until it says what it reads.
+fn read_by(scope: ReadScope) -> Option<Vec<&'static str>> {
+    match scope {
+        ReadScope::Hours => Some(READ_BY_A_TOKEN.to_vec()),
+        // The server's own health: requests by route pattern, the queue, the
+        // process. No figure names a person (ADR 0026).
+        ReadScope::Metrics => None,
+    }
+}
+
 /// The live read tokens that reach anybody but their owner.
 ///
 /// Read through the same facts the tokens are: a token whose owner is
-/// deactivated or no longer a manager reads nothing, so it is not listed; a
-/// manager who runs no department reads only themselves, so neither is theirs.
+/// deactivated or may no longer hold its scope reads nothing, so it is not
+/// listed; a manager who runs no department reads only themselves, so neither
+/// is theirs; and a token whose scope reads nobody is not listed at all.
 async fn read_elsewhere(pool: &sqlx::PgPool) -> Result<Vec<ReadElsewhere>, ApiError> {
-    let rows: Vec<(String, String, crate::model::UserRole, Option<String>)> = sqlx::query_as(
-        "SELECT t.name, u.display_name, u.role,
+    let rows: Vec<(String, ReadScope, String, crate::model::UserRole, Option<String>)> = sqlx::query_as(
+        "SELECT t.name, t.scope, u.display_name, u.role,
                 (SELECT string_agg(d.name, ', ' ORDER BY d.name) FROM departments d WHERE d.manager_id = u.id) AS departments
          FROM read_tokens t
          JOIN users u ON u.id = t.owner_id
-         WHERE t.revoked_at IS NULL AND u.active AND u.role <> 'employee'
+         WHERE t.revoked_at IS NULL AND u.active
          ORDER BY t.created_at",
     )
     .fetch_all(pool)
@@ -202,18 +216,15 @@ async fn read_elsewhere(pool: &sqlx::PgPool) -> Result<Vec<ReadElsewhere>, ApiEr
 
     Ok(rows
         .into_iter()
-        .filter_map(|(through, owner, role, departments)| {
+        .filter(|(_, scope, _, role, _)| scope.held_by(*role))
+        .filter_map(|(through, scope, owner, role, departments)| {
+            let what = read_by(scope)?;
             let (by, about) = match (role, departments) {
                 (crate::model::UserRole::Admin, _) => (format!("{owner}, an administrator"), "everyone".to_string()),
                 (_, Some(departments)) => (format!("{owner}, a manager"), format!("people in {departments}")),
                 (_, None) => return None,
             };
-            Some(ReadElsewhere {
-                through,
-                by,
-                about,
-                what: READ_BY_A_TOKEN.to_vec(),
-            })
+            Some(ReadElsewhere { through, by, about, what })
         })
         .collect())
 }

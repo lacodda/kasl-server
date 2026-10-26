@@ -22,7 +22,10 @@ use super::{
     render::{self, Markup},
     sign,
 };
-use crate::error::ApiError;
+use crate::{
+    error::ApiError,
+    metrics::{Recorder, Task},
+};
 
 /// How often the dispatcher looks for work.
 ///
@@ -330,14 +333,16 @@ fn describe(error: &reqwest::Error) -> String {
 /// A tick that fails is logged and the loop goes on: the queue is in the
 /// database, so nothing is lost by a tick that did not run, and a database
 /// blip must not leave deliveries frozen until a restart.
-pub fn run_dispatcher(pool: PgPool, webhooks: Arc<Webhooks>) {
+pub fn run_dispatcher(pool: PgPool, webhooks: Arc<Webhooks>, recorder: Arc<Recorder>) {
     tokio::spawn(async move {
         let client = client();
         let mut ticker = tokio::time::interval(TICK);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            match dispatch_due(&pool, &webhooks, &client, Utc::now()).await {
+            let dispatched = dispatch_due(&pool, &webhooks, &client, Utc::now()).await;
+            recorder.record_run(Task::WebhookDispatch, dispatched.is_ok());
+            match dispatched {
                 Ok(done) if done != Dispatched::default() => {
                     tracing::info!(
                         delivered = done.delivered,

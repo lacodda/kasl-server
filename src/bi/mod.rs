@@ -21,7 +21,6 @@
 //!   by the one clause that decides it everywhere (ADR 0009).
 
 pub mod table;
-pub mod token;
 
 use axum::{
     extract::{Query, State},
@@ -38,11 +37,11 @@ use crate::{
     error::ApiError,
     me::{self, Range},
     model::UserRole,
+    read_token::{Hours, ReadToken},
     team,
     timesheet::Sheet,
 };
 use table::{Table, Value};
-use token::{Hours, ReadToken};
 
 // The columns: the contract --------------------------------------------------------
 //

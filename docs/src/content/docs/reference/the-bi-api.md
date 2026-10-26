@@ -46,8 +46,13 @@ or month screen - or with the API, signed in:
 | Route | Who |
 | --- | --- |
 | `GET /api/v1/read-tokens` | managers: their own tokens; administrators: everyone's |
-| `POST /api/v1/read-tokens` with `{"name": "Grafana"}` | managers and administrators, for themselves |
+| `POST /api/v1/read-tokens` with `{"name": "Grafana", "scope": "hours"}` | managers and administrators, for themselves |
 | `DELETE /api/v1/read-tokens/{id}` | the token's owner, or an administrator |
+
+A token's **scope** says what it reads, and is required. `hours` reads this
+API. `metrics` reads the server's own health at `/metrics` - an
+administrator's alone; see [server metrics](/kasl-server/reference/server-metrics/).
+Each is refused at the other's door with `403`.
 
 The token is answered once, at issue, and starts with `kasl_read_`; the server
 keeps only its SHA-256. It does not expire - revoke it when it is no longer

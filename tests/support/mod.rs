@@ -197,6 +197,9 @@ pub struct TestServer {
     /// The configuration the router is built with. The defaults, unless a
     /// test gives it destinations to send to.
     config: kasl_server::config::Config,
+    /// What this server has counted, across every request a test sends - the
+    /// router is built per request, the recorder once.
+    recorder: std::sync::Arc<kasl_server::metrics::Recorder>,
 }
 
 impl TestServer {
@@ -217,6 +220,7 @@ impl TestServer {
             token: "test-agent-token".to_string(),
             db: Some(db),
             config: kasl_server::config::Config::defaults_for_database(String::new()),
+            recorder: Default::default(),
         };
         server.provision("employee@example.test", &server.token).await;
         Some(server)
@@ -231,6 +235,7 @@ impl TestServer {
             token: String::new(),
             db: Some(db),
             config: kasl_server::config::Config::defaults_for_database(String::new()),
+            recorder: Default::default(),
         }
     }
 
@@ -259,8 +264,13 @@ impl TestServer {
         &self.config.webhooks
     }
 
+    /// What this server has counted, to hand the timed tasks a test starts.
+    pub fn recorder(&self) -> std::sync::Arc<kasl_server::metrics::Recorder> {
+        self.recorder.clone()
+    }
+
     fn router(&self) -> axum::Router {
-        kasl_server::app::router_with(self.pool.clone(), &self.config)
+        kasl_server::app::router_with(self.pool.clone(), &self.config, self.recorder.clone())
     }
 
     /// Adds another agent and returns its token.
@@ -298,7 +308,7 @@ impl TestServer {
             .body(Body::from(serde_json::json!({ "days": days }).to_string()))
             .expect("the request should build");
 
-        let response = kasl_server::app::router_with(self.pool.clone(), config)
+        let response = kasl_server::app::router_with(self.pool.clone(), config, self.recorder.clone())
             .oneshot(request)
             .await
             .expect("the router should answer");

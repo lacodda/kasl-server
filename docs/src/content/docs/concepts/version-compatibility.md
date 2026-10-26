@@ -55,6 +55,11 @@ other BI tools read with a read token (0.29.0), is versioned apart from
 else is `/api/bi/v2`. No agent calls it. See
 [the BI API](/kasl-server/reference/the-bi-api/).
 
+**So do the metrics.** `/metrics` (0.30.0) is read by Prometheus, and an alert
+rule written against a renamed series does not fail - it goes quiet. Within
+this major version a figure, a label or a label's value is only ever added. See
+[server metrics](/kasl-server/reference/server-metrics/).
+
 **Releasing a contract change.** A change to the shape of what agents send or
 receive lands in both products before either is tagged: the server's endpoint
 and the docs here, then kasl's client and this table's new row. The order

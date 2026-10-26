@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
     http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
 };
@@ -12,8 +13,8 @@ use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    admin, alerts, audit, auth, bi, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, notes, notifications, privacy,
-    reports, signals, team, timesheet, web, webhooks,
+    admin, alerts, audit, auth, bi, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, metrics, notes, notifications,
+    privacy, read_token, reports, signals, team, timesheet, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -26,10 +27,14 @@ pub struct AppState {
     /// Where events are sent. Shared rather than cloned per request: it is
     /// read on every upload and never changes while the server runs.
     pub webhooks: Arc<webhooks::Webhooks>,
+    /// What this process has counted, for `/metrics` (ADR 0026). The same one
+    /// the background tasks report their runs to.
+    pub recorder: Arc<metrics::Recorder>,
 }
 
-/// Builds the router with the operator's limits applied.
-pub fn router_with(pool: PgPool, config: &Config) -> Router {
+/// Builds the router with the operator's limits applied, counting into
+/// `recorder`.
+pub fn router_with(pool: PgPool, config: &Config, recorder: Arc<metrics::Recorder>) -> Router {
     // `/api/v1` from the very first endpoint: kasl agents update on their own
     // schedule, so the path a working agent calls must keep meaning what it
     // meant when that agent shipped (ADR 0001).
@@ -140,8 +145,8 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
         // Tokens a dashboard reads the BI API with. A manager's or an
         // administrator's own, reading with their eyes; listed to their owner,
         // and every one of them to an administrator (ADR 0025).
-        .route("/read-tokens", get(bi::token::list).post(bi::token::issue))
-        .route("/read-tokens/{id}", delete(bi::token::revoke))
+        .route("/read-tokens", get(read_token::list).post(read_token::issue))
+        .route("/read-tokens/{id}", delete(read_token::revoke))
         // Departments: what gives a manager a boundary to be in charge of.
         .route("/departments", get(department::list).post(department::create))
         .route("/departments/{id}", patch(department::update).delete(department::delete))
@@ -208,6 +213,10 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
 
     Router::new()
         .route("/health", get(health))
+        // The server's own health for Prometheus: an administrator's read
+        // token of scope `metrics`, the OpenMetrics format, and names that
+        // stay put (ADR 0026). At the root, where every scraper looks first.
+        .route("/metrics", get(metrics::serve))
         // Anything under `/api` that no route matched is a client's mistake and
         // has to look like one. Without this the web UI's fallback would catch
         // it and answer a misspelled endpoint with `200` and an HTML page -
@@ -222,17 +231,22 @@ pub fn router_with(pool: PgPool, config: &Config) -> Router {
             max_batch_days: config.max_batch_days,
             secure_cookies: config.secure_cookies,
             webhooks: Arc::new(config.webhooks.clone()),
+            recorder: recorder.clone(),
         })
+        // Inside the routing, so the route that answered is known by its
+        // pattern; every request is counted, the refused and the unmatched
+        // included.
+        .layer(middleware::from_fn_with_state(recorder, metrics::track))
         // A body larger than this is refused before it is buffered: backfilling
         // a year and attacking the server look identical up to the size.
         .layer(DefaultBodyLimit::max(config.max_body_bytes))
         .layer(TraceLayer::new_for_http())
 }
 
-/// The router with default limits - what the tests and `/health` callers want
-/// when the limits are not what is under test.
+/// The router with default limits and a recorder of its own - what the tests
+/// and `/health` callers want when neither is what is under test.
 pub fn router(pool: PgPool) -> Router {
-    router_with(pool, &Config::defaults_for_database(String::new()))
+    router_with(pool, &Config::defaults_for_database(String::new()), Arc::new(metrics::Recorder::new()))
 }
 
 /// Answers a path under `/api` that no route matched.
