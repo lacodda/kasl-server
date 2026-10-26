@@ -80,7 +80,8 @@ can be seen before an agent is installed anywhere.
   rules that keep a manager inside their own department.
 - **An audit log of everything that changes people, departments or tokens.**
 - **Self-hosted, one binary.** API and web UI in one file, plus PostgreSQL -
-  your data stays on your infrastructure.
+  your data stays on your infrastructure, and Prometheus reads the server's
+  own health from `/metrics`.
 
 ## Install
 

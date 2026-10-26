@@ -39,7 +39,8 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 	</Card>
 	<Card title="One binary, self-hosted" icon="document">
 		The same binary serves the API and the web UI on the same port. Installing
-		it is a compose file and a published image rather than a build.
+		it is a compose file and a published image rather than a build, and
+		Prometheus reads its health from `/metrics`.
 	</Card>
 </CardGrid>
 
