@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.30.0] - 2026-10-26
+
+### Dependencies
+- Take the week's updates, hold typescript at 6
+
+### Documentation
+- Watch the server with Prometheus
+
+### Features
+- Report the server's health to Prometheus
+- Issue a metrics token with the scrape job to paste
+
 ## [0.29.0] - 2026-10-20
 
 ### Documentation
