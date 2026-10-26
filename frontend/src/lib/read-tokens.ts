@@ -31,6 +31,35 @@ export function datasetUrl(origin: string, dataset: Dataset, format: 'json' | 'c
 }
 
 /**
+ * Where Prometheus scrapes the server's own health (ADR 0026), and the job
+ * that does it.
+ *
+ * The scheme and the target come apart from the page's origin, because
+ * Prometheus takes them apart: a `targets` entry is a host and a port, and an
+ * address pasted whole - `https://kasl.example.com` - is refused when the
+ * configuration loads. A default port is left off, as the browser leaves it
+ * off the origin. The token goes in a file rather than in the job, so the
+ * configuration can be kept in a repository without it.
+ */
+export function scrapeConfig(origin: string, tokenFile = '/etc/prometheus/kasl-server.token'): string {
+  const { protocol, host } = new URL(origin)
+  return [
+    '- job_name: kasl-server',
+    `  scheme: ${protocol.replace(/:$/, '')}`,
+    '  authorization:',
+    '    type: Bearer',
+    `    credentials_file: ${tokenFile}`,
+    '  static_configs:',
+    `    - targets: ["${host}"]`,
+  ].join('\n')
+}
+
+/** The address Prometheus scrapes: the root's `/metrics`, its default path. */
+export function metricsUrl(origin: string): string {
+  return `${origin.replace(/\/+$/, '')}/metrics`
+}
+
+/**
  * Where one token stands.
  *
  * - `revoked` - reads nothing, and never will again.

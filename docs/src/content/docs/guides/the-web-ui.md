@@ -101,7 +101,10 @@ The team's export menu ends with **Read from a dashboard tool…**: the screen
 where a manager or an administrator issues a read token for Grafana, Power
 Query or a script, sees which tokens are being read with, and revokes the ones
 that are not. A token reads exactly what its owner sees on these screens. See
-[the BI API](/kasl-server/reference/the-bi-api/).
+[the BI API](/kasl-server/reference/the-bi-api/). An administrator chooses
+there what a token reads: **Team hours**, or **Server metrics** - the server's
+own health, for Prometheus, with the scrape job to paste. See
+[watching the server with Prometheus](/kasl-server/guides/watching-the-server-with-prometheus/).
 
 ## On a phone
 

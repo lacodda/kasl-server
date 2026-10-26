@@ -704,8 +704,11 @@ async function request<T>(path: string, init?: Options): Promise<T> {
   return (await response.json()) as T
 }
 
-/** What a read token may read - the server's `read_scope`. */
-export type ReadScope = 'hours'
+/**
+ * What a read token may read - the server's `read_scope`: the team's hours
+ * (ADR 0025), or the server's own health, an administrator's (ADR 0026).
+ */
+export type ReadScope = 'hours' | 'metrics'
 
 /**
  * A token a dashboard tool reads the BI API with (ADR 0025), as the list
@@ -946,8 +949,9 @@ export const api = {
    */
   readTokens: () => request<ReadToken[]>('/read-tokens'),
 
-  /** Issues the reader a token that reads with their eyes. */
-  issueReadToken: (name: string) => request<IssuedReadToken>('/read-tokens', { method: 'POST', body: JSON.stringify({ name }) }),
+  /** Issues the reader a token that reads `scope` with their eyes. */
+  issueReadToken: (name: string, scope: ReadScope) =>
+    request<IssuedReadToken>('/read-tokens', { method: 'POST', body: JSON.stringify({ name, scope }) }),
 
   /** Ends a token: its owner's, or anybody's for an administrator. */
   revokeReadToken: (id: string) => request<void>(`/read-tokens/${id}`, { method: 'DELETE' }),

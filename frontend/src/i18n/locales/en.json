@@ -468,8 +468,13 @@
   "readTokens": {
     "title": "Dashboard tools",
     "subtitle": "A read token lets Grafana, Power Query or a script read the hours you can see here - the same people, nothing more. It reads with your access as it is at each request, and stops when your access does.",
+    "subtitleMetrics": "As an administrator, you can also issue one for Prometheus to read the server's own health - requests, timed tasks, the database and the webhook queue. It names nobody.",
+    "scopeLabel": "What it reads",
+    "scope": {
+      "hours": "Team hours",
+      "metrics": "Server metrics"
+    },
     "nameLabel": "What will read with it",
-    "namePlaceholder": "Grafana",
     "issue": "Issue a token",
     "issued": "The token for {{name}}",
     "tokenLabel": "Read token",
@@ -479,6 +484,8 @@
     "shownOnce": "Shown only this once: the server keeps its hash, not the token.",
     "pointAt": "Point the tool at these, as JSON - or add .csv after the name:",
     "header": "With the token in this header:",
+    "scrapeAt": "Point Prometheus at this address, with the token as a bearer token:",
+    "scrapeJob": "A scrape job for prometheus.yml - save the token in the file it names:",
     "yours": "Your tokens",
     "everyone": "Every token",
     "none": "No tokens yet.",
@@ -489,6 +496,9 @@
     "revoke": "Revoke",
     "confirmRevoke": "Revoke for good",
     "keep": "Keep",
-    "guide": "How to build a Grafana dashboard on these"
+    "guide": {
+      "hours": "How to build a Grafana dashboard on these",
+      "metrics": "How to watch the server with Prometheus"
+    }
   }
 }

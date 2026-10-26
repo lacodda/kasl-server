@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReadToken } from '@/lib/api'
-import { datasetUrl, tokenState } from '@/lib/read-tokens'
+import { datasetUrl, metricsUrl, scrapeConfig, tokenState } from '@/lib/read-tokens'
 
 const token = (fields: Partial<ReadToken>): ReadToken => ({
   id: 't',
@@ -29,6 +29,32 @@ describe('datasetUrl', () => {
     expect(datasetUrl('http://pi:8082/', 'summary', 'csv')).toBe(
       'http://pi:8082/api/bi/v1/summary.csv?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}',
     )
+  })
+})
+
+describe('scrapeConfig', () => {
+  it('takes the scheme and the host apart, the way a target is written', () => {
+    expect(scrapeConfig('https://kasl.example.com')).toBe(
+      [
+        '- job_name: kasl-server',
+        '  scheme: https',
+        '  authorization:',
+        '    type: Bearer',
+        '    credentials_file: /etc/prometheus/kasl-server.token',
+        '  static_configs:',
+        '    - targets: ["kasl.example.com"]',
+      ].join('\n'),
+    )
+  })
+
+  it('keeps a port the address needs, over plain http', () => {
+    const job = scrapeConfig('http://192.168.1.20:8082')
+    expect(job).toContain('  scheme: http\n')
+    expect(job).toContain('["192.168.1.20:8082"]')
+  })
+
+  it('scrapes the root, wherever the page was opened from', () => {
+    expect(metricsUrl('http://pi:8082/')).toBe('http://pi:8082/metrics')
   })
 })
 

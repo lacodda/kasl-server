@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, KeyRound } from 'lucide-react'
-import { api, type IssuedReadToken, type ReadToken } from '@/lib/api'
+import { api, type IssuedReadToken, type ReadScope, type ReadToken } from '@/lib/api'
 import { moment } from '@/lib/day'
-import { DATASETS, datasetUrl, tokenState, type TokenState } from '@/lib/read-tokens'
+import { DATASETS, datasetUrl, metricsUrl, scrapeConfig, tokenState, type TokenState } from '@/lib/read-tokens'
 import { useSession } from '@/lib/session'
 import { Panel, SectionLabel } from '@/components/ui/panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Segment, SegmentedControl } from '@/components/ui/segmented-control'
 
-/** Where the step-by-step guide to a Grafana dashboard lives. */
-const GUIDE = 'https://lacodda.github.io/kasl-server/guides/reading-hours-into-grafana/'
+/** Where the step-by-step guides live, one per scope. */
+const GUIDE: Record<ReadScope, string> = {
+  hours: 'https://lacodda.github.io/kasl-server/guides/reading-hours-into-grafana/',
+  metrics: 'https://lacodda.github.io/kasl-server/guides/watching-the-server-with-prometheus/',
+}
+
+/** What each scope's token is usually named after. */
+const PLACEHOLDER: Record<ReadScope, string> = {
+  hours: 'Grafana',
+  metrics: 'Prometheus',
+}
 
 /** The colour each state is drawn in, as literal classes Tailwind can find. */
 const STATE_CLASS: Record<TokenState, string> = {
@@ -21,7 +31,8 @@ const STATE_CLASS: Record<TokenState, string> = {
 
 /**
  * Read tokens: how a dashboard tool reads the hours this person can see
- * (ADR 0025).
+ * (ADR 0025) - and, for an administrator, how Prometheus reads the server's
+ * own health (ADR 0026).
  *
  * Reached from the export menu rather than from the navigation. A token is an
  * export that keeps going - the same hours, read from somewhere else - and the
@@ -35,6 +46,7 @@ const STATE_CLASS: Record<TokenState, string> = {
 export function ReadTokens() {
   const { t } = useTranslation()
   const { user } = useSession()
+  const isAdmin = user?.role === 'admin'
   const [tokens, setTokens] = useState<ReadToken[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [issued, setIssued] = useState<IssuedReadToken | null>(null)
@@ -59,9 +71,11 @@ export function ReadTokens() {
       <div>
         <h1 className="text-lg font-semibold">{t('readTokens.title')}</h1>
         <p className="mt-2 text-sm text-dim">{t('readTokens.subtitle')}</p>
+        {isAdmin && <p className="mt-2 text-sm text-dim">{t('readTokens.subtitleMetrics')}</p>}
       </div>
 
       <IssueForm
+        mayReadMetrics={isAdmin}
         onIssued={(token) => {
           setIssued(token)
           load()
@@ -71,7 +85,7 @@ export function ReadTokens() {
 
       <Panel className="divide-y divide-line">
         <div className="px-4 pb-2 pt-3.5 sm:px-5">
-          <SectionLabel>{user?.role === 'admin' ? t('readTokens.everyone') : t('readTokens.yours')}</SectionLabel>
+          <SectionLabel>{isAdmin ? t('readTokens.everyone') : t('readTokens.yours')}</SectionLabel>
         </div>
         {tokens.length === 0 ? (
           <p className="px-4 py-3.5 text-sm text-dim sm:px-5">{t('readTokens.none')}</p>
@@ -80,16 +94,31 @@ export function ReadTokens() {
         )}
       </Panel>
 
-      <a href={GUIDE} className="inline-block text-sm text-accent-2 underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
-        {t('readTokens.guide')}
-      </a>
+      <div className="flex flex-col items-start gap-1.5">
+        <Guide scope="hours" />
+        {isAdmin && <Guide scope="metrics" />}
+      </div>
     </div>
   )
 }
 
-function IssueForm({ onIssued }: { onIssued: (token: IssuedReadToken) => void }) {
+function Guide({ scope }: { scope: ReadScope }) {
+  const { t } = useTranslation()
+  return (
+    <a href={GUIDE[scope]} className="text-sm text-accent-2 underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
+      {t(`readTokens.guide.${scope}`)}
+    </a>
+  )
+}
+
+/**
+ * Names a token and, for an administrator, what it reads. A manager's token
+ * reads the hours and nothing else, so they are not asked.
+ */
+function IssueForm({ mayReadMetrics, onIssued }: { mayReadMetrics: boolean; onIssued: (token: IssuedReadToken) => void }) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
+  const [scope, setScope] = useState<ReadScope>('hours')
   const [state, setState] = useState<'idle' | 'issuing' | 'failed'>('idle')
 
   const submit = async (event: FormEvent) => {
@@ -97,7 +126,7 @@ function IssueForm({ onIssued }: { onIssued: (token: IssuedReadToken) => void })
     if (!name.trim()) return
     setState('issuing')
     try {
-      onIssued(await api.issueReadToken(name.trim()))
+      onIssued(await api.issueReadToken(name.trim(), scope))
       setName('')
       setState('idle')
     } catch {
@@ -107,10 +136,21 @@ function IssueForm({ onIssued }: { onIssued: (token: IssuedReadToken) => void })
 
   return (
     <Panel className="space-y-3 p-4 sm:p-5">
+      {mayReadMetrics && (
+        <div className="space-y-1">
+          <span id="token-scope" className="block text-xs text-faint">
+            {t('readTokens.scopeLabel')}
+          </span>
+          <SegmentedControl aria-labelledby="token-scope" value={scope} onValueChange={(next) => setScope(next === 'metrics' ? 'metrics' : 'hours')}>
+            <Segment value="hours">{t('readTokens.scope.hours')}</Segment>
+            <Segment value="metrics">{t('readTokens.scope.metrics')}</Segment>
+          </SegmentedControl>
+        </div>
+      )}
       <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={(event) => void submit(event)}>
         <label className="min-w-0 flex-1 space-y-1">
           <span className="block text-xs text-faint">{t('readTokens.nameLabel')}</span>
-          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('readTokens.namePlaceholder')} maxLength={100} />
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={PLACEHOLDER[scope]} maxLength={100} />
         </label>
         <Button type="submit" variant="primary" disabled={state === 'issuing' || !name.trim()}>
           <KeyRound className="size-3.5" aria-hidden />
@@ -168,18 +208,27 @@ function IssuedCard({ issued }: { issued: IssuedReadToken }) {
         {copied === 'yes' ? t('readTokens.copied') : copied === 'select' ? t('readTokens.selectToCopy') : t('readTokens.shownOnce')}
       </p>
 
-      <div className="space-y-1.5">
-        <p className="text-xs text-faint">{t('readTokens.pointAt')}</p>
-        <ul className="space-y-1">
-          {DATASETS.map((dataset) => (
-            <li key={dataset} className="break-all rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">
-              {datasetUrl(origin, dataset)}
-            </li>
-          ))}
-        </ul>
-        <p className="pt-1 text-xs text-faint">{t('readTokens.header')}</p>
-        <p className="break-all rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">Authorization: Bearer {issued.token}</p>
-      </div>
+      {issued.scope === 'metrics' ? (
+        <div className="space-y-1.5">
+          <p className="text-xs text-faint">{t('readTokens.scrapeAt')}</p>
+          <p className="break-all rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">{metricsUrl(origin)}</p>
+          <p className="pt-1 text-xs text-faint">{t('readTokens.scrapeJob')}</p>
+          <pre className="overflow-x-auto rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">{scrapeConfig(origin)}</pre>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <p className="text-xs text-faint">{t('readTokens.pointAt')}</p>
+          <ul className="space-y-1">
+            {DATASETS.map((dataset) => (
+              <li key={dataset} className="break-all rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">
+                {datasetUrl(origin, dataset)}
+              </li>
+            ))}
+          </ul>
+          <p className="pt-1 text-xs text-faint">{t('readTokens.header')}</p>
+          <p className="break-all rounded-inner bg-soft px-2.5 py-1.5 font-mono text-2xs text-dim">Authorization: Bearer {issued.token}</p>
+        </div>
+      )}
     </Panel>
   )
 }
@@ -204,6 +253,7 @@ function TokenRow({ token, showOwner, onRevoked }: { token: ReadToken; showOwner
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className={state === 'revoked' ? 'text-dim line-through' : 'font-medium'}>{token.name}</span>
+          <span className="text-xs text-faint">{t(`readTokens.scope.${token.scope}`)}</span>
           {showOwner && <span className="text-xs text-dim">{token.owner}</span>}
         </div>
         <p className="mt-0.5 text-xs text-faint tabular">
