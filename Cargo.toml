@@ -67,7 +67,7 @@ rust_decimal = { version = "1.43.0", features = ["serde-float"] }
 # shared-strings table, styles and a date system of its own; this writes all of
 # it and nothing else, and has no default features. `chrono` lets a date go in
 # as the date it is rather than as a serial number computed here.
-rust_xlsxwriter = { version = "0.99.1", features = ["chrono"] }
+rust_xlsxwriter = { version = "0.101.0", features = ["chrono"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -115,7 +115,7 @@ uuid = { version = "1.27.0", features = ["v4"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 # The export tests open the workbook the server wrote. The features the
 # workbook writer already builds it with, so nothing new is compiled.
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.1.2", default-features = false, features = ["deflate"] }
 # The brand gate decodes the icon's images and reads their pixels: the defect
 # it guards against - every entry cut from one master - leaves a container
 # that is perfectly well-formed. PNG is the only format read.

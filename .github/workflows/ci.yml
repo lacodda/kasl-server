@@ -33,6 +33,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          check-latest: true
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Build the web UI
@@ -78,6 +79,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          check-latest: true
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Build the web UI
@@ -111,6 +113,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          check-latest: true
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
@@ -141,6 +144,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          check-latest: true
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Build the web UI
