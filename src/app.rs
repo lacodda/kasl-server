@@ -14,7 +14,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     admin, alerts, audit, auth, bi, calendar, config::Config, demo, department, export, heartbeat, heatmap, ingest, login, me, metrics, notes, notifications,
-    privacy, read_token, reports, signals, team, timesheet, web, webhooks,
+    pay, privacy, read_token, reports, signals, team, timesheet, web, webhooks,
 };
 
 #[derive(Clone)]
@@ -70,6 +70,9 @@ pub fn router_with(pool: PgPool, config: &Config, recorder: Arc<metrics::Recorde
         // (ADR 0024).
         .route("/me/timesheet", get(timesheet::my_month))
         .route("/me/timesheet.xlsx", get(timesheet::my_workbook))
+        // How the person is paid, every version of it, with the notes the
+        // administrator wrote. Theirs to read whoever else may (ADR 0027).
+        .route("/me/pay-terms", get(pay::terms::mine))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
@@ -162,6 +165,10 @@ pub fn router_with(pool: PgPool, config: &Config, recorder: Arc<metrics::Recorde
         // the user patch: it changes what every screen says about them, and an
         // audit entry naming it is easier to find than "user updated".
         .route("/users/{id}/work-rate", put(calendar::put_work_rate))
+        // How a person is paid: a history of versions, appended to and never
+        // rewritten. Administrators only until the finance privilege exists -
+        // a department's manager sees the days, not the money (ADR 0027).
+        .route("/users/{id}/pay-terms", get(pay::terms::of_user).post(pay::terms::record))
         // The record of who did what. Administrators only, and no way to
         // delete from it (ADR 0010).
         .route("/audit", get(audit::list))

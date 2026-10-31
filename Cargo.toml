@@ -49,6 +49,11 @@ argon2 = "0.6.0"
 axum = "0.8.9"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.6.7", features = ["derive"] }
+# The ISO 4217 list a rate's currency is checked against, with each currency's
+# minor unit - how a rate is written back, and how accruals will round. A list
+# copied into this crate would rot: the standard retires and adds codes every
+# year, and the weekly update brings the crate's revision instead.
+iso_currency = "0.7.1"
 # `/metrics` (ADR 0026). The Prometheus project's own client: it writes the
 # OpenMetrics format whole, and each family's labels are a struct, so a sample
 # with a label missing or misspelled does not compile.

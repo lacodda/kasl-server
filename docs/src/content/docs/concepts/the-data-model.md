@@ -18,6 +18,13 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | `pauses` | Idle stretches and manual breaks inside a day |
 | `tasks`, `tags`, `task_tags` | What was worked on, and how it is labelled |
 | `reports` | That a day was reported as finished, when, at which figures, and what a manager answered - one row per report, never edited |
+| `day_notes` | What a manager wrote on somebody's day |
+| `calendar_days` | The production calendar: only the dates unlike their weekday |
+| `alerts` | What the server noticed, when it began, and who answered it |
+| `webhook_deliveries` | What was sent to a chat or another system, and whether it arrived |
+| `notifications` | What each person was told |
+| `read_tokens` | Tokens a dashboard or Prometheus reads with; a hash each, never the token |
+| `pay_terms` | How each person is paid - basis, rate, currency, from which date - every version, appended and never rewritten ([ADR 0027](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0027-pay-terms-and-their-history.md)) |
 
 Two differences from the agent's database are deliberate: instants are stored
 with a time zone (the agent stores bare wall-clock text, which does not survive

@@ -58,6 +58,13 @@ pub mod action {
     /// not recorded one by one (ADR 0025).
     pub const READ_TOKEN_ISSUED: &str = "read_token.issued";
     pub const READ_TOKEN_REVOKED: &str = "read_token.revoked";
+    /// A version of somebody's pay terms. Names the version, its start, basis
+    /// and currency - never the rate: the log's readers and the money's may
+    /// not stay the same people (ADR 0027).
+    pub const PAY_TERMS_RECORDED: &str = "pay_terms.recorded";
+    /// Somebody else's pay terms read. Money is the most sensitive thing the
+    /// server holds, and "who looked at my pay" must have an answer.
+    pub const PAY_TERMS_VIEWED: &str = "pay_terms.viewed";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 

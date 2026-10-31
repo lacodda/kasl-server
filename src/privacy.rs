@@ -351,8 +351,21 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
         detail: "what this server has told you - an alert about you, a note on one of your days, a day approved or returned, a machine added to or removed from your account, a change to this page - and how far you have read; readable by you alone",
     });
 
+    // Listed at every level, like the notes: an administrator types the terms
+    // in, the agent sends nothing of them, and the level does not govern
+    // them. Worded with who reads them - and who does not - because the
+    // manager who sees a person's days does not see their pay (ADR 0027).
+    stored.push(Stored {
+        what: "pay terms",
+        detail: PAY_TERMS,
+    });
+
     stored
 }
+
+/// The pay terms, as the manifest names them. A constant so the test that
+/// holds the manifest to the access rule reads the same words.
+const PAY_TERMS: &str = "how you are paid - by the hour, by the day or by the month - at what rate, in which currency, and from which date, with every earlier version kept and any note on it; readable by you and by administrators, not by the manager of your department";
 
 /// Things the server has no column for. Absence is not reassuring on its own.
 const NEVER_COLLECTED: [&str; 7] = [
@@ -571,6 +584,24 @@ mod tests {
                 .find(|s| s.what == "notifications")
                 .unwrap_or_else(|| panic!("{level:?} does not name the notifications"));
             assert!(notices.detail.contains("you alone"), "{}", notices.detail);
+        }
+    }
+
+    #[test]
+    fn every_level_names_the_pay_terms_and_who_reads_them() {
+        // Money is not governed by the level, and a manifest that named the
+        // days but not the pay would describe a quieter server than this one.
+        // The manager is named as a reader of the days and not of the pay, so
+        // the line has to say so rather than leave it to `visible_to`.
+        for level in [PrivacyLevel::Full, PrivacyLevel::Moderate, PrivacyLevel::Coarse] {
+            let manifest = manifest(level, None, &Webhooks::default());
+            let terms = manifest
+                .stored
+                .iter()
+                .find(|s| s.what == "pay terms")
+                .unwrap_or_else(|| panic!("{level:?} does not name the pay terms"));
+            assert!(terms.detail.contains("not by the manager"), "{}", terms.detail);
+            assert!(terms.detail.contains("every earlier version"), "{}", terms.detail);
         }
     }
 

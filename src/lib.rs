@@ -28,6 +28,7 @@ pub mod metrics;
 pub mod model;
 pub mod notes;
 pub mod notifications;
+pub mod pay;
 pub mod privacy;
 pub mod provision;
 pub mod read_token;

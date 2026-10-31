@@ -27,6 +27,8 @@ $ curl -X DELETE http://127.0.0.1:8080/api/v1/agents/b749b090-... -H "Cookie: ka
 | `PUT /users/{id}/department` | admin |
 | `POST /users`, `PATCH /users/{id}` | admin |
 | `POST /users/{id}/agents`, `DELETE /agents/{id}` | admin |
+| `GET`/`POST /users/{id}/pay-terms` | admin |
+| `GET /me/pay-terms` | anyone signed in, for their own terms |
 | `POST /auth/password` | anyone signed in, for their own password |
 | `GET /audit` | admin |
 
@@ -73,3 +75,14 @@ Some things follow from a change rather than being asked for separately:
 Agent tokens are shown once and stored as a SHA-256. The reasoning is in
 [ADR 0008](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0008-roles-and-agent-tokens.md)
 and [ADR 0009](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0009-departments-and-visibility.md).
+
+**How someone is paid** is recorded by an administrator, as a history rather
+than a field: a raise is a new version starting on its own date, and the old
+rate keeps the dates before it.
+
+```console
+$ curl -X POST http://127.0.0.1:8080/api/v1/users/9b5c1fd8-.../pay-terms -H "Cookie: kasl_session=..."     -H "Content-Type: application/json"     -d '{"effective_from":"2026-11-01","basis":"monthly","rate":"4200","currency":"EUR","note":"hired"}'
+```
+
+The person reads their own terms; a department's manager does not read anyone's.
+See [pay terms](/kasl-server/reference/pay-terms/).

@@ -42,7 +42,7 @@ use std::io::{BufRead, Write};
 /// from here, so a backup of an installation's production calendar restored as
 /// an installation with no calendar at all - a full header, a plausible row
 /// count, and the norms silently wrong on every holiday.
-pub const TABLES: [&str; 17] = [
+pub const TABLES: [&str; 18] = [
     "users",
     "departments",
     "agents",
@@ -52,6 +52,10 @@ pub const TABLES: [&str; 17] = [
     // stopped answering would look broken for no reason the operator could
     // see (ADR 0025).
     "read_tokens",
+    // How each person is paid, every version. Not derivable from anything:
+    // an administrator typed each one in, and a restore without them would
+    // bring back an installation where nobody had ever been paid (ADR 0027).
+    "pay_terms",
     "workdays",
     "pauses",
     "tasks",

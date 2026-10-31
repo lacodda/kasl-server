@@ -19,7 +19,8 @@ $ curl -H "Authorization: Bearer $KASL_TOKEN" http://127.0.0.1:8080/api/v1/priva
            {"what":"live status","detail":"whether your agent currently reports you as working, on a break, ..."},
            {"what":"notes on your days","detail":"what a manager wrote on one of your days, who wrote it and when - ..."},
            {"what":"reports","detail":"each day you report as finished, with the hours as they stood when you reported it, ..."},
-           {"what":"notifications","detail":"what this server has told you - ... - and how far you have read; readable by you alone"}],
+           {"what":"notifications","detail":"what this server has told you - ... - and how far you have read; readable by you alone"},
+           {"what":"pay terms","detail":"how you are paid - by the hour, by the day or by the month - at what rate, ...; readable by you and by administrators, not by the manager of your department"}],
  "never_collected":["keystrokes or what you type","window titles","which applications you run",
                     "screenshots or camera images","web pages you visit","file names or paths","your location"],
  "visible_to":["you, in your own account","the manager of your department","administrators of this installation"],
@@ -75,6 +76,12 @@ happening right now, and the server keeps only the latest one - replaced each
 time it arrives, never accumulated into a record of when you were at your desk.
 It is named in the manifest at every level, because a manifest that listed only
 days would describe a quieter server than the one running.
+
+So are [pay terms](/kasl-server/reference/pay-terms/): an administrator types
+them in, the agent sends nothing of them, and the level does not govern them.
+The line naming them says who reads them, because it is not the same people as
+for the days - you and the administrators, and not the manager of your
+department, who sees your hours but not your pay.
 
 Under `coarse` a day still records how much of it was paused, as a count and a
 total. Without that the day would claim uninterrupted work, which is a more
