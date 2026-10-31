@@ -11,7 +11,7 @@ webhook queue and the process itself, in the format Prometheus scrapes.
 $ curl -H "Authorization: Bearer kasl_read_3b7e..." https://kasl.example.com/metrics
 # HELP kasl_build_info The version of kasl-server answering; always 1.
 # TYPE kasl_build_info gauge
-kasl_build_info{version="0.30.0"} 1
+kasl_build_info{version="0.31.0"} 1
 ...
 # EOF
 ```

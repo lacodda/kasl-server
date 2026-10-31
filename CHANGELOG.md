@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.31.0] - 2026-10-31
+
+### Features
+- Record how a person is paid, version by version
+
 ## [0.30.0] - 2026-10-26
 
 ### Dependencies
