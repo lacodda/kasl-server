@@ -563,15 +563,19 @@ async fn observe(pool: &PgPool, from: NaiveDate, to: NaiveDate) -> Result<Vec<Ob
          -- day per person and not all of them: the rule fires on the worst,
          -- and a manager does not need eleven rows to be told about a week of
          -- eleven-hour days. The next one surfaces once this is answered.
+         --
+         -- What a day comes to is `workday_figures` (ADR 0023): the stored
+         -- pauses where the policy keeps them, the day's own totals where it
+         -- summarized them away. Counting pauses from their ends alone read a
+         -- day under `coarse` as its whole span, breaks and all, and called it
+         -- overwork.
          LEFT JOIN LATERAL (
-             SELECT w.date,
-                    w.kind,
-                    EXTRACT(EPOCH FROM (w.ended_at - w.started_at))::bigint
-                        - COALESCE((SELECT sum(EXTRACT(EPOCH FROM (p.ended_at - p.started_at)))::bigint
-                                    FROM pauses p WHERE p.workday_id = w.id AND p.ended_at IS NOT NULL), 0) AS worked
-             FROM workdays w
-             WHERE w.user_id = u.id AND w.date BETWEEN $1 AND $2 AND w.ended_at IS NOT NULL
-             ORDER BY worked DESC
+             SELECT f.date,
+                    f.kind,
+                    f.worked_seconds AS worked
+             FROM workday_figures f
+             WHERE f.user_id = u.id AND f.date BETWEEN $1 AND $2 AND f.worked_seconds IS NOT NULL
+             ORDER BY f.worked_seconds DESC
              LIMIT 1
          ) AS longest ON true
          -- The open day, if there is one. Ordered so that if a schema ever let

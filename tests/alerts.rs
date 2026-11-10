@@ -278,6 +278,39 @@ async fn overwork_is_raised_from_real_days_and_carries_the_norm() {
 }
 
 #[tokio::test]
+async fn a_coarse_day_with_breaks_is_not_overwork() {
+    let Some(server) = TestServer::start().await else { return };
+
+    // Under `coarse` the server keeps a day's pause totals and no pause rows
+    // (ADR 0011). Thirteen hours from start to end with five of them paused
+    // is eight hours worked - the norm, not past half again of it. Counting
+    // pauses from their rows alone read it as thirteen.
+    server.add_admin("boss@example.test", "correct horse").await;
+    let (_, admin, _) = server.login("boss@example.test", "correct horse").await;
+    let (status, _, body) = server.put_with_cookie("/api/v1/privacy", admin.as_deref(), json!({ "level": "coarse" })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let now = Utc::now();
+    let date = a_recent_weekday();
+    let mut long_with_breaks = day(date, 13);
+    long_with_breaks["pauses"] = json!([{
+        "started_at": format!("{date}T12:00:00+00:00"),
+        "ended_at": format!("{date}T17:00:00+00:00"),
+        "duration_seconds": 5 * 3600,
+    }]);
+    let (status, body) = server.post_day(&server.token, long_with_breaks).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows: i64 = server.scalar("SELECT count(*) FROM pauses").await;
+    assert_eq!(rows, 0, "coarse keeps the totals, not the pauses");
+    last_seen(&server, "employee@example.test", now).await;
+
+    sweep(&server, now).await;
+    assert!(open_rules(&server).await.is_empty(), "eight hours worked is not overwork");
+
+    server.close().await;
+}
+
+#[tokio::test]
 async fn an_alerts_figures_do_not_drift_after_it_fires() {
     let Some(server) = TestServer::start().await else { return };
 
