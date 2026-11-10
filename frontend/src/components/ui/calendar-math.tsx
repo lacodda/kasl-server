@@ -1,3 +1,34 @@
+export {}
+// Code first, so the description below survives `shadcn add`: the CLI writes
+// a file from its first token on and drops every comment above it.
+
+/*
+ * The arithmetic a calendar runs on, with no React in it.
+ *
+ * Split out of the Calendar because the size gate asked the right question:
+ * the file was two and a half times over its ceiling, and the reason was that
+ * it held two things - the sums, and the grid that draws them. These are the
+ * sums, and they are what DatePicker, DateRangePicker and any product doing
+ * its own date work import.
+ *
+ * Everything here takes and returns `YYYY-MM-DD`, and never a `Date`. A
+ * birthday has no timezone; a release date has no hour. Put one in a `Date`
+ * and it becomes a moment - and moments cross midnight when they are
+ * serialised, which is how a date reaches a server a day early. The string is
+ * what a database column holds and what JSON carries.
+ *
+ * `Date` appears inside, in two places only: to ask `Intl` for a name, and to
+ * add days. Both are wrapped here, so no caller ever holds one.
+ *
+ * No date library, deliberately. `react-day-picker` is good and would bring
+ * `date-fns` and `@date-fns/tz` behind it - the first heavy dependency in a
+ * set that is otherwise Base UI or nothing. `Intl` already knows the part a
+ * library would be consulted for: which day the week starts on here, and what
+ * the months are called. The rest is the arithmetic below, and it is only
+ * hard when a date is stored as a moment.
+ */
+
+/** A calendar date: `2026-09-02`. Not a moment - no time, no zone. */
 export type IsoDate = string
 
 /** Whether a string is a calendar date this component can work with, and one
@@ -77,9 +108,9 @@ export function weekday(date: IsoDate): number {
  *
  * `getWeekInfo` is the current spelling and `weekInfo` the older one; some
  * engines have neither, and Monday is the majority answer worldwide. */
-export function firstDayOfWeek(locale: string | undefined): number {
+export function firstDayOfWeek(locale: string): number {
   try {
-    const info = new Intl.Locale(locale ?? navigator.language) as Intl.Locale & {
+    const info = new Intl.Locale(locale) as Intl.Locale & {
       getWeekInfo?: () => { firstDay: number }
       weekInfo?: { firstDay: number }
     }
@@ -95,7 +126,7 @@ export function firstDayOfWeek(locale: string | undefined): number {
  * Returned as dates rather than as numbers, so a cell never has to be told
  * which month it belongs to - it knows, and a click on a trailing day works
  * without a special case. */
-export function monthGrid(month: IsoDate, locale?: string): IsoDate[][] {
+export function monthGrid(month: IsoDate, locale: string): IsoDate[][] {
   const { year, month: monthNumber } = parts(month)
   const first = format(year, monthNumber, 1)
   const start = firstDayOfWeek(locale)
@@ -121,9 +152,53 @@ export function monthGrid(month: IsoDate, locale?: string): IsoDate[][] {
   return weeks
 }
 
-/** The weekday initials, in the order this locale lays them out. */
-export function weekdayNames(locale: string | undefined, start: number): string[] {
-  const names = new Intl.DateTimeFormat(locale, { weekday: 'short' })
+/** The weeks a month actually touches: the rows of `monthGrid` holding at
+ * least one of its days - four to six of them.
+ *
+ * The Calendar keeps six rows always, because a popup that changes height
+ * moves under the pointer. A month filling a screen has the opposite problem:
+ * a sixth row made entirely of the next month makes every month look six
+ * weeks long, and takes a sixth of the height from the days that are in it. */
+export function monthWeeks(month: IsoDate, locale: string): IsoDate[][] {
+  const { year, month: monthNumber } = parts(month)
+  return monthGrid(month, locale).filter((week) =>
+    week.some((date) => {
+      const day = parts(date)
+      return day.year === year && day.month === monthNumber
+    }),
+  )
+}
+
+/** Where a calendar's cursor goes for a key, or `undefined` for a key that
+ * does not move it. `weekStart` is the locale's first day, which is where
+ * Home lands.
+ *
+ * One map for every grid of days in the set, so the Calendar and the month
+ * view cannot come to disagree about what PageDown means. */
+export function keyStep(key: string, from: IsoDate, weekStart: number): IsoDate | undefined {
+  const intoWeek = (weekday(from) - weekStart + 7) % 7
+  const steps: Record<string, () => IsoDate> = {
+    ArrowRight: () => addDays(from, 1),
+    ArrowLeft: () => addDays(from, -1),
+    ArrowDown: () => addDays(from, 7),
+    ArrowUp: () => addDays(from, -7),
+    PageDown: () => addMonths(from, 1),
+    PageUp: () => addMonths(from, -1),
+    Home: () => addDays(from, -intoWeek),
+    End: () => addDays(from, 6 - intoWeek),
+  }
+  return steps[key]?.()
+}
+
+/** The weekday initials, in the order this locale lays them out.
+ *
+ * The week below is midnight in UTC, so it is named in UTC. Named in the
+ * reader's own zone, as it was until v0.34, every reader west of Greenwich saw
+ * each midnight as the evening before: a Monday-first grid headed "Sun Mon
+ * Tue", one column off from the days under it. The tests ran in UTC, where
+ * the two agree, and passed. */
+export function weekdayNames(locale: string, start: number): string[] {
+  const names = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
   // Any week works; this one begins on a Monday.
   const monday = Date.UTC(2024, 0, 1)
   return Array.from({ length: 7 }, (_, index) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Day, Pause } from '@/lib/api'
-import { bands, duration, isoDate, since, weekdayName } from '@/lib/day'
+import { bands, dated, duration, isoDate, since, weekdayName } from '@/lib/day'
 import { place } from '@/components/ui/track-segments'
 
 function pause(from: string, to: string | null, seconds: number, manual = false): Pause {
@@ -65,6 +65,16 @@ describe('weekdayName', () => {
     // Midday rather than midnight: parsed at 00:00 a date can slide onto the
     // previous day west of Greenwich, and the row would be labelled Sunday.
     expect(weekdayName('2026-08-27')).toBe('Thu')
+  })
+})
+
+describe('dated', () => {
+  it('names the year and the month in the interface language', () => {
+    // The privacy page printed its date with no locale at all, which is the
+    // machine's: the same class as the Russian weekdays above.
+    const text = dated('2026-09-23T08:00:00Z')
+    expect(text).toContain('2026')
+    expect(text).toContain('Sep')
   })
 })
 

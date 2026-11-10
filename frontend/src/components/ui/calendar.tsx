@@ -1,13 +1,12 @@
-import { useMemo, useState, type KeyboardEvent } from 'react'
-import { cn } from 'dowel-ui'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { cn, useLocale } from 'dowel-ui'
 import {
-  addDays,
   addMonths,
   firstDayOfWeek,
+  keyStep,
   monthGrid,
   parts,
   today,
-  weekday,
   weekdayNames,
   type IsoDate,
 } from './calendar-math'
@@ -22,6 +21,12 @@ import {
  * group has, and the reason a calendar is usable at all: forty-two tab stops
  * is not a control. Arrows move a cursor and only Enter chooses, so a product
  * listening for a change does not receive five dates on the way to the sixth.
+ *
+ * The cursor is the focus itself, on the day's own button (a roving tab
+ * stop, as BigCalendar has it). It used to be a ring drawn on a day while the
+ * focus stayed on the grid, and nothing told a screen reader which day that
+ * was: the arrows moved silently, and a picker opened from the keyboard put
+ * its focus on the month-paging button instead.
  */
 
 export interface CalendarProps {
@@ -36,10 +41,15 @@ export interface CalendarProps {
   max?: IsoDate
   /** For a range: the other end, so the days between can be shaded. */
   rangeEnd?: IsoDate
-  /** Formats the names. Left alone it is the reader's own. */
+  /** Formats the names. The application's language by default - see `useLocale`. */
   locale?: string
   /** What the grid is called, for a screen reader. */
   'aria-label'?: string
+  /** Put the focus on the day under the cursor when it mounts - for a
+   * calendar that opens in a popup, where choosing a day is what the reader
+   * came for. Left to the popup, the focus went to the first thing in it: the
+   * month-paging button, two Tabs away from the days. */
+  autoFocus?: boolean
   /** Names the buttons that page the months. Required: they are icons, and an
    * icon with no name is a button that announces nothing. */
   previousMonthLabel: string
@@ -60,6 +70,7 @@ export function Calendar({
   nextMonthLabel,
   className,
   'aria-label': ariaLabel,
+  autoFocus = false,
 }: CalendarProps) {
   const [ownMonth, setOwnMonth] = useState<IsoDate>(() => value ?? today())
   const shown = month ?? ownMonth
@@ -70,23 +81,43 @@ export function Calendar({
    * five dates on the way to the sixth. */
   const [focused, setFocused] = useState<IsoDate>(() => value ?? today())
 
-  const weeks = useMemo(() => monthGrid(shown, locale), [shown, locale])
-  const start = firstDayOfWeek(locale)
-  const names = useMemo(() => weekdayNames(locale, start), [locale, start])
+  const language = useLocale(locale)
+  const weeks = useMemo(() => monthGrid(shown, language), [shown, language])
+  const start = firstDayOfWeek(language)
+  const names = useMemo(() => weekdayNames(language, start), [language, start])
   const heading = useMemo(
-    () => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(
+    () => new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric' }).format(
       new Date(parts(shown).year, parts(shown).month - 1, 1),
     ),
-    [shown, locale],
+    [shown, language],
   )
-  const dayNumber = useMemo(() => new Intl.DateTimeFormat(locale, { day: 'numeric' }), [locale])
+  const dayNumber = useMemo(() => new Intl.DateTimeFormat(language, { day: 'numeric' }), [language])
   const fullDate = useMemo(
-    () => new Intl.DateTimeFormat(locale, { dateStyle: 'long' }),
-    [locale],
+    () => new Intl.DateTimeFormat(language, { dateStyle: 'long' }),
+    [language],
   )
 
   const outOfBounds = (date: IsoDate) =>
     (min !== undefined && date < min) || (max !== undefined && date > max)
+
+  /* The day that takes the Tab: the cursor while it is on the grid, the
+   * chosen day when the month buttons paged the cursor away, and the first of
+   * the month when neither is shown - a grid with no tab stop cannot be
+   * entered at all. */
+  const days = useMemo(() => weeks.flat(), [weeks])
+  const cursor = days.includes(focused)
+    ? focused
+    : value !== undefined && days.includes(value)
+      ? value
+      : days.find((date) => parts(date).month === parts(shown).month)!
+
+  const grid = useRef<HTMLDivElement>(null)
+  const refocus = useRef(autoFocus)
+  useEffect(() => {
+    if (!refocus.current) return
+    refocus.current = false
+    grid.current?.querySelector<HTMLElement>(`[data-day="${cursor}"]`)?.focus()
+  })
 
   const goToMonth = (next: IsoDate) => {
     if (month === undefined) setOwnMonth(next)
@@ -95,6 +126,7 @@ export function Calendar({
 
   const moveFocus = (next: IsoDate) => {
     setFocused(next)
+    refocus.current = true
     // Paging follows the cursor: arrowing off the end of a month shows the
     // next one rather than moving to a day nobody can see.
     if (parts(next).month !== parts(shown).month || parts(next).year !== parts(shown).year) {
@@ -102,29 +134,12 @@ export function Calendar({
     }
   }
 
+  // Enter and Space are the focused day's own: a button clicks on both.
   const onKeyDown = (event: KeyboardEvent) => {
-    const jump: Record<string, () => IsoDate> = {
-      ArrowRight: () => addDays(focused, 1),
-      ArrowLeft: () => addDays(focused, -1),
-      ArrowDown: () => addDays(focused, 7),
-      ArrowUp: () => addDays(focused, -7),
-      PageDown: () => addMonths(focused, 1),
-      PageUp: () => addMonths(focused, -1),
-      Home: () => addDays(focused, -((weekday(focused) - start + 7) % 7)),
-      End: () => addDays(focused, 6 - ((weekday(focused) - start + 7) % 7)),
-    }
-
-    const move = jump[event.key]
-    if (move) {
-      event.preventDefault()
-      moveFocus(move())
-      return
-    }
-
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      if (!outOfBounds(focused)) onValueChange?.(focused)
-    }
+    const next = keyStep(event.key, cursor, start)
+    if (next === undefined) return
+    event.preventDefault()
+    moveFocus(next)
   }
 
   const now = today()
@@ -183,26 +198,16 @@ export function Calendar({
         </button>
       </div>
 
-      {/* One tab stop for the whole grid, and the arrows move within it - the
-        * arrangement a radio group has, and the reason a calendar is usable at
-        * all: forty-two tab stops is not a control. */}
-      <div
-        role="grid"
-        aria-label={ariaLabel}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        className={cn(
-          'rounded-md',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
-        )}
-      >
+      {/* One tab stop for the whole grid - the cursor's day - and the arrows
+        * move within it. */}
+      <div ref={grid} role="grid" aria-label={ariaLabel} onKeyDown={onKeyDown}>
         <div role="row" className="mb-1 grid grid-cols-7">
           {names.map((name) => (
             <div
               key={name}
               role="columnheader"
               aria-label={name}
-              className="py-1 text-center text-2xs uppercase tracking-caption text-faint"
+              className="caption py-1 text-center"
             >
               {name}
             </div>
@@ -226,12 +231,21 @@ export function Calendar({
                 <div role="gridcell" key={date} aria-selected={selected || undefined}>
                   <button
                     type="button"
-                    // Not a tab stop: the grid is the control. Announced with
-                    // its full date, because "14" on its own is not a date.
-                    tabIndex={-1}
-                    disabled={disabled}
+                    data-day={date}
+                    // A tab stop only under the cursor. Announced with its
+                    // full date, because "14" on its own is not a date.
+                    tabIndex={date === cursor ? 0 : -1}
+                    // Not `disabled`: a disabled button cannot take the focus,
+                    // and the cursor walks over days out of bounds on its way
+                    // to the ones inside them.
+                    aria-disabled={disabled || undefined}
                     aria-label={fullDate.format(new Date(parts(date).year, parts(date).month - 1, parts(date).day))}
                     aria-current={date === now ? 'date' : undefined}
+                    // The day's state, said once on the element: the styles
+                    // below read it, and so can a product's own or a test.
+                    data-outside={outside || undefined}
+                    data-selected={selected || undefined}
+                    data-in-range={inRange || undefined}
                     onClick={() => {
                       setFocused(date)
                       if (!disabled) onValueChange?.(date)
@@ -239,13 +253,13 @@ export function Calendar({
                     className={cn(
                       'flex h-8 w-full items-center justify-center rounded-md text-sm tabular-nums',
                       'transition-colors',
-                      outside ? 'text-faint' : 'text-text',
-                      inRange && 'bg-accent-soft',
-                      selected && 'bg-accent font-medium text-on-accent',
-                      !selected && !disabled && 'hover:bg-soft',
-                      date === now && !selected && 'font-medium text-accent',
-                      date === focused && 'ring-1 ring-line-2',
-                      disabled && 'cursor-not-allowed opacity-40',
+                      'text-text data-[outside]:text-faint',
+                      'data-[in-range]:bg-accent-soft',
+                      'data-[selected]:bg-accent data-[selected]:font-medium data-[selected]:text-on-accent',
+                      'not-data-[selected]:not-aria-disabled:hover:bg-soft',
+                      'not-data-[selected]:aria-[current=date]:font-medium not-data-[selected]:aria-[current=date]:text-accent',
+                      'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+                      'aria-disabled:cursor-not-allowed aria-disabled:opacity-40',
                     )}
                   >
                     {dayNumber.format(new Date(parts(date).year, parts(date).month - 1, parts(date).day))}

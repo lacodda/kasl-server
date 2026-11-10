@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type PrivacyManifest } from '@/lib/api'
+import { dated } from '@/lib/day'
 import { Panel } from '@/components/ui/panel'
 
 /**
@@ -139,7 +140,7 @@ export function Privacy() {
         <p className="text-sm text-dim">{manifest.on_change}</p>
         {manifest.updated_at && (
           <p className="mt-3 font-mono text-xs text-faint tabular">
-            {t('privacy.updatedAt')}: {new Date(manifest.updated_at).toLocaleString()}
+            {t('privacy.updatedAt')}: {dated(manifest.updated_at)}
           </p>
         )}
       </Section>

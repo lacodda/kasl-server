@@ -44,6 +44,14 @@ export function clock(timestamp: string): string {
 }
 
 /**
+ * A moment with its year, as `Sep 23, 2026, 08:00`: for a date that may be
+ * long past, like when a page last changed.
+ */
+export function dated(timestamp: string): string {
+  return new Date(timestamp).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short', hour12: false })
+}
+
+/**
  * A moment as `Sep 23, 08:00` in the reader's zone and the app's language.
  * For the lists of things that happened - deliveries, notices - where the day
  * matters as much as the time.

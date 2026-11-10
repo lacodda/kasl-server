@@ -6,20 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 
-/**
- * What the fields wear on a phone, and why.
- *
- * iOS Safari zooms the page into any input whose text is under 16px, and it
- * does not zoom back out when the field is left: the reader is dropped onto a
- * sign-in form at 130% with the password field off the side of the screen.
- * The primitive is `text-sm` for good reasons on a desktop, so the size is
- * lifted here and handed back at `sm`, where no browser does this.
- *
- * Ordered to a wish on dowel: this belongs in the primitive, since every
- * product of the line will meet it on its own login screen.
- */
-const FIELD_ON_A_PHONE = 'h-11 text-base sm:h-9 sm:text-sm'
-
 export function Login({ demo = false }: { demo?: boolean }) {
   const { t } = useTranslation()
   const { signIn } = useSession()
@@ -67,7 +53,11 @@ export function Login({ demo = false }: { demo?: boolean }) {
         <h1 className="text-lg font-semibold">{t('login.title')}</h1>
         <p className="mt-1 text-sm text-dim">{t('login.subtitle')}</p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        {/* Comfortable: a sign-in form is one hand's work on a phone, and the
+            fields and the button grow together. The 16px text that keeps iOS
+            from zooming into a field is the primitive's own (dowel 0.36): a
+            local `text-base` was 14px on this scale and never stopped it. */}
+        <form onSubmit={onSubmit} data-density="comfortable" className="mt-6 space-y-4">
           <div className="space-y-1.5">
             <label htmlFor={emailId} className="block text-xs font-medium text-dim">
               {t('login.email')}
@@ -75,7 +65,6 @@ export function Login({ demo = false }: { demo?: boolean }) {
             <Input
               id={emailId}
               type="email"
-              className={FIELD_ON_A_PHONE}
               value={email}
               autoComplete="username"
               autoFocus
@@ -91,7 +80,6 @@ export function Login({ demo = false }: { demo?: boolean }) {
             <Input
               id={passwordId}
               type="password"
-              className={FIELD_ON_A_PHONE}
               value={password}
               autoComplete="current-password"
               required
@@ -107,7 +95,7 @@ export function Login({ demo = false }: { demo?: boolean }) {
             </p>
           )}
 
-          <Button type="submit" variant="primary" className="h-10 w-full" disabled={submitting}>
+          <Button type="submit" variant="primary" className="w-full" disabled={submitting}>
             {submitting ? t('login.submitting') : t('login.submit')}
           </Button>
         </form>

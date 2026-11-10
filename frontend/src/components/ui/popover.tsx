@@ -1,6 +1,8 @@
+import { useRef } from 'react'
 import { Popover as Base } from '@base-ui/react/popover'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'dowel-ui'
+import { LayerProvider, popupRoom, usePopupContainer } from './layer'
 
 /*
  * Popover.
@@ -29,7 +31,11 @@ import { cn } from 'dowel-ui'
 
 export const popoverPopupVariants = cva(
   [
-    'rounded-lg border border-line bg-raise p-4 text-text shadow-float',
+    'rounded-lg border border-line bg-raise p-4 text-text shadow-raise',
+    // The size is a width the panel asks for; the room is what it gets. The
+    // arrow is placed against the positioner, not the panel, so the scroll
+    // does not clip it.
+    popupRoom,
     'focus-visible:outline-none',
     // The enter and the leave. `duration-*` reads the token directly because
     // Tailwind's own utility takes a literal number.
@@ -74,10 +80,11 @@ export interface PopoverPopupProps
   sideOffset?: Base.Positioner.Props['sideOffset']
   /** Whether to draw the arrow pointing back at the trigger. */
   arrow?: boolean
-  /** Where to portal to. Defaults to the document body, which is what keeps
-   * the popup from being clipped by an ancestor. Pass an element to put it
-   * somewhere else - inside an overlay that is already open, or into a
-   * container being screenshotted. */
+  /** Where to portal to. Defaults to the raised host of the overlay this is
+   * opened inside (`layer.tsx`), and to the document body when there is none -
+   * either way not the element it was opened from, whose `overflow` would clip
+   * it. Pass an element to put it somewhere else, such as a container being
+   * screenshotted. */
   container?: Base.Portal.Props['container']
 }
 
@@ -98,8 +105,15 @@ export function PopoverPopup({
   children,
   ...props
 }: PopoverPopupProps) {
+  // Inside an overlay, the overlay's raised host rather than the body - or
+  // this popup draws under the dialog, drawer or popover that opened it. See
+  // `layer.tsx`. Outside every overlay the hook gives `undefined`: the body.
+  const host = usePopupContainer()
+
+  const portal = useRef<HTMLDivElement>(null)
+
   return (
-    <Base.Portal container={container}>
+    <Base.Portal ref={portal} container={container ?? host}>
       <Base.Positioner
         side={side}
         align={align}
@@ -108,7 +122,9 @@ export function PopoverPopup({
       >
         <Base.Popup className={cn(popoverPopupVariants({ size }), className)} {...props}>
           {arrow ? <PopoverArrow /> : null}
-          {children}
+          {/* A popover is a layer of its own: a select or a date picker inside it
+            * opens above it, not under it. */}
+          <LayerProvider above="floating" mount={portal}>{children}</LayerProvider>
         </Base.Popup>
       </Base.Positioner>
     </Base.Portal>
