@@ -49,6 +49,15 @@ The three:
   only the short weeks would make the signal an accusation rather than a
   question.
 
+**A week with leave in it is left out of every comparison.** A day the agent
+filed as vacation, sickness or a day off makes that week not the person's usual
+week: it is neither judged as `unusual_week` nor counted towards a median or a
+`declining` level. Otherwise a week of holiday reads as forty per cent down and
+a fortnight of illness as a slide - the server raising an alarm about somebody
+on a beach. The trend still draws the week, with its `days_away`. The hours are
+the same figure every other screen reads for a day: start to end, less what was
+paused, whatever the privacy level kept of the pauses.
+
 **The current week never enters the arithmetic.** A Tuesday is not a short
 week, but that is what a partial week looks like to a sum - and including it
 would flag the whole team every Monday morning. Medians rather than means

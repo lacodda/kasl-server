@@ -587,6 +587,11 @@ export interface TrendWeek {
   worked_seconds: number
   /** Zero says the silence is real rather than a week of very short days. */
   days_recorded: number
+  /**
+   * Of those, days of leave, illness or time off. A week with any is left out
+   * of the signals' comparisons; the chart still draws it.
+   */
+  days_away: number
 }
 
 export interface TrendResponse {

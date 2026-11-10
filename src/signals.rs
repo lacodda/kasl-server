@@ -141,6 +141,14 @@ pub struct TrendWeek {
     /// Days with a workday in that week. Zero says the silence is real rather
     /// than a week of very short days.
     pub days_recorded: i64,
+    /// Of those, the days of leave, illness or time off.
+    ///
+    /// A week with any is not the person's usual week, and the signals leave
+    /// it out of every comparison: a week of holiday read as an unusual week,
+    /// or a fortnight of illness as a decline, is the server raising an alarm
+    /// about somebody on a beach. The norm and the alerts already excuse
+    /// leave (ADR 0017, 0018); the trend still draws the week, as it was.
+    pub days_away: i64,
 }
 
 /// The weekly trend for one person.
@@ -255,8 +263,13 @@ impl Person {
     /// enough to hide a real decline behind it, and one week off drags it the
     /// other way. `None` when there is too little history for "usual for them"
     /// to mean anything.
+    /// The weeks the signals compare: worked in, and with no leave in them.
+    fn comparable(&self) -> impl Iterator<Item = &TrendWeek> {
+        self.weeks.iter().filter(|week| week.worked_seconds > 0 && week.days_away == 0)
+    }
+
     fn median(&self) -> Option<i64> {
-        let mut worked: Vec<i64> = self.weeks.iter().map(|week| week.worked_seconds).filter(|seconds| *seconds > 0).collect();
+        let mut worked: Vec<i64> = self.comparable().map(|week| week.worked_seconds).collect();
         if worked.len() < MIN_WEEKS_FOR_MEDIAN {
             return None;
         }
@@ -274,6 +287,7 @@ impl Person {
                 week_start: monday,
                 worked_seconds: recorded.map_or(0, |week| week.worked_seconds),
                 days_recorded: recorded.map_or(0, |week| week.days_recorded),
+                days_away: recorded.map_or(0, |week| week.days_away),
             });
             monday += chrono::Duration::weeks(1);
         }
@@ -343,7 +357,7 @@ impl Person {
     /// whose days were all still open, and skipping it keeps a slide visible
     /// *through* it rather than letting a late-filed week look like a crash.
     fn declining(&self) -> Option<(usize, i64, i64)> {
-        let worked: Vec<i64> = self.weeks.iter().map(|week| week.worked_seconds).filter(|seconds| *seconds > 0).collect();
+        let worked: Vec<i64> = self.comparable().map(|week| week.worked_seconds).collect();
 
         // Two windows' worth of weeks, or there is no "before" to fall from.
         if worked.len() < DECLINING_WEEKS * 2 {
@@ -394,7 +408,7 @@ impl Person {
 
         // A week with nothing in it is silence, and `no_data` is the signal
         // for that. Calling it "unusual" too would report one fact twice.
-        if last.worked_seconds == 0 {
+        if last.worked_seconds == 0 || last.days_away > 0 {
             return None;
         }
 
@@ -434,6 +448,7 @@ struct WeekRow {
     week_start: Option<NaiveDate>,
     worked_seconds: Option<i64>,
     days_recorded: Option<i64>,
+    days_away: Option<i64>,
     last_day: Option<NaiveDate>,
 }
 
@@ -449,30 +464,20 @@ async fn weekly_totals(pool: &PgPool, reader: &CurrentUser, only: Option<Uuid>, 
 
     let rows: Vec<WeekRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT u.id AS user_id, u.display_name, d.name AS department,
-                w.week_start, w.worked_seconds, w.days_recorded,
+                w.week_start, w.worked_seconds, w.days_recorded, w.days_away,
                 (SELECT max(all_days.date) FROM workdays all_days WHERE all_days.user_id = u.id) AS last_day
          FROM users u
          LEFT JOIN departments d ON d.id = u.department_id
          LEFT JOIN LATERAL (
-             SELECT (date_trunc('week', wd.date))::date AS week_start,
+             -- What a day comes to is `workday_figures`, the one definition the
+             -- days, the team and the money read (ADR 0023). An open day has
+             -- no total yet and adds nothing.
+             SELECT (date_trunc('week', f.date))::date AS week_start,
                     count(*)::bigint AS days_recorded,
-                    coalesce(sum(
-                        CASE WHEN wd.ended_at IS NULL THEN 0
-                             ELSE greatest(extract(epoch FROM (wd.ended_at - wd.started_at))::bigint - paused.seconds, 0)
-                        END
-                    ), 0)::bigint AS worked_seconds
-             FROM workdays wd
-             CROSS JOIN LATERAL (
-                 -- Stored pauses where they exist; the day's own totals where a
-                 -- narrower policy summarized them away (ADR 0011). One or the
-                 -- other, never both, so an hour cannot be counted twice.
-                 SELECT CASE
-                     WHEN EXISTS (SELECT 1 FROM pauses p WHERE p.workday_id = wd.id)
-                     THEN (SELECT coalesce(sum(p.duration_seconds), 0)::bigint FROM pauses p WHERE p.workday_id = wd.id)
-                     ELSE coalesce(wd.paused_seconds, 0)::bigint
-                 END AS seconds
-             ) AS paused
-             WHERE wd.user_id = u.id AND wd.date BETWEEN $3 AND $4
+                    count(*) FILTER (WHERE f.kind <> 'work')::bigint AS days_away,
+                    coalesce(sum(f.worked_seconds), 0)::bigint AS worked_seconds
+             FROM workday_figures f
+             WHERE f.user_id = u.id AND f.date BETWEEN $3 AND $4
              GROUP BY 1
          ) AS w ON true
          WHERE u.active AND {VISIBLE_USERS} {one_person}
@@ -520,6 +525,7 @@ fn into_people(rows: Vec<WeekRow>) -> Vec<Person> {
             week_start,
             worked_seconds: row.worked_seconds.unwrap_or(0),
             days_recorded: row.days_recorded.unwrap_or(0),
+            days_away: row.days_away.unwrap_or(0),
         });
     }
 
@@ -568,6 +574,7 @@ mod tests {
                 week_start: last - chrono::Duration::weeks((count - 1 - index) as i64),
                 worked_seconds: (hours * 3600.0) as i64,
                 days_recorded: if *hours > 0.0 || keep_zero_weeks { 5 } else { 0 },
+                days_away: 0,
             })
             .filter(|week| week.days_recorded > 0)
             .collect();
@@ -581,6 +588,41 @@ mod tests {
             // of the window, so `no_data` stays quiet unless a test says so.
             last_day: Some(last + chrono::Duration::days(4)),
         }
+    }
+
+    /// Marks the weeks at these positions, counted from the oldest, as having
+    /// `days` of leave in them.
+    fn with_leave(mut person: Person, positions: &[usize], days: i64) -> Person {
+        for position in positions {
+            person.weeks[*position].days_away = days;
+        }
+        person
+    }
+
+    #[test]
+    fn a_week_of_leave_is_not_an_unusual_week() {
+        // Two days at work and three on holiday: sixteen hours, far below a
+        // forty-hour median, and nothing anybody should be asked about.
+        let hours = [40.0, 41.0, 39.0, 40.0, 42.0, 40.0, 16.0];
+        let person = person_with(&hours);
+        assert!(
+            person.unusual_week(window_end()).is_some(),
+            "without the leave marked the week reads as unusual"
+        );
+        let person = with_leave(person, &[6], 3);
+        assert!(person.unusual_week(window_end()).is_none(), "a week with leave in it is not judged");
+        assert_eq!(person.median(), Some(40 * 3600), "nor does it move the median");
+    }
+
+    #[test]
+    fn a_fortnight_of_illness_is_not_a_decline() {
+        // Six ordinary weeks, then three short ones: two of them broken by
+        // illness. Without the illness marked this is a decline.
+        let hours = [40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 12.0, 8.0, 40.0];
+        let ill = person_with(&hours);
+        assert!(ill.declining().is_some(), "unmarked, the short weeks read as a slide");
+        let ill = with_leave(ill, &[7, 8], 4);
+        assert!(ill.declining().is_none(), "the weeks of illness are left out of the comparison");
     }
 
     /// The Sunday the window closes on, for the tests that need it.

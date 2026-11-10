@@ -18,7 +18,7 @@ function signal(kind: SignalKind, overrides: Partial<Signal> = {}): Signal {
 }
 
 function week(worked_seconds: number, days_recorded = 5, week_start = '2026-08-24'): TrendWeek {
-  return { week_start, worked_seconds, days_recorded }
+  return { week_start, worked_seconds, days_recorded, days_away: 0 }
 }
 
 describe('hours', () => {
