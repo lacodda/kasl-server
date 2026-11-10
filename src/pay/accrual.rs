@@ -769,9 +769,11 @@ mod tests {
         accruals.iter().map(|accrual| accrual.amount).collect()
     }
 
-    /// (kind, rule, seconds, multiplier, amount) of each line, for asserting
-    /// a day whole.
-    fn lines(accrual: &DayAccrual) -> Vec<(LineKind, Option<Rule>, Option<i64>, Decimal, Decimal)> {
+    /// A line as (kind, rule, seconds, multiplier, amount), for asserting a
+    /// day whole.
+    type LineRow = (LineKind, Option<Rule>, Option<i64>, Decimal, Decimal);
+
+    fn lines(accrual: &DayAccrual) -> Vec<LineRow> {
         accrual
             .lines
             .iter()

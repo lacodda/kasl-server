@@ -77,8 +77,11 @@ async fn accruals(server: &TestServer, cookie: &str, from: &str, to: &str) -> Va
     body
 }
 
-/// (kind, rule, seconds, multiplier, amount) of a day's lines.
-fn lines(day: &Value) -> Vec<(String, Option<String>, Option<i64>, String, String)> {
+/// A line as (kind, rule, seconds, multiplier, amount).
+type LineRow = (String, Option<String>, Option<i64>, String, String);
+
+/// A day's lines, for asserting them whole.
+fn lines(day: &Value) -> Vec<LineRow> {
     day["lines"]
         .as_array()
         .expect("a day lists its lines")
@@ -95,7 +98,7 @@ fn lines(day: &Value) -> Vec<(String, Option<String>, Option<i64>, String, Strin
         .collect()
 }
 
-fn line(kind: &str, rule: Option<&str>, seconds: i64, multiplier: &str, amount: &str) -> (String, Option<String>, Option<i64>, String, String) {
+fn line(kind: &str, rule: Option<&str>, seconds: i64, multiplier: &str, amount: &str) -> LineRow {
     (
         kind.to_string(),
         rule.map(str::to_string),
