@@ -331,13 +331,16 @@ async fn serve(pool: sqlx::PgPool, config: config::Config) -> Result<()> {
     // variable was removed still has to be given up on in writing.
     kasl_server::webhooks::run_dispatcher(pool.clone(), webhooks, recorder.clone());
 
+    // Before the listener, so a stop asked for the moment the port opens is
+    // already heard rather than met with the default action.
+    let shutdown = shutdown_signal();
     let listener = TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("failed to bind {}", config.addr))?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), addr = %config.addr, max_batch_days = config.max_batch_days, max_body_bytes = config.max_body_bytes, "kasl-server listening");
 
     axum::serve(listener, app::router_with(pool, &config, recorder))
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown)
         .await
         .context("server error")?;
     Ok(())
@@ -361,12 +364,53 @@ fn print_demo_logins() {
     println!("\n  with the password `{}`. The same password opens every account.\n", demo::PASSWORD);
 }
 
-async fn shutdown_signal() {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::error!(%error, "failed to install the shutdown signal handler");
-        return;
+/// Waits until the server is asked to stop: Ctrl+C on a console, or SIGTERM
+/// from whatever supervises it.
+///
+/// SIGTERM is how `docker stop`, `docker compose up` replacing a container,
+/// systemd and Kubernetes all ask. In the image the server is PID 1, and a
+/// PID 1 with no handler for a signal does not get the default one: it ignored
+/// SIGTERM, Docker waited its ten seconds and killed it - requests in flight
+/// cut off, and every deploy ten seconds longer than it had to be.
+///
+/// SIGTERM's handler is installed when this is called, not when the future is
+/// first polled: called before the listener binds, no stop can arrive in
+/// between and meet the default action. A handler that cannot be installed is
+/// logged and then waits forever rather than returning, which would read as
+/// "stop now" and shut the server down the moment it started.
+fn shutdown_signal() -> impl std::future::Future<Output = ()> {
+    #[cfg(unix)]
+    let terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+
+    async move {
+        let interrupt = async {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                tracing::error!(%error, "failed to listen for Ctrl+C");
+                std::future::pending::<()>().await;
+            }
+        };
+
+        #[cfg(unix)]
+        let terminate = async move {
+            match terminate {
+                Ok(mut terminate) => {
+                    terminate.recv().await;
+                }
+                Err(error) => {
+                    tracing::error!(%error, "failed to listen for SIGTERM");
+                    std::future::pending::<()>().await;
+                }
+            }
+        };
+        // Windows has no SIGTERM; a service stopping it sends Ctrl+C's event.
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            () = interrupt => tracing::info!("interrupted, shutting down"),
+            () = terminate => tracing::info!("asked to terminate, shutting down"),
+        }
     }
-    tracing::info!("shutting down");
 }
 
 #[cfg(test)]
