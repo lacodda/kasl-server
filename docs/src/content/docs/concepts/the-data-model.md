@@ -24,7 +24,7 @@ kasl's own model, so a reader who knows the agent recognizes it:
 | `webhook_deliveries` | What was sent to a chat or another system, and whether it arrived |
 | `notifications` | What each person was told |
 | `read_tokens` | Tokens a dashboard or Prometheus reads with; a hash each, never the token |
-| `pay_terms` | How each person is paid - basis, rate, currency, from which date - every version, appended and never rewritten ([ADR 0027](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0027-pay-terms-and-their-history.md)) |
+| `pay_terms` | How each person is paid - basis, rate, currency, from which date, what overtime pays - every version, appended and never rewritten ([ADR 0027](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0027-pay-terms-and-their-history.md), [ADR 0028](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0028-accruals-and-overtime.md)). What the hours earned under them is derived on every read, not stored |
 
 Two differences from the agent's database are deliberate: instants are stored
 with a time zone (the agent stores bare wall-clock text, which does not survive

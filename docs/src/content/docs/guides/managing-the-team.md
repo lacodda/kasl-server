@@ -29,6 +29,8 @@ $ curl -X DELETE http://127.0.0.1:8080/api/v1/agents/b749b090-... -H "Cookie: ka
 | `POST /users/{id}/agents`, `DELETE /agents/{id}` | admin |
 | `GET`/`POST /users/{id}/pay-terms` | admin |
 | `GET /me/pay-terms` | anyone signed in, for their own terms |
+| `GET /users/{id}/accruals` | admin |
+| `GET /me/accruals` | anyone signed in, for what their own hours earned |
 | `POST /auth/password` | anyone signed in, for their own password |
 | `GET /audit` | admin |
 

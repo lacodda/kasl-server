@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::overtime::{Overtime, OvertimeWire};
 use crate::{app::AppState, audit, calendar::Norm, error::ApiError, login::CurrentUser};
 
 /// What a rate is a rate of. Mirrors the `pay_basis` enum.
@@ -72,6 +73,10 @@ pub struct Version {
     /// The recorder's display name, read with the version.
     pub recorded_by_name: String,
     pub recorded_at: DateTime<Utc>,
+    /// What an hour beyond the ordinary pays under this version (ADR 0028).
+    /// Part of the version, and as fixed as its rate.
+    #[sqlx(flatten)]
+    pub overtime: Overtime,
 }
 
 /// The version that applies to `date`, if any does.
@@ -213,6 +218,8 @@ pub struct VersionView {
     pub rate: String,
     pub currency: String,
     pub note: Option<String>,
+    /// The overtime rules, each absent where the version has none.
+    pub overtime: OvertimeWire,
     pub state: Standing,
     pub recorded_at: DateTime<Utc>,
     pub recorded_by: Recorder,
@@ -241,13 +248,84 @@ pub struct NewVersion {
     pub currency: String,
     #[serde(default)]
     pub note: Option<String>,
+    /// What an hour beyond the ordinary pays. Absent, or `{}`, is a version
+    /// without overtime.
+    #[serde(default)]
+    pub overtime: OvertimeWire,
+}
+
+/// A version checked and ready to write.
+#[derive(Debug, Clone)]
+pub struct Checked {
+    pub effective_from: NaiveDate,
+    pub basis: Basis,
+    pub rate: Decimal,
+    pub currency: Currency,
+    pub note: Option<String>,
+    pub overtime: Overtime,
+}
+
+impl NewVersion {
+    /// Everything a version says, checked before anything is written: a
+    /// refusal leaves no row behind.
+    pub fn check(self) -> Result<Checked, ApiError> {
+        Ok(Checked {
+            effective_from: self.effective_from,
+            basis: self.basis,
+            rate: parse_rate(&self.rate)?,
+            currency: parse_currency(&self.currency)?,
+            note: clean_note(self.note)?,
+            overtime: Overtime::parse(&self.overtime)?,
+        })
+    }
+}
+
+/// Writes one version, and answers its id.
+///
+/// The one insert into `pay_terms`, shared by the handler and the demo's seed
+/// so the demo carries the rows a real administrator leaves.
+pub async fn write<'c, E>(executor: E, user_id: Uuid, version: &Checked, recorded_by: Uuid) -> Result<i64, sqlx::Error>
+where
+    E: sqlx::PgExecutor<'c>,
+{
+    let columns = version.overtime.to_columns();
+    sqlx::query_scalar(
+        "INSERT INTO pay_terms (user_id, effective_from, basis, rate, currency, note, recorded_by,
+                                daily_after_hours, daily_multiplier, daily_then_after_hours, daily_then_multiplier,
+                                weekly_after_hours, weekly_multiplier, weekly_then_after_hours, weekly_then_multiplier,
+                                rest_day_multiplier)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         RETURNING id",
+    )
+    .bind(user_id)
+    .bind(version.effective_from)
+    .bind(version.basis)
+    .bind(version.rate)
+    .bind(version.currency.code())
+    .bind(version.note.as_deref())
+    .bind(recorded_by)
+    .bind(columns.daily_after_hours)
+    .bind(columns.daily_multiplier)
+    .bind(columns.daily_then_after_hours)
+    .bind(columns.daily_then_multiplier)
+    .bind(columns.weekly_after_hours)
+    .bind(columns.weekly_multiplier)
+    .bind(columns.weekly_then_after_hours)
+    .bind(columns.weekly_then_multiplier)
+    .bind(columns.rest_day_multiplier)
+    .fetch_one(executor)
+    .await
 }
 
 /// Every version of a person's terms, newest start first.
 pub async fn versions_of(pool: &PgPool, user_id: Uuid) -> Result<Vec<Version>, ApiError> {
+    // The overtime columns are read by `Overtime`'s own `FromRow`, by name.
     let versions = sqlx::query_as(
         "SELECT t.id, t.user_id, t.effective_from, t.basis, t.rate, t.currency, t.note,
-                t.recorded_by, r.display_name AS recorded_by_name, t.recorded_at
+                t.recorded_by, r.display_name AS recorded_by_name, t.recorded_at,
+                t.daily_after_hours, t.daily_multiplier, t.daily_then_after_hours, t.daily_then_multiplier,
+                t.weekly_after_hours, t.weekly_multiplier, t.weekly_then_after_hours, t.weekly_then_multiplier,
+                t.rest_day_multiplier
          FROM pay_terms t
          JOIN users r ON r.id = t.recorded_by
          WHERE t.user_id = $1
@@ -275,6 +353,7 @@ pub async fn history(pool: &PgPool, user_id: Uuid) -> Result<History, ApiError> 
                 rate: written(version.rate, &version.currency),
                 currency: version.currency.clone(),
                 note: version.note.clone(),
+                overtime: version.overtime.to_wire(),
                 state: state_of(version, &versions, today),
                 recorded_at: version.recorded_at,
                 recorded_by: Recorder {
@@ -287,7 +366,7 @@ pub async fn history(pool: &PgPool, user_id: Uuid) -> Result<History, ApiError> 
 }
 
 /// The account's email, or `404` when there is no such account.
-async fn email_of(pool: &PgPool, user_id: Uuid) -> Result<String, ApiError> {
+pub(crate) async fn email_of(pool: &PgPool, user_id: Uuid) -> Result<String, ApiError> {
     sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
@@ -339,25 +418,10 @@ pub async fn record(
     Json(input): Json<NewVersion>,
 ) -> Result<impl IntoResponse, ApiError> {
     user.require_admin()?;
-    let rate = parse_rate(&input.rate)?;
-    let currency = parse_currency(&input.currency)?;
-    let note = clean_note(input.note)?;
+    let version = input.check()?;
     let email = email_of(&state.pool, target).await?;
 
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO pay_terms (user_id, effective_from, basis, rate, currency, note, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id",
-    )
-    .bind(target)
-    .bind(input.effective_from)
-    .bind(input.basis)
-    .bind(rate)
-    .bind(currency.code())
-    .bind(note.as_deref())
-    .bind(user.user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let id = write(&state.pool, target, &version, user.user_id).await?;
 
     let history = history(&state.pool, target).await?;
     // The version this one corrects, if it starts on a date that already had
@@ -365,8 +429,8 @@ pub async fn record(
     let corrects = history
         .versions
         .iter()
-        .filter(|version| version.effective_from == input.effective_from && version.id < id)
-        .map(|version| version.id)
+        .filter(|other| other.effective_from == version.effective_from && other.id < id)
+        .map(|other| other.id)
         .max();
 
     tracing::info!(user = %target, version = id, by = %user.user_id, "recorded pay terms");
@@ -380,9 +444,10 @@ pub async fn record(
         .labelled(email)
         .with(serde_json::json!({
             "version": id,
-            "effective_from": input.effective_from,
-            "basis": input.basis,
-            "currency": currency.code(),
+            "effective_from": version.effective_from,
+            "basis": version.basis,
+            "currency": version.currency.code(),
+            "overtime": !version.overtime.is_none(),
             "corrects": corrects,
         }))
         .record(&state.pool)
@@ -411,6 +476,7 @@ mod tests {
             recorded_by: Uuid::nil(),
             recorded_by_name: "admin".to_string(),
             recorded_at: DateTime::<Utc>::UNIX_EPOCH,
+            overtime: Overtime::default(),
         }
     }
 

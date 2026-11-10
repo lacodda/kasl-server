@@ -365,7 +365,7 @@ fn stored_at(level: PrivacyLevel) -> Vec<Stored> {
 
 /// The pay terms, as the manifest names them. A constant so the test that
 /// holds the manifest to the access rule reads the same words.
-const PAY_TERMS: &str = "how you are paid - by the hour, by the day or by the month - at what rate, in which currency, and from which date, with every earlier version kept and any note on it; readable by you and by administrators, not by the manager of your department";
+const PAY_TERMS: &str = "how you are paid - by the hour, by the day or by the month - at what rate, in which currency, from which date and what overtime pays, with every earlier version kept and any note on it; what your hours earned under them is worked out from these and your days whenever it is read, not stored; readable by you and by administrators, not by the manager of your department";
 
 /// Things the server has no column for. Absence is not reassuring on its own.
 const NEVER_COLLECTED: [&str; 7] = [
@@ -602,6 +602,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("{level:?} does not name the pay terms"));
             assert!(terms.detail.contains("not by the manager"), "{}", terms.detail);
             assert!(terms.detail.contains("every earlier version"), "{}", terms.detail);
+            assert!(terms.detail.contains("overtime"), "the rules are part of the terms: {}", terms.detail);
+            assert!(terms.detail.contains("not stored"), "the accruals are derived: {}", terms.detail);
         }
     }
 

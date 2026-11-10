@@ -65,6 +65,10 @@ pub mod action {
     /// Somebody else's pay terms read. Money is the most sensitive thing the
     /// server holds, and "who looked at my pay" must have an answer.
     pub const PAY_TERMS_VIEWED: &str = "pay_terms.viewed";
+    /// Somebody else's accruals read: what their hours earned over a range.
+    /// Names the range, never an amount, for the reason the terms' entries
+    /// name no rate (ADR 0028).
+    pub const ACCRUALS_VIEWED: &str = "accruals.viewed";
     pub const DEMO_SEEDED: &str = "demo.seeded";
 }
 

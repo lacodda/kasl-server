@@ -151,9 +151,12 @@ async fn a_mistake_is_corrected_by_a_later_version_with_the_same_start() {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            ["basis", "corrects", "currency", "effective_from", "version"],
+            // `overtime` says whether the version has rules, never what they
+            // pay (ADR 0028).
+            ["basis", "corrects", "currency", "effective_from", "overtime", "version"],
             "the log carries no amount: {entry}"
         );
+        assert!(entry["details"]["overtime"].is_boolean(), "{entry}");
     }
     assert!(entries[1]["details"]["corrects"].is_null(), "a new start corrects nothing");
 

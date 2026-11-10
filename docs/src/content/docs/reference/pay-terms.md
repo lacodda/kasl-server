@@ -22,6 +22,7 @@ stays, and keeps governing the dates before the raise. The reasoning is in
 | `rate` | the amount per hour, day or month, as a decimal **string** |
 | `currency` | an ISO 4217 code |
 | `note` | why the terms changed, optional - read by the person too |
+| `overtime` | what an hour beyond the ordinary pays - see [overtime](#overtime) |
 | `state` | where the version stands today - see below |
 | `recorded_by`, `recorded_at` | who entered it, and when |
 
@@ -94,6 +95,42 @@ the state of another: the one it follows becomes `ended`, the one it corrects
   in the past changes what those dates earned; closing a pay period, later in
   the finance module, will refuse a version starting inside a closed one.
 
+## Overtime
+
+A version may carry up to three overtime rules under `overtime`, each optional;
+leave the field out, or send `{}`, for a version without overtime. What the
+hours then earn is [accruals](/kasl-server/reference/accruals/).
+
+```json
+"overtime": {
+  "daily":  { "after": "norm", "multiplier": "1.5", "then": { "after": "2", "multiplier": "2" } },
+  "weekly": { "after": "40", "multiplier": "1.5" },
+  "rest_days": "2"
+}
+```
+
+- **`daily`** - past `after` hours worked on a date, every further hour pays
+  `multiplier`; `then`, optional, is a second step `after` hours past the first
+  that pays more. `after` is hours (`"8"`, `"7.5"`) or `"norm"`: the date's own
+  norm, as the calendar and the person's share of a full day ask for it - so a
+  short eve or a half-time contract moves the threshold with it.
+- **`weekly`** - the same over a Monday-to-Sunday week, with `"norm"` meaning
+  the week's norm less any leave. Only ordinary hours count towards it: an hour
+  a daily step or a rest day already paid more for is not counted again.
+- **`rest_days`** - the multiplier of every hour on a date the calendar asks
+  nothing of: a weekend not moved into the week, or a holiday.
+
+Every figure is a string. A multiplier is more than `1` - one that paid the same
+would be no rule - at most `10`, with at most four decimal places; hours are
+more than zero, at most a day (24) or a week (168), with at most two places. A
+second step pays more than the first and must fall inside its span. Anything
+else is refused with `400`, an unknown field with `422`, and the database checks
+the same shape again. The rules are part of the version: changing them is a new
+version, like changing the rate.
+
+A version reads back with every rule, absent ones as `null`:
+`"overtime":{"daily":null,"weekly":{"after":"40","multiplier":"1.5","then":null},"rest_days":null}`.
+
 ## Changing and correcting
 
 There is no `PUT` and no `DELETE`. A version is never rewritten and never
@@ -116,7 +153,8 @@ removed; the database refuses both, whatever a later handler might try.
 
 An administrator reading somebody else's terms is recorded in
 [the audit log](/kasl-server/reference/the-audit-log/) as `pay_terms.viewed`;
-recording a version is `pay_terms.recorded`. Neither entry carries the rate.
+recording a version is `pay_terms.recorded`. Neither entry carries the rate,
+nor what overtime pays - only whether the version has overtime rules.
 The terms are listed in [what the server stores about
 you](/kasl-server/concepts/what-the-server-stores-about-you/), with who reads
 them.

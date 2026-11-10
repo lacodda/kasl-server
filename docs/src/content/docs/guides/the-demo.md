@@ -58,6 +58,15 @@ late day and a missing one - and one person took three days of vacation the
 week before last. The team rests on the calendar's holiday and works the
 Saturday it moved into the week.
 
+**The team is paid.** Nine people have [pay terms](/kasl-server/reference/pay-terms/)
+in seven currencies: by the hour and by the day, with overtime past the norm,
+past fixed hours a day and a week, and on rest days - and one salary, which is
+accrued from a later version. The employee was raised three weeks ago, in the
+middle of a week. Signed in as anybody, `GET /api/v1/me/accruals` answers what
+their hours earned ([accruals](/kasl-server/reference/accruals/)); three people
+have no terms, and worked time with none in force is said to be unpriced rather
+than priced at zero.
+
 **The team keeps reaching today.** The history is generated from the day it
 is seeded, and nothing moves it afterwards — so a stand left running for a
 fortnight would show a team that stopped working a fortnight ago, every row

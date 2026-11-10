@@ -73,6 +73,9 @@ pub fn router_with(pool: PgPool, config: &Config, recorder: Arc<metrics::Recorde
         // How the person is paid, every version of it, with the notes the
         // administrator wrote. Theirs to read whoever else may (ADR 0027).
         .route("/me/pay-terms", get(pay::terms::mine))
+        // What the person's hours earned under those terms, date by date
+        // (ADR 0028). Derived on every read, like the norm.
+        .route("/me/accruals", get(pay::accrual::mine))
         // Other people's data, for whoever is entitled to it. Separate routes
         // from `/me` on purpose: here a permission is checked, and a route that
         // sometimes checks one is a route where forgetting is invisible.
@@ -169,6 +172,7 @@ pub fn router_with(pool: PgPool, config: &Config, recorder: Arc<metrics::Recorde
         // rewritten. Administrators only until the finance privilege exists -
         // a department's manager sees the days, not the money (ADR 0027).
         .route("/users/{id}/pay-terms", get(pay::terms::of_user).post(pay::terms::record))
+        .route("/users/{id}/accruals", get(pay::accrual::of_user))
         // The record of who did what. Administrators only, and no way to
         // delete from it (ADR 0010).
         .route("/audit", get(audit::list))

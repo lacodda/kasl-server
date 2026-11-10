@@ -812,3 +812,66 @@ async fn the_demo_timesheet_shows_leave_and_every_mark_on_any_day_of_the_week() 
         server.close().await;
     }
 }
+
+#[tokio::test]
+async fn the_demo_accrues_every_basis_and_every_rule() {
+    let Some((server, seeded)) = demo_server().await else { return };
+    assert_eq!(seeded.pay_terms, 10, "nine people paid, one raised: {seeded:?}");
+
+    // The employee a visitor signs in as reads their own money: eight weeks
+    // of it, a raise in the middle, and overtime past the norm.
+    let employee = signed_in(&server, &showcased(UserRole::Employee)).await;
+    let today = Utc::now().date_naive();
+    let range = format!("from={}&to={today}", today - Duration::weeks(8));
+    let (status, mine) = server.get_with_cookie(&format!("/api/v1/me/accruals?{range}"), Some(&employee)).await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    let days = mine["days"].as_array().expect("the accruals list days");
+    let versions: std::collections::BTreeSet<i64> = days.iter().filter_map(|day| day["terms"]["id"].as_i64()).collect();
+    assert_eq!(versions.len(), 2, "the raise shows in the history the visitor reads");
+    assert_eq!(mine["totals"][0]["currency"], "USD");
+    let (status, terms) = server.get_with_cookie("/api/v1/me/pay-terms", Some(&employee)).await;
+    assert_eq!(status, StatusCode::OK, "{terms}");
+    assert_eq!(terms["versions"][0]["note"], "Annual review");
+
+    // Across the team, every status and every kind of line is on screen.
+    let mut statuses = std::collections::BTreeSet::new();
+    let mut kinds = std::collections::BTreeSet::new();
+    let mut rules = std::collections::BTreeSet::new();
+    let mut currencies = std::collections::BTreeSet::new();
+    let people: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM users ORDER BY email").fetch_all(&server.pool).await.unwrap();
+    let range = kasl_server::me::Range {
+        from: today - Duration::weeks(8),
+        to: today,
+    };
+    for person in people {
+        let accruals = kasl_server::pay::accrual::accruals_for(&server.pool, person, &range).await.unwrap();
+        let value = serde_json::to_value(&accruals).unwrap();
+        for day in value["days"].as_array().unwrap() {
+            statuses.insert(day["status"].as_str().unwrap().to_string());
+            for line in day["lines"].as_array().unwrap() {
+                kinds.insert(line["kind"].as_str().unwrap().to_string());
+                if let Some(rule) = line["rule"].as_str() {
+                    rules.insert(rule.to_string());
+                }
+            }
+        }
+        for total in value["totals"].as_array().unwrap() {
+            currencies.insert((total["currency"].as_str().unwrap().to_string(), total["amount"].as_str().unwrap().to_string()));
+        }
+    }
+    for status in ["accrued", "open", "salaried", "no_terms"] {
+        assert!(statuses.contains(status), "no {status} day on the demo: {statuses:?}");
+    }
+    for kind in ["hours", "day", "overtime", "overtime_premium"] {
+        assert!(kinds.contains(kind), "no {kind} line on the demo: {kinds:?}");
+    }
+    // Not the rest day: nobody on the demo works one, and the rule is held
+    // by the tests of the arithmetic.
+    for rule in ["daily", "weekly"] {
+        assert!(rules.contains(rule), "no {rule} overtime on the demo: {rules:?}");
+    }
+    let yen = currencies.iter().find(|(currency, _)| currency == "JPY").expect("somebody is paid in yen");
+    assert!(!yen.1.contains('.'), "yen have no minor unit: {}", yen.1);
+
+    server.close().await;
+}

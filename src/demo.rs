@@ -39,6 +39,10 @@ use crate::{
     import::{self, AgentDay, AgentPause, AgentTask},
     model::UserRole,
     notes,
+    pay::{
+        overtime::{LadderWire, OvertimeWire, StepWire},
+        terms::{self, Basis, NewVersion},
+    },
     reports::{self, Reviewer},
     session::hash_password,
 };
@@ -388,6 +392,155 @@ pub struct Seeded {
     /// Days reported, of which some approved, one returned and the rest
     /// waiting (ADR 0022).
     pub reports: usize,
+    /// Versions of the team's pay terms (ADR 0027, 0028).
+    pub pay_terms: usize,
+}
+
+/// One version of somebody's terms in the demo.
+struct DemoTerms {
+    person: &'static str,
+    /// The Monday this many weeks before the seed's...
+    weeks_ago: i64,
+    /// ...and this many days after it.
+    days_later: i64,
+    /// Everything but the start, which is relative.
+    version: NewVersion,
+}
+
+fn ladder(after: &str, multiplier: &str, then: Option<(&str, &str)>) -> LadderWire {
+    LadderWire {
+        after: after.to_string(),
+        multiplier: multiplier.to_string(),
+        then: then.map(|(after, multiplier)| StepWire {
+            after: after.to_string(),
+            multiplier: multiplier.to_string(),
+        }),
+    }
+}
+
+/// A version from before the eight weeks of history, so every day of it is
+/// priced.
+fn hired(person: &'static str, basis: Basis, rate: &str, currency: &str, overtime: OvertimeWire) -> DemoTerms {
+    DemoTerms {
+        person,
+        weeks_ago: WEEKS + 1,
+        days_later: 0,
+        version: NewVersion {
+            effective_from: chrono::NaiveDate::MIN,
+            basis,
+            rate: rate.to_string(),
+            currency: currency.to_string(),
+            note: None,
+            overtime,
+        },
+    }
+}
+
+/// How the team is paid: one version each, and a raise for the person a
+/// visitor signs in as first.
+///
+/// Every basis, and the overtime of the laws the finance module was planned
+/// against, in currencies the team's own time zones suggest - so the
+/// accruals a visitor reads show a daily ladder at the norm, a fixed one, a
+/// weekly threshold, rest days, a day rate, a salary not yet accrued and a
+/// person with no terms at all.
+fn demo_pay() -> Vec<DemoTerms> {
+    // The employee a visitor signs in as: past the norm at 1.5 for two hours,
+    // then 2, and rest days at 2 - and a raise in the middle of a week, so the
+    // history shows both rates and the week shows the change.
+    let tomas = || OvertimeWire {
+        daily: Some(ladder("norm", "1.5", Some(("2", "2")))),
+        rest_days: Some("2".to_string()),
+        ..OvertimeWire::default()
+    };
+    let mut first = hired("tomas.verhoeven", Basis::Hourly, "34", "USD", tomas());
+    first.version.note = Some("Hired".to_string());
+    let mut raise = hired("tomas.verhoeven", Basis::Hourly, "36.50", "USD", tomas());
+    raise.weeks_ago = 3;
+    raise.days_later = 2;
+    raise.version.note = Some("Annual review".to_string());
+
+    vec![
+        first,
+        raise,
+        hired(
+            "priya.raman",
+            Basis::Daily,
+            "14500",
+            "INR",
+            OvertimeWire {
+                daily: Some(ladder("9", "2", None)),
+                ..OvertimeWire::default()
+            },
+        ),
+        // A salary: priced from the version that brings salaries, and said so
+        // until then.
+        hired("daniel.okafor", Basis::Monthly, "6200", "EUR", OvertimeWire::default()),
+        // The long days the alerts point at, paid past the norm: the first
+        // two hours at 1.5, the rest at 2.
+        hired(
+            "elena.novak",
+            Basis::Hourly,
+            "31",
+            "EUR",
+            OvertimeWire {
+                daily: Some(ladder("norm", "1.5", Some(("2", "2")))),
+                rest_days: Some("2".to_string()),
+                ..OvertimeWire::default()
+            },
+        ),
+        // A quarter more past eight hours a day and forty a week, a third
+        // more on a rest day - and yen, which have no minor unit.
+        hired(
+            "aiko.tanaka",
+            Basis::Hourly,
+            "4200",
+            "JPY",
+            OvertimeWire {
+                daily: Some(ladder("8", "1.25", None)),
+                weekly: Some(ladder("40", "1.25", None)),
+                rest_days: Some("1.35".to_string()),
+            },
+        ),
+        hired("lukas.brandt", Basis::Daily, "380", "EUR", OvertimeWire::default()),
+        hired(
+            "sofia.reyes",
+            Basis::Hourly,
+            "95",
+            "BRL",
+            OvertimeWire {
+                daily: Some(ladder("8", "1.5", None)),
+                rest_days: Some("2".to_string()),
+                ..OvertimeWire::default()
+            },
+        ),
+        // Part time, so the norm the threshold stands on is hers, not eight
+        // hours.
+        hired(
+            "mira.halvorsen",
+            Basis::Hourly,
+            "410",
+            "NOK",
+            OvertimeWire {
+                daily: Some(ladder("norm", "1.4", None)),
+                ..OvertimeWire::default()
+            },
+        ),
+        // A day rate with a weekly threshold: the hours over it inside a paid
+        // day earn only the premium.
+        hired(
+            "yusuf.demir",
+            Basis::Daily,
+            "4800",
+            "TRY",
+            OvertimeWire {
+                weekly: Some(ladder("45", "1.5", None)),
+                ..OvertimeWire::default()
+            },
+        ),
+        // Jonas, Hana and the administrator have no terms: worked time with
+        // nothing in force is said as such, not priced at zero.
+    ]
 }
 
 /// Who works less than a full day, and how much less.
@@ -587,6 +740,29 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
         debug_assert_eq!(updated.rows_affected(), 1, "the part-time table names a member of the team");
     }
 
+    // The team's pay, recorded by the administrator through the same insert
+    // an administrator's own version goes through.
+    let administrator = TEAM
+        .iter()
+        .position(|person| person.role == UserRole::Admin)
+        .map(|index| user_ids[index])
+        .expect("the team has an administrator");
+    let seed_monday = now.date_naive() - Duration::days(i64::from(now.date_naive().weekday().num_days_from_monday()));
+    for demo in demo_pay() {
+        let person = TEAM
+            .iter()
+            .position(|person| person.email().starts_with(&format!("{}@", demo.person)))
+            .map(|index| user_ids[index])
+            .expect("every version in the table names a member of the team");
+        let mut version = demo.version;
+        version.effective_from = seed_monday - Duration::weeks(demo.weeks_ago) + Duration::days(demo.days_later);
+        let version = version
+            .check()
+            .map_err(|error| anyhow::anyhow!("the demo's pay for {}: {error}", demo.person))?;
+        terms::write(&mut *tx, person, &version, administrator).await?;
+        seeded.pay_terms += 1;
+    }
+
     // A calendar with something in it, placed relative to the seed like the
     // history is. A demo with an empty calendar would show every weekday at a
     // full norm, which is the one case the feature does not need to exist for.
@@ -700,6 +876,7 @@ pub async fn seed(pool: &PgPool, now: DateTime<Utc>) -> Result<Seeded> {
             "calendar_days": seeded.calendar_days,
             "notes": seeded.notes,
             "reports": seeded.reports,
+            "pay_terms": seeded.pay_terms,
         }))
         .record(pool)
         .await;

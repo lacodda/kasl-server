@@ -41,10 +41,13 @@ token is.
 
 [Pay terms](/kasl-server/reference/pay-terms/) are recorded as
 `pay_terms.recorded`, against the person they are about, with the version's
-id, start, basis and currency - and, for a correction, the version it corrects.
-An administrator reading somebody else's terms is `pay_terms.viewed`; reading
-your own is not recorded. Neither entry carries the rate: who may read this log
-and who may read the money are not promised to stay the same people.
+id, start, basis and currency, whether it has overtime rules - and, for a
+correction, the version it corrects. An administrator reading somebody else's
+terms is `pay_terms.viewed`, and somebody else's
+[accruals](/kasl-server/reference/accruals/) `accruals.viewed`, with the range
+read; reading your own is not recorded. No entry carries a rate or an amount:
+who may read this log and who may read the money are not promised to stay the
+same people.
 
 Filter with `actor_id`, `target_id`, `action`, `since`, `until`, and page with
 `limit` (500 at most) and `offset`. "Everything that happened to this person" is

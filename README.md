@@ -76,10 +76,11 @@ can be seen before an agent is installed anywhere.
   person, so half time reads as half time rather than as half-hearted.
 - **A privacy policy the server enforces.** Three levels of detail, applied on
   the way in - a field a level excludes never reaches the database.
-- **Pay terms with their history.** Hourly, daily or a salary, in any ISO
+- **Pay from the hours tracked.** Hourly, daily or a salary, in any ISO
   currency, version by version - a raise never reaches back into the months
-  before it. The first step of pay computed from the hours tracked, not from a
-  timesheet taken on trust.
+  before it - and what the hours earned, date by date, with daily, weekly and
+  rest-day overtime. Computed from the tracker, not from a timesheet taken on
+  trust.
 - **Roles and departments.** Admins, managers and employees, with visibility
   rules that keep a manager inside their own department.
 - **An audit log of everything that changes people, departments or tokens.**
