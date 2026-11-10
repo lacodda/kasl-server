@@ -378,6 +378,9 @@ fn print_demo_logins() {
 /// between and meet the default action. A handler that cannot be installed is
 /// logged and then waits forever rather than returning, which would read as
 /// "stop now" and shut the server down the moment it started.
+// Off Unix there is no SIGTERM to install eagerly, so the whole body is the
+// future - which is what the lint sees. The shape is for the Unix build.
+#[cfg_attr(not(unix), allow(clippy::manual_async_fn))]
 fn shutdown_signal() -> impl std::future::Future<Output = ()> {
     #[cfg(unix)]
     let terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
