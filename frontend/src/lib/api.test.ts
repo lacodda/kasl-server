@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, attachmentName, exportUrl } from '@/lib/api'
+import { ApiError, api, attachmentName, exportUrl, isSignedOut } from '@/lib/api'
 
 /**
  * What is worth testing here is the failure path, not the happy one: a
@@ -101,5 +101,24 @@ describe('attachment names', () => {
     )
     expect(attachmentName('attachment')).toBeNull()
     expect(attachmentName(null)).toBeNull()
+  })
+})
+
+describe('signed out', () => {
+  it('is a 401, and nothing else', async () => {
+    // The defect this holds: a 500 from `me()` while the database was down
+    // showed a signed-in administrator the login screen.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(401, { error: 'not signed in' })))
+    expect(isSignedOut(await api.me().catch((error: unknown) => error))).toBe(true)
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(500, { error: 'database unavailable' })))
+    expect(isSignedOut(await api.me().catch((error: unknown) => error))).toBe(false)
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(503, 'Service Unavailable')))
+    expect(isSignedOut(await api.me().catch((error: unknown) => error))).toBe(false)
+
+    // No server at all: fetch itself rejects.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    expect(isSignedOut(await api.me().catch((error: unknown) => error))).toBe(false)
   })
 })

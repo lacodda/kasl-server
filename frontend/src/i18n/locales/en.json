@@ -304,6 +304,11 @@
     "loading": "Loading…",
     "error": "Something went wrong"
   },
+  "session": {
+    "unreachable": "The server is not answering",
+    "unreachableDetail": "You are probably still signed in. This page will try again on its own in a few seconds.",
+    "retry": "Try again now"
+  },
   "calendar": {
     "title": "Production calendar",
     "subtitle": "Only the dates that differ from the weekday they fall on.",

@@ -1,9 +1,22 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, type Identity } from '@/lib/api'
+import { api, isSignedOut, type Identity } from '@/lib/api'
+
+/** How long to wait before asking a server that did not answer again. */
+const RETRY_MS = 10_000
 
 interface Session {
-  /** `undefined` while the first `me()` is still in flight. */
+  /**
+   * `undefined` until the server has said who is signed in - while the first
+   * `me()` is in flight, and for as long as the server cannot answer.
+   */
   user: Identity | null | undefined
+  /**
+   * The server could not say who is signed in: it is unreachable or failing,
+   * which is not the same answer as "nobody". Asked again on its own every
+   * few seconds, and at once by `retry`.
+   */
+  unreachable: boolean
+  retry: () => void
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -19,24 +32,43 @@ const SessionContext = createContext<Session | null>(null)
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Identity | null | undefined>(undefined)
+  const [unreachable, setUnreachable] = useState(false)
+  // Bumped to ask again: by the button, and by the timer while unreachable.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     api
       .me()
       .then((identity) => {
-        if (!cancelled) setUser(identity)
+        if (cancelled) return
+        setUnreachable(false)
+        setUser(identity)
       })
-      .catch(() => {
-        // A 401 is the ordinary "nobody is signed in" answer, not a fault; an
-        // unreachable server lands here too, and the login screen is still the
-        // right place to be - it reports the failure when a sign-in is tried.
-        if (!cancelled) setUser(null)
+      .catch((failure: unknown) => {
+        if (cancelled) return
+        // Only a 401 means nobody is signed in. Anything else - a 500 while
+        // the database is down, a network that is not there - leaves the
+        // question unanswered rather than answering it "nobody".
+        if (isSignedOut(failure)) {
+          setUnreachable(false)
+          setUser(null)
+        } else {
+          setUnreachable(true)
+        }
       })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [attempt])
+
+  useEffect(() => {
+    if (!unreachable) return
+    const timer = setTimeout(() => setAttempt((count) => count + 1), RETRY_MS)
+    return () => clearTimeout(timer)
+  }, [unreachable, attempt])
+
+  const retry = useCallback(() => setAttempt((count) => count + 1), [])
 
   const signIn = useCallback(async (email: string, password: string) => {
     await api.login(email, password)
@@ -55,7 +87,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ user, signIn, signOut }), [user, signIn, signOut])
+  const value = useMemo(() => ({ user, unreachable, retry, signIn, signOut }), [user, unreachable, retry, signIn, signOut])
   return <SessionContext value={value}>{children}</SessionContext>
 }
 

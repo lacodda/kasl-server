@@ -618,6 +618,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Whether a failure means nobody is signed in: a `401`, and nothing else.
+ *
+ * A server that cannot be reached, or answers `500` because its database is
+ * down, has not said the session ended - the cookie may be perfectly good.
+ * Read as signed out, the page would send somebody with a live session to the
+ * login screen, to type their password into a server that cannot check it.
+ */
+export function isSignedOut(failure: unknown): boolean {
+  return failure instanceof ApiError && failure.isUnauthorized
+}
+
 interface Options extends RequestInit {
   /** Path is from the site root rather than under `/api/v1` - only `/health`. */
   absolute?: boolean

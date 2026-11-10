@@ -19,8 +19,15 @@ import { destinations, type Destination } from '@/lib/navigation'
 
 export function App() {
   const { t } = useTranslation()
-  const { user } = useSession()
+  const { user, unreachable, retry } = useSession()
   const health = useServerHealth()
+
+  // The server did not say who is signed in. Not the login screen: the
+  // session may be fine, and a password typed into a server that cannot
+  // check it is a password typed for nothing.
+  if (user === undefined && unreachable) {
+    return <Unreachable onRetry={retry} />
+  }
 
   // The very first paint, before `me()` has answered. Rendering the login
   // screen here would flash it at someone who is already signed in.
@@ -94,6 +101,20 @@ const ICON = {
   calendar: CalendarCheck,
   privacy: ShieldCheck,
 } as const
+
+/** Said while the server cannot say who is signed in, asking again on its own. */
+function Unreachable({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div role="alert" className="flex min-h-full flex-col items-center justify-center gap-3 px-4 text-center">
+      <p className="text-base font-semibold">{t('session.unreachable')}</p>
+      <p className="max-w-sm text-sm text-dim">{t('session.unreachableDetail')}</p>
+      <Button variant="ghost" size="sm" onClick={onRetry}>
+        {t('session.retry')}
+      </Button>
+    </div>
+  )
+}
 
 /**
  * The line that says the data is invented. On every screen, including the
