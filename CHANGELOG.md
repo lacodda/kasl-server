@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.32.0] - 2026-11-10
+
+### Bug Fixes
+- Leave weeks with leave out of the comparisons
+- Measure overwork by the day's figure under coarse
+- Stop promptly on SIGTERM
+- Tell an unreachable server from a signed-out session
+- Re-add the fields and the date picker from dowel 0.40
+
+### Features
+- Accrue hourly and daily pay with overtime
+
+
 ## [0.31.0] - 2026-10-31
 
 ### Features
