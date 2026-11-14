@@ -34,7 +34,7 @@ fn read_text(path: &str) -> String {
     String::from_utf8(read(path)).unwrap_or_else(|_| panic!("{path} is not UTF-8"))
 }
 
-/// The three masters. docs/export-assets.mjs rasterizes every PNG from them.
+/// The three masters. `lyrn assets` rasterizes every PNG from them.
 const S: &str = "assets/logo-s.svg";
 const M: &str = "assets/logo-m.svg";
 const L: &str = "assets/logo.svg";
@@ -52,8 +52,8 @@ enum Level {
 
 /// The master the line's rule asks for at this many pixels.
 ///
-/// Written out here rather than imported: the exporter is JavaScript, and this
-/// is the independent reading of the same rule.
+/// Written out here rather than imported: the generator that writes the files
+/// is `lyrn assets`, and this is the independent reading of the same rule.
 fn level_for(size: u32) -> Level {
     match size {
         0..=27 => Level::Small,
@@ -212,15 +212,18 @@ fn the_rasters_keep_the_colours_of_the_masters() {
 fn the_square_rasters_are_cut_for_their_size() {
     // 180 px is a home-screen tile, not an icon in a list: the full mark. The
     // line shipped it cut from S for months, a gold square on a phone.
-    for (path, size) in [
-        ("assets/favicon-32.png", 32),
-        ("assets/apple-touch-icon.png", 180),
-        ("assets/logo-512.png", 512),
-    ] {
+    for (path, size) in [("assets/apple-touch-icon.png", 180), ("assets/logo-512.png", 512)] {
         let image = decode(&read(path), path);
         assert_eq!(image.dimensions(), (size, size), "{path} is not {size}x{size}");
         assert_eq!(level_of(&image), level_for(size), "{path} is cut from the wrong master");
     }
+
+    // The favicon is the line's one exception to the bands: a browser draws it
+    // into 16px of tab whatever size the file is, and only S survives that -
+    // the same master as the SVG favicon this PNG stands in for.
+    let favicon = decode(&read("assets/favicon-32.png"), "the favicon");
+    assert_eq!(favicon.dimensions(), (32, 32), "the favicon's fallback is 32x32");
+    assert_eq!(level_of(&favicon), Level::Small, "the favicon's fallback is cut from S, as the SVG favicon is");
 }
 
 #[test]
@@ -274,7 +277,7 @@ fn the_sites_carry_the_same_mark_as_the_repository() {
         ("docs/public/apple-touch-icon.png", "assets/apple-touch-icon.png"),
         ("frontend/public/apple-touch-icon.png", "assets/apple-touch-icon.png"),
     ] {
-        assert!(read(copy) == read(original), "{copy} differs from {original}; re-run docs/export-assets.mjs");
+        assert!(read(copy) == read(original), "{copy} differs from {original}; re-run `lyrn assets`");
     }
     // Not a copy of M by accident: the medium master is still in use by name.
     assert_ne!(read(M), read(S));

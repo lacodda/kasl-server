@@ -11,7 +11,7 @@
 //! The release ships a Windows build, and a console program with no icon
 //! resource is drawn with Windows' generic executable icon in Explorer, on a
 //! pinned shortcut and in its properties. `assets/icon.ico` is the line's mark
-//! cut level by level (docs/export-assets.mjs); it sits inside the package, so
+//! cut level by level (`lyrn assets`); it sits inside the package, so
 //! `cargo install` on Windows embeds it too. The embedding is unconditional
 //! there: a package that lost the file fails to build instead of quietly
 //! shipping without a mark.

@@ -49,10 +49,11 @@ The SVGs in `assets/` - `logo.svg`, `logo-m.svg`, `logo-s.svg` and
 `banner.svg` - are the brand's masters and are not edited by hand. Everything
 else is derived from them: the Windows icon `build.rs` embeds in the
 executable, the PNGs, the social preview, and the copies the docs site and the
-web UI serve. After a master changes, regenerate the lot:
+web UI serve. After a master changes, regenerate the lot with the line's own
+drawing, which keeps the level rule for every repository:
 
 ```console
-$ cd docs && node export-assets.mjs
+$ lyrn assets
 ```
 
 `tests/brand_assets.rs` reads the results back - which of the three masters

@@ -19,7 +19,7 @@ export default defineConfig({
 			},
 			favicon: '/favicon.svg',
 			// The touch icon and the unfurl picture are written by
-			// export-assets.mjs. og:image is absolute because Open Graph wants it
+			// `lyrn assets`. og:image is absolute because Open Graph wants it
 			// so; the file it names is the one GitHub shows for the repository.
 			head: [
 				{ tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/kasl-server/apple-touch-icon.png' } },
