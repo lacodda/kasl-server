@@ -26,7 +26,8 @@ export default tseslint.config(
     rules: { 'dowel/no-implicit-locale': 'error' },
   },
   {
-    files: ['*.config.{js,ts}'],
+    // Run by Node, not the browser: the configs, and the scripts in tools/.
+    files: ['*.config.{js,ts}', 'tools/**/*.{js,mjs}'],
     languageOptions: { globals: globals.node },
   },
 )

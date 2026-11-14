@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ArrowLeft, Circle, CircleDot, TriangleAlert, UserX } from 'lucide-react'
@@ -544,7 +545,7 @@ function Status({ member, live }: { member: Member; live: LiveMember | undefined
 }
 
 /** "12 min", "3 h", "5 d" - the unit `since` chose, in the reader's language. */
-function sinceText(timestamp: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+function sinceText(timestamp: string, t: TFunction): string {
   const [unit, count] = since(timestamp)
   return t(`team.${unit}Ago`, { count })
 }
