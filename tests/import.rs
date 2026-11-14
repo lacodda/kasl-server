@@ -67,10 +67,39 @@ impl Scratch {
     }
 }
 
+impl Scratch {
+    /// The file SQLite would read beside this database as its log.
+    fn log(&self) -> std::path::PathBuf {
+        sibling(&self.0, "-wal")
+    }
+}
+
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let _ = std::fs::remove_file(sibling(&self.0, suffix));
+        }
     }
+}
+
+fn sibling(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
+}
+
+/// The names in the directory a fixture lies in that start with its own.
+fn beside(path: &std::path::Path) -> Vec<String> {
+    let stem = path.file_name().unwrap().to_string_lossy().into_owned();
+    let mut names: Vec<String> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(&stem))
+        .collect();
+    names.sort();
+    names
 }
 
 #[test]
@@ -292,6 +321,64 @@ fn the_employees_file_survives_the_import_untouched() {
 
     let (days, _) = result.expect("a read-only file must still be importable");
     assert_eq!(days.len(), 2, "and yield the same history");
+}
+
+/// RUSTSEC-2026-0459: SQLite before 3.54 hands back stale bytes of the
+/// process's memory as query results when it opens a database together with a
+/// crafted `-wal` beside it - and it opens one it finds there whatever the
+/// database says its journal is. kasl never writes a log, so one beside its
+/// database is someone else's: refused by name, neither read nor left out in
+/// silence. A mutation that drops the refusal imports this file without a word.
+#[test]
+fn a_log_beside_the_database_is_refused_by_name() {
+    let scratch = Scratch::new("log");
+    agent_db(&scratch.0);
+    std::fs::write(scratch.log(), b"pages kasl never wrote").unwrap();
+
+    let error = import::read_agent_db(&scratch.0).expect_err("a database with a log beside it must be refused");
+    let message = error.to_string();
+    assert!(message.contains("write-ahead log"), "the message should say what was found: {message}");
+    assert!(
+        message.contains(&scratch.log().display().to_string()),
+        "and name the file, so the operator can look at it: {message}"
+    );
+}
+
+#[test]
+fn an_empty_log_beside_it_holds_nothing_and_is_left_alone() {
+    let scratch = Scratch::new("emptylog");
+    agent_db(&scratch.0);
+    std::fs::File::create(scratch.log()).unwrap();
+
+    let (days, _) = import::read_agent_db(&scratch.0).expect("an empty log holds nothing to leave out");
+    assert_eq!(days.len(), 2);
+}
+
+/// A database someone switched to the log and closed again keeps the mode in
+/// its header with the log folded back in. It is read whole from the copy, and
+/// nothing appears beside the employee's file: opened where it lies, SQLite
+/// would make the log's index next to it.
+#[test]
+fn a_database_in_log_mode_is_read_whole_and_nothing_is_written_beside_it() {
+    let scratch = Scratch::new("walmode");
+    agent_db(&scratch.0);
+    {
+        let connection = rusqlite::Connection::open(&scratch.0).unwrap();
+        let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0)).unwrap();
+        assert_eq!(mode, "wal", "the fixture should switch to the log");
+        connection
+            .execute(
+                "INSERT INTO workdays (date, start, end) VALUES ('2025-03-12', '2025-03-12 09:00:00', '2025-03-12 17:00:00')",
+                [],
+            )
+            .unwrap();
+    }
+    let alone = vec![scratch.0.file_name().unwrap().to_string_lossy().into_owned()];
+    assert_eq!(beside(&scratch.0), alone, "closing the last connection folds the log in and removes it");
+
+    let (days, _) = import::read_agent_db(&scratch.0).expect("a database in log mode should still import");
+    assert_eq!(days.len(), 3, "with the day the log held");
+    assert_eq!(beside(&scratch.0), alone, "and nothing written beside the employee's file");
 }
 
 #[test]

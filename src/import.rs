@@ -76,15 +76,27 @@ pub struct ImportSummary {
 
 /// Reads an agent's database into days, newest last.
 ///
-/// Opened read-only: this is the employee's file, and an import must not be
-/// able to damage the thing it is copying from - not even by taking a write
-/// lock on a database the agent is still using.
+/// What is opened is a copy of the database file alone, in a directory of its
+/// own, never the employee's file where it lies. SQLite opens a `-wal` file it
+/// finds beside a database whatever the database says its journal is, and a
+/// crafted pair of files - a database and a log with another page size - makes
+/// SQLite before 3.54 return stale bytes of this process's memory as query
+/// results (RUSTSEC-2026-0459). The file comes from someone else's machine, so
+/// it is the less trusted party that advisory is about. kasl never writes a
+/// log: a non-empty one beside its database is refused by name rather than
+/// left out silently, and the copy keeps one that appears after that look from
+/// being read either.
+///
+/// Opened read-only all the same: an import must not be able to change what it
+/// is copying from, and the copy is the employee's history too.
 pub fn read_agent_db(path: &std::path::Path) -> Result<(Vec<AgentDay>, ImportSummary)> {
     if !path.exists() {
         bail!("no such file: {}", path.display());
     }
+    refuse_a_log_beside(path)?;
 
-    let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let copy = LoneCopy::of(path)?;
+    let connection = Connection::open_with_flags(&copy.file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("failed to open {} as a SQLite database", path.display()))?;
 
     let mut summary = ImportSummary::default();
@@ -112,6 +124,72 @@ pub fn read_agent_db(path: &std::path::Path) -> Result<(Vec<AgentDay>, ImportSum
 
     summary.days = days.len();
     Ok((days, summary))
+}
+
+/// Refuses a database with a write-ahead log beside it that holds anything.
+///
+/// kasl keeps a rollback journal and never writes a log, so one beside its
+/// database was left there by another program - or put there. Its pages are
+/// either history the import would drop without a word, or the other half of
+/// the crafted pair the copy exists to keep apart. An empty log holds neither,
+/// and is left alone.
+fn refuse_a_log_beside(path: &std::path::Path) -> Result<()> {
+    let mut log = path.as_os_str().to_owned();
+    log.push("-wal");
+    let log = std::path::PathBuf::from(log);
+    match std::fs::metadata(&log) {
+        Ok(metadata) if metadata.len() > 0 => bail!(
+            "{} has a write-ahead log beside it ({}), which kasl never writes; the import reads the database file alone and \
+             will not leave out what the log holds: open the database once in the program that wrote the log so it is folded \
+             back in, or remove the log if it is not yours",
+            path.display(),
+            log.display()
+        ),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("failed to look for {}", log.display())),
+    }
+}
+
+/// A copy of one database file, alone in a directory made for it, removed
+/// with the directory when the read is over.
+struct LoneCopy {
+    directory: std::path::PathBuf,
+    file: std::path::PathBuf,
+}
+
+impl LoneCopy {
+    fn of(path: &std::path::Path) -> Result<Self> {
+        let directory = std::env::temp_dir().join(format!("kasl-server-import-{}", Uuid::new_v4().simple()));
+        // Made new rather than reused, so nothing can be waiting in it; and on
+        // Unix readable by this user alone, because what is copied into it is
+        // a person's working history.
+        #[cfg(unix)]
+        let made = std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700).create(&directory);
+        #[cfg(not(unix))]
+        let made = std::fs::DirBuilder::new().create(&directory);
+        made.with_context(|| format!("failed to make a directory for the copy at {}", directory.display()))?;
+        let copy = Self {
+            file: directory.join("agent.db"),
+            directory,
+        };
+        // The bytes only, not `fs::copy`: that carries the permissions over,
+        // and a copy of a read-only file is one Windows will not let the
+        // directory be removed around.
+        let copied = std::fs::File::open(path).and_then(|mut source| {
+            let mut target = std::fs::File::create_new(&copy.file)?;
+            std::io::copy(&mut source, &mut target)?;
+            target.sync_all()
+        });
+        copied.with_context(|| format!("failed to copy {} to read it", path.display()))?;
+        Ok(copy)
+    }
+}
+
+impl Drop for LoneCopy {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
 }
 
 fn read_workdays(connection: &Connection, summary: &mut ImportSummary) -> Result<Vec<AgentDay>> {

@@ -29,6 +29,13 @@ answer comes from whoever knows, and is echoed back so it is on the record.
   simply be repeated, and a wrong offset is fixed by importing again with the
   right one.
 
-The agent's file is opened read-only and never written to. Details and the
+The agent's file is never written to: what the import opens is a read-only copy
+of the database file alone, so nothing appears beside the original either. kasl
+never writes a write-ahead log, so a non-empty `<file>-wal` beside the database
+stops the import with its name. It was left there by another program, and the
+import will neither read it - SQLite before 3.54 can be made to leak memory by a
+crafted log - nor drop what it holds without a word. Open the database once in
+the program that wrote the log to fold it back in, or remove the log if it is
+not yours. Details and the
 trade-offs behind the fixed offset are in
 [ADR 0006](https://github.com/lacodda/kasl-server/blob/main/docs/adr/0006-importing-local-history.md).
