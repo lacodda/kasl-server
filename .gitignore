@@ -13,7 +13,7 @@ docs/node_modules/
 docs/dist/
 docs/.astro/
 
-# Staging directory for `turnout deploy` (tools/stage-deploy.sh)
+# Staging directory for `turnout deploy` (tools/stand/stage.sh)
 /deploy
 .env.development.local
 

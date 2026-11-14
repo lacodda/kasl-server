@@ -1,0 +1,58 @@
+# How kasl-server is released, read by furca's release engine: `furca release
+# plan` says what the next release is and what stands in its way, `furca
+# release run` carries it out - bump, changelog, gate, commit, push, green CI,
+# tag, publish - and checks what went out. `lyrn check` reads it too.
+# Reference: https://lacodda.github.io/furca/reference/release/
+
+[project]
+name = "kasl-server"
+changelog = "CHANGELOG.md"
+# The crate carries the version; the web UI and the docs site carry none of
+# their own: the UI asks the server's /health for it (ADR 0012).
+manifests = ["Cargo.toml"]
+# ADRs record what happened: the versions they name are history.
+as_written = ["docs/adr/"]
+
+[bump]
+# The bare numbers the bump leaves alone - the health answer in the README,
+# the build-info metric, the version an installation pins - are the product's
+# all the same: the script writes the new one in, and a test holds the README
+# to the manifest.
+after = [
+    "node tools/stamp-version.mjs",
+]
+
+[gate]
+# Formatting only: it takes seconds and compiles nothing. The rest of the gate
+# is CI, which the run waits for before the tag.
+commands = [
+    "cargo fmt --all --check",
+]
+
+[ci]
+provider = "github"
+workflow = "ci.yml"
+# The tag also starts release.yml, which puts the release page out with its
+# archives, and image.yml, which pushes the container image an installation
+# pulls; the run waits for every workflow the tag starts.
+publish = "publish.yml"
+
+[[package]]
+registry = "crates"
+name = "kasl-server"
+manifest = "Cargo.toml"
+
+# The files the tag's release page has to carry, checked after the publish.
+[page]
+assets = [
+    "kasl-server-{tag}-x86_64-pc-windows-msvc.zip",
+    "kasl-server-{tag}-x86_64-unknown-linux-gnu.tar.gz",
+    "kasl-server-{tag}-aarch64-unknown-linux-gnu.tar.gz",
+]
+
+# The stand is moved onto the release's image once it is published: turnout's
+# own configuration names the stand, runs tools/stand/stage.sh to stage what
+# goes there, and checks that the stand answers with this version. The update
+# itself is tools/upgrade.sh - a copy of the database first, then the version
+# pinned and the image pulled - the same script an installation upgrades with.
+[post.deploy]
