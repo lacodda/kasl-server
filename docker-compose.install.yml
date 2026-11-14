@@ -1,8 +1,8 @@
 # Install kasl-server: the published image plus its database.
 #
 # Nothing is built here - the image comes from the registry, so a machine needs
-# Docker and nothing else. Building from source is `docker-compose.prod.yml`,
-# which is what the project's own stand uses.
+# Docker and nothing else. Building from source is `docker-compose.prod.yml`;
+# moving to another release is `sh tools/upgrade.sh VERSION`.
 #
 #   curl -o docker-compose.yml \
 #     https://raw.githubusercontent.com/lacodda/kasl-server/main/docker-compose.install.yml

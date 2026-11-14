@@ -30,7 +30,7 @@ database seeds a fictional team — see [The demo](/kasl-server/guides/the-demo/
 
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
-production (`KASL_VERSION=0.20.0`); `latest` is for a first look.
+production (`KASL_VERSION=0.32.0`); `latest` is for a first look.
 
 Two more things before this holds a team's hours:
 
@@ -42,10 +42,10 @@ Two more things before this holds a team's hours:
 
 ## Building from source instead
 
-`docker-compose.prod.yml` builds the image on the machine that will run it,
-which is what this project's own stand does — it makes every deploy a proof
-that the code compiles for that architecture. It takes about fifteen minutes on
-a Pi 4 the first time; later builds reuse the cached layers.
+`docker-compose.prod.yml` builds the image on the machine that will run it, for
+an architecture the published image does not cover or a change of your own. It
+takes about fifteen minutes on a Pi 4 the first time; later builds reuse the
+cached layers.
 
 ```console
 $ docker compose -f docker-compose.prod.yml up -d --build
@@ -53,6 +53,30 @@ $ docker compose -f docker-compose.prod.yml up -d --build
 
 In both cases the database publishes no port — only the server reaches it, over
 the compose network — and the server runs as an unprivileged user.
+
+## Upgrading
+
+`tools/upgrade.sh` moves an installation to another release in one step:
+
+```console
+$ curl -o upgrade.sh     https://raw.githubusercontent.com/lacodda/kasl-server/main/tools/upgrade.sh
+$ sh upgrade.sh 0.32.0
+upgrade: the data copied aside to /srv/kasl/backups/pre-0.32.0-20261114T160000Z.jsonl
+upgrade: 0.31.0 -> 0.32.0, answering on port 8080
+```
+
+It runs in the installation's directory, or takes it as a second argument, and
+does four things in order: a backup into `backups/` beside `.env`, the version
+pinned as `KASL_VERSION` in `.env`, the image pulled and the server recreated,
+and a wait until `/health` answers with the new version and its database. It
+stops at the first that fails, with the file from before named.
+
+**The way back is the backup, not the old number.** A release migrates the
+database when it starts, and an older image will not start on a newer schema;
+going back means restoring that file into an empty database, as below. An
+installation whose compose file is not `docker-compose.yml` names it with
+`COMPOSE_FILE` in `.env`, which `docker compose` reads; the script refuses a
+directory whose compose file has no server in it.
 
 ## Backups
 
