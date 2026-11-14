@@ -30,7 +30,7 @@ database seeds a fictional team — see [The demo](/kasl-server/guides/the-demo/
 
 The image is `ghcr.io/lacodda/kasl-server`, built for amd64 and arm64, so the
 same compose file works on a laptop and on a Raspberry Pi. Pin a version in
-production (`KASL_VERSION=0.32.0`); `latest` is for a first look.
+production (`KASL_VERSION=0.33.0`); `latest` is for a first look.
 
 Two more things before this holds a team's hours:
 
@@ -60,7 +60,7 @@ the compose network — and the server runs as an unprivileged user.
 
 ```console
 $ curl -o upgrade.sh     https://raw.githubusercontent.com/lacodda/kasl-server/main/tools/upgrade.sh
-$ sh upgrade.sh 0.32.0
+$ sh upgrade.sh 0.33.0
 upgrade: the data copied aside to /srv/kasl/backups/pre-0.32.0-20261114T160000Z.jsonl
 upgrade: 0.31.0 -> 0.32.0, answering on port 8080
 ```

@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.33.0] - 2026-11-14
+
+### Bug Fixes
+- Read a lone copy of the agent's database, never a -wal beside it
+- Type the translator as i18next's own, and lint tools/ as Node
+
+### Build
+- Take astro past two advisories
+- Take dowel-ui 1.0 and draw the median with its Baseline
+- Draw the mark's rasters with lyrn assets
+
+### CI
+- Audit crates, packages and licenses on every push and weekly
+- Write the publish example tag as the shape vX.Y.Z
+- Release from release.toml and move the stand with turnout
+
+### Dependencies
+- Take the week's updates, hold typescript at 6 and rusqlite at 0.39
+
+### Features
+- Upgrade an installation with one script
+
 ## [0.32.0] - 2026-11-10
 
 ### Bug Fixes
