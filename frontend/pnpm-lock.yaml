@@ -21,8 +21,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       dowel-ui:
-        specifier: ^0.40.0
-        version: 0.40.0(eslint@10.13.0(jiti@2.7.0))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^1.0.0
+        version: 1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       i18next:
         specifier: ^26.5.11
         version: 26.5.11(typescript@6.0.3)
@@ -709,16 +709,12 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  dowel-ui@0.40.0:
-    resolution: {integrity: sha512-cFFvSny9oxZA5d07Qgybx46mYRliL8EpoQR6d7r2c8LGPP4iLbtmjH9MWR5eyXHLMyniP/jveP5KxeAcAP+yFQ==}
+  dowel-ui@1.0.0:
+    resolution: {integrity: sha512-NYnUL8Yyjf7zK3x5dIp68/LO6QKwJRmVYgMDXSlSp/pOmDE8lUZOHQRKw+ljCVB59UzK2pRW9PZTvtGBU9lhGQ==}
     hasBin: true
     peerDependencies:
-      eslint: ^9.0.0 || ^10.0.0
       react: ^19.0.0
       react-dom: ^19.0.0
-    peerDependenciesMeta:
-      eslint:
-        optional: true
 
   electron-to-chromium@1.5.464:
     resolution: {integrity: sha512-nRa65aFge40viPAKxMKULIY8tcXKwKboJWNn4RoKwyWXJ6SP7BnrDGKUTzc64818jIciH0PK7LSF8QzZes19GA==}
@@ -1979,14 +1975,12 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  dowel-ui@0.40.0(eslint@10.13.0(jiti@2.7.0))(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  dowel-ui@1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       clsx: 2.1.1
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       tailwind-merge: 3.7.0
-    optionalDependencies:
-      eslint: 10.13.0(jiti@2.7.0)
 
   electron-to-chromium@1.5.464: {}
 

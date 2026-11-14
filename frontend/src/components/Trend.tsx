@@ -60,7 +60,18 @@ export function Trend({ userId }: { userId: string }) {
       // out does not help, because the width is the column's and not the
       // row's. The shape is what this chart is for, the span is named under
       // it, and every column still says its own week and hours on touch.
-      label: <span className="hidden sm:inline">{week}</span>,
+      //
+      // The row keeps its line on a phone all the same, held by a space: the
+      // median is placed from the plot's foot by the height of what stands
+      // under the plot, label line included, and a collapsed row put it 12px
+      // below its value at 390px. Not `invisible` on the week: the label
+      // truncates, and an invisible week still drew its ellipsis.
+      label: (
+        <>
+          <span className="hidden sm:inline">{week}</span>
+          <span className="sm:hidden">{' '}</span>
+        </>
+      ),
       title:
         bar.worked_seconds === null
           ? t('trend.emptyWeek', { week })
@@ -89,35 +100,13 @@ export function Trend({ userId }: { userId: string }) {
       {worked.length === 0 ? (
         <p className="text-sm text-faint">{t('trend.nothing')}</p>
       ) : (
-        /* `Baseline` places itself as a percentage of the frame, measured from
-         * the frame's bottom - but the frame also holds the row of week labels
-         * `BarChart` draws under the plot, so that percentage is of the wrong
-         * height and the line lands above where it belongs. Measured here at
-         * 390px: the frame is 134px, the plot 112px, and the median sat 22px
-         * high, which on this chart is about four hours. A chart never
-         * announces an error like that; it just quietly reads wrong.
-         *
-         * `BarChart` offers no way to leave the labels out, and `bottom` is a
-         * percentage of the padding box, so neither padding nor a wrapper
-         * moves the zero. Pushing the line back down by a measured constant
-         * was tried and abandoned: the offset is the label row on a desktop
-         * and the gap that survives it on a phone, two numbers that would go
-         * stale the first time dowel changed either.
-         *
-         * So the line is drawn here, over a box that is exactly the plot: one
-         * `--plot` tall, on top of the chart, which puts its 0% on the axis by
-         * construction rather than by correction. Same ceiling as the bars, so
-         * the two cannot disagree.
-         *
-         * Ordered to a wish on dowel, because every consumer of `Baseline`
-         * with `BarChart` meets this, and it is invisible when it is wrong -
-         * the line lands at a height that looks like an answer. */
-        <ChartFrame gutter={loaded.median_seconds !== null} className="[--plot:72px] sm:[--plot:112px]">
-          {/* `--plot` is written on the chart as well as on the frame, and
-              with the same values: `size` always sets it on the chart itself,
-              where the overlay above cannot read it. Stating it twice is what
-              keeps the bars and the line on one scale - and the pair is here,
-              on two adjacent lines, rather than split across two files. */}
+        /* The median goes straight into the frame: since dowel 1.0 `Baseline`
+         * measures from the plot's foot rather than the frame's, and puts the
+         * middle of its rule on the value. Both were wrong before - 22px high
+         * at 390px, then half a label - and this chart drew its own box the
+         * height of the plot to get around them. Same ceiling as the bars, so
+         * the two cannot disagree. */
+        <ChartFrame gutter={loaded.median_seconds !== null}>
           <BarChart
             bars={columns}
             max={ceiling}
@@ -125,17 +114,9 @@ export function Trend({ userId }: { userId: string }) {
             label={t('trend.chartLabel', { count: loaded.weeks.length })}
           />
           {loaded.median_seconds !== null && (
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[var(--plot)]">
-              {/* Half a label down. `bottom` puts the *bottom* of a row the
-                  height of the label at the value, and the rule is centred
-                  inside that row - so it is drawn half a label above the
-                  number it names. Measured on this chart: 5.5px high, about an
-                  hour of a working week, and it went to 10.5 with the sign the
-                  other way round, which is how the direction was settled. */}
-              <Baseline value={loaded.median_seconds} max={ceiling} className="translate-y-1/2">
-                {t('trend.medianShort', { hours: hours(loaded.median_seconds) })}
-              </Baseline>
-            </div>
+            <Baseline value={loaded.median_seconds} max={ceiling}>
+              {t('trend.medianShort', { hours: hours(loaded.median_seconds) })}
+            </Baseline>
           )}
         </ChartFrame>
       )}

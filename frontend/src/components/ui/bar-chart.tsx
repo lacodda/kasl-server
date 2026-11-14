@@ -30,7 +30,7 @@ import { cn } from 'dowel-ui'
  * hover to find out.
  */
 
-export const barChartVariants = cva('flex items-end gap-1 border-b border-chart-axis', {
+export const barChartVariants = cva('flex items-end gap-1 border-b border-chart-axis print:break-inside-avoid', {
   variants: {
     size: {
       /* Inside a panel, beside other things. */
@@ -42,7 +42,7 @@ export const barChartVariants = cva('flex items-end gap-1 border-b border-chart-
   defaultVariants: { size: 'md' },
 })
 
-export const barVariants = cva('mx-auto w-3/5 max-w-6 rounded-t-[4px]', {
+export const barVariants = cva('mx-auto w-3/5 max-w-6 rounded-t-xs', {
   variants: {
     tone: {
       accent: 'bg-accent',
@@ -78,6 +78,8 @@ export interface BarDatum {
 export interface BarChartProps
   extends Omit<HTMLAttributes<HTMLDivElement>, 'children'>,
     VariantProps<typeof barChartVariants> {
+  /** One column per entry, in order. A `null` value keeps its place and is
+   * drawn as a gap. */
   bars: BarDatum[]
   /** The top of the scale. Defaults to the tallest bar present; state it to
    * compare two charts, or to hold a scale still while the data moves. */
@@ -111,7 +113,7 @@ export function BarChart({ bars, max, label, size, className, ...props }: BarCha
                * from a bar that did not render, and closing the gap up would
                * turn an absence into continuity - the one thing a trend must
                * not do. */
-              <div className="mx-auto h-1 w-3/5 max-w-6 rounded-t-[4px] border-x border-t border-line-2" />
+              <div className="mx-auto h-1 w-3/5 max-w-6 rounded-t-xs border-x border-t border-line-2" />
             ) : (
               <div
                 className={cn(barVariants({ tone: bar.tone }))}
@@ -119,7 +121,7 @@ export function BarChart({ bars, max, label, size, className, ...props }: BarCha
               />
             )}
           </div>
-          <span className="w-full truncate text-center text-[10px] text-faint tabular-nums">
+          <span className="w-full truncate text-center text-2xs text-faint tabular-nums">
             {bar.label}
           </span>
         </div>
@@ -148,20 +150,35 @@ export interface BaselineProps extends HTMLAttributes<HTMLDivElement> {
   children?: ReactNode
 }
 
+/* What stands under the plot inside the frame, from the plot's foot down: a
+ * column's gap (`gap-1.5`), one line of its label (`text-2xs`) and the axis
+ * hairline (the chart's `border-b`). BarChart draws those three, so a change
+ * to any of them is a change here. */
+const UNDER_PLOT = 'calc(var(--spacing) * 1.5 + var(--text-2xs--line-height) + 1px)'
+
 export function Baseline({ value, max, children, className, ...props }: BaselineProps) {
   if (!(max > 0) || value < 0 || value > max) return null
 
   return (
     <div
-      className={cn('pointer-events-none absolute inset-x-0 flex items-center gap-2', className)}
-      style={{ bottom: `${(value / max) * 100}%` }}
+      className={cn(
+        // `translate-y-1/2`: the row is as tall as its label and the rule runs
+        // through its middle, so the middle - not the foot - goes on the value.
+        // On its foot, the rule drew half a label above the number it named.
+        'pointer-events-none absolute inset-x-0 flex translate-y-1/2 items-center gap-2',
+        className,
+      )}
+      // Measured from the plot's foot, not the frame's: the frame also holds
+      // the row of labels under the plot, and a share of plot and labels
+      // together put a median twenty-two pixels too high (kasl-server, 390px).
+      style={{ bottom: `calc(${UNDER_PLOT} + ${value / max} * (100% - ${UNDER_PLOT}))` }}
       {...props}
     >
       {/* The rule stops short of the label rather than running under it: a
         * hairline crossing its own caption reads as a strikethrough. */}
       <div className="h-px flex-1 bg-chart-grid" />
       {children !== undefined && (
-        <span className="shrink-0 text-[10px] leading-none text-faint tabular-nums">{children}</span>
+        <span className="shrink-0 text-2xs leading-none text-faint tabular-nums">{children}</span>
       )}
     </div>
   )
