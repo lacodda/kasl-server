@@ -57,7 +57,7 @@ iso_currency = "0.7.1"
 # `/metrics` (ADR 0026). The Prometheus project's own client: it writes the
 # OpenMetrics format whole, and each family's labels are a struct, so a sample
 # with a label missing or misspelled does not compile.
-prometheus-client = "0.25.1"
+prometheus-client = "0.26.0"
 # Session tokens come from the OS entropy source, not from a counter.
 rand = "0.10.3"
 # Webhook deliveries. Without its default TLS, which brings aws-lc-rs and a C
@@ -78,11 +78,11 @@ rust_decimal = { version = "1.43.0", features = ["serde-float"] }
 # shared-strings table, styles and a date system of its own; this writes all of
 # it and nothing else, and has no default features. `chrono` lets a date go in
 # as the date it is rather than as a serial number computed here.
-rust_xlsxwriter = { version = "0.101.0", features = ["chrono"] }
-rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+rust_xlsxwriter = { version = "0.102.0", features = ["chrono"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-sha2 = "0.11.0"
+serde_json = "1.0.154"
+sha2 = "0.11.1"
 # Default features drag in the "any" driver, which pulls sqlx-sqlite and
 # sqlx-mysql (and their native libsqlite3-sys) even though this server only
 # ever talks to Postgres - and that sqlite pull collides with rusqlite's own
@@ -100,15 +100,15 @@ sqlx = { version = "0.9", default-features = false, features = [
     "uuid",
     "rust_decimal",
 ] }
-tokio = { version = "1.53.2", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 # The built web UI is compiled into the binary, so a self-hosted install is one
 # file and the UI can never be from a different build than the API (ADR 0012).
-rust-embed = { version = "8.12.0", features = ["mime-guess"] }
+rust-embed = { version = "8.14.0", features = ["mime-guess"] }
 tower-http = { version = "0.7.1", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-uuid = { version = "1.27.0", features = ["v4", "serde"] }
-webpki-roots = "1.0.9"
+uuid = { version = "1.29.2", features = ["v4", "serde"] }
+webpki-roots = "1.0.12"
 
 # The clock tick rate the process's CPU time is counted in, for `/metrics`.
 # Read from `/proc` on Linux alone, the one system the server's figures come
@@ -119,7 +119,7 @@ libc = "0.2.191"
 # Embeds assets/icon.ico in the Windows executable (build.rs). Declared for a
 # Windows host only: every other build would compile it for nothing.
 [target.'cfg(windows)'.build-dependencies]
-winresource = "0.1.31"
+winresource = "0.1.34"
 
 [dev-dependencies]
 http-body-util = "0.1.5"
@@ -127,12 +127,12 @@ tower = { version = "0.5.3", features = ["util"] }
 # Integration tests are their own crates: the binary's dependencies do not
 # reach them, so the schema tests declare what they touch directly.
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-uuid = { version = "1.27.0", features = ["v4"] }
+uuid = { version = "1.29.2", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 # The export tests open the workbook the server wrote. The features the
 # workbook writer already builds it with, so nothing new is compiled.
-zip = { version = "9.1.2", default-features = false, features = ["deflate"] }
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 # The brand gate decodes the icon's images and reads their pixels: the defect
 # it guards against - every entry cut from one master - leaves a container
 # that is perfectly well-formed. PNG is the only format read.
