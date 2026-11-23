@@ -309,6 +309,11 @@
     "unreachableDetail": "You are probably still signed in. This page will try again on its own in a few seconds.",
     "retry": "Try again now"
   },
+  "screen": {
+    "failed": "This screen did not load",
+    "failedDetail": "The connection may have dropped, or the server was updated since this page was opened. Reloading fetches the current version.",
+    "reload": "Reload the page"
+  },
   "calendar": {
     "title": "Production calendar",
     "subtitle": "Only the dates that differ from the weekday they fall on.",

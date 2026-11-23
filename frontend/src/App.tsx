@@ -1,26 +1,43 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes } from 'react-router'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Bell, CalendarCheck, CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { InboxProvider, useInbox } from '@/lib/inbox'
 import { RETRY_MS, useSession } from '@/lib/session'
-import { Calendar } from '@/pages/Calendar'
-import { Dashboard, PersonWeek } from '@/pages/Dashboard'
-import { Month } from '@/pages/Month'
 import { Login } from '@/pages/Login'
 import { MyDay } from '@/pages/MyDay'
-import { Notifications } from '@/pages/Notifications'
-import { Privacy } from '@/pages/Privacy'
-import { ReadTokens } from '@/pages/ReadTokens'
-import { Webhooks } from '@/pages/Webhooks'
 import { Button } from '@/components/ui/button'
+import { ScreenBoundary } from '@/components/ScreenBoundary'
 import { destinations, type Destination } from '@/lib/navigation'
+
+/*
+ * Every screen but the two a visit opens on is fetched when it is first
+ * opened.
+ *
+ * The login and "My day" are where everybody lands, so they come with the
+ * page and paint without a second round trip. The rest - the manager's team
+ * and month above all - are their own files: an employee never downloads the
+ * code of screens the server would answer 403 to, and the page a phone opens
+ * stays under the size a build warns about. A screen that cannot be fetched -
+ * a dropped connection, or a server upgraded since the page was opened, whose
+ * new build no longer has the old file - is caught by `ScreenBoundary`, never
+ * left as a blank page.
+ */
+const Calendar = lazy(() => import('@/pages/Calendar').then((module) => ({ default: module.Calendar })))
+const Dashboard = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.Dashboard })))
+const PersonWeek = lazy(() => import('@/pages/Dashboard').then((module) => ({ default: module.PersonWeek })))
+const Month = lazy(() => import('@/pages/Month').then((module) => ({ default: module.Month })))
+const Notifications = lazy(() => import('@/pages/Notifications').then((module) => ({ default: module.Notifications })))
+const Privacy = lazy(() => import('@/pages/Privacy').then((module) => ({ default: module.Privacy })))
+const ReadTokens = lazy(() => import('@/pages/ReadTokens').then((module) => ({ default: module.ReadTokens })))
+const Webhooks = lazy(() => import('@/pages/Webhooks').then((module) => ({ default: module.Webhooks })))
 
 export function App() {
   const { t } = useTranslation()
   const { user, unreachable, retry } = useSession()
   const health = useServerHealth(unreachable)
+  const { pathname } = useLocation()
 
   // The server did not say who is signed in. Not the login screen: the
   // session may be fine, and a password typed into a server that cannot
@@ -62,6 +79,10 @@ export function App() {
           dropped at `sm`, where the bar is gone and the tabs are in the
           header. */}
       <main className="flex-1 px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] sm:p-6">
+        {/* Keyed by the path, so a screen that failed to load is forgotten
+            on the way to another one rather than shown in its place. */}
+        <ScreenBoundary key={pathname}>
+        <Suspense fallback={<p className="text-sm text-dim">{t('common.loading')}</p>}>
         <Routes>
           <Route path="/day" element={<MyDay />} />
           {/* Guarded on the server too - these routes answer 403 to an
@@ -86,6 +107,8 @@ export function App() {
               blank page. The manager's screens arrive with v0.13. */}
           <Route path="*" element={<Navigate to="/day" replace />} />
         </Routes>
+        </Suspense>
+        </ScreenBoundary>
       </main>
       <BottomNav destinations={sections} />
     </div>

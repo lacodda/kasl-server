@@ -2,11 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
+import { CHUNK_LIMIT_KB, chunkCeiling } from './tools/chunk-ceiling.ts'
 
 // The built app is embedded in the server binary (ADR 0012), so `base` stays
 // relative-free and `dist` is what `rust-embed` picks up.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // The ceiling turns Vite's warning about a large script into a failed build.
+  plugins: [react(), tailwindcss(), chunkCeiling()],
+  build: { chunkSizeWarningLimit: CHUNK_LIMIT_KB },
   // No version is injected here on purpose: the product's version is the
   // server's, and the UI asks `/health` for it (ADR 0012).
   resolve: {

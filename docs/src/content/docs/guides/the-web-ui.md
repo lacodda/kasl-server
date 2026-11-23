@@ -135,3 +135,12 @@ hours on touch.
 The sign-in fields are 16px on a phone. Anything smaller and iOS Safari zooms
 the page in on focus and does not zoom back out, which leaves someone signing
 in at 130% with the password field off the side of the screen.
+
+## Loading a screen
+
+The page you land on - signing in, or **My day** - comes with the first load;
+every other screen is fetched the first time you open it, so an employee's
+browser never downloads the manager's screens. If one cannot be fetched - the
+connection dropped, or the server was upgraded while the page stood open - the
+screen says so in its place, with the header still there, and **Reload the
+page** fetches the current version.
