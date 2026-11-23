@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Bell, CalendarCheck, CalendarDays, CalendarRange, ShieldCheck, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { InboxProvider, useInbox } from '@/lib/inbox'
-import { useSession } from '@/lib/session'
+import { RETRY_MS, useSession } from '@/lib/session'
 import { Calendar } from '@/pages/Calendar'
 import { Dashboard, PersonWeek } from '@/pages/Dashboard'
 import { Month } from '@/pages/Month'
@@ -20,7 +20,7 @@ import { destinations, type Destination } from '@/lib/navigation'
 export function App() {
   const { t } = useTranslation()
   const { user, unreachable, retry } = useSession()
-  const health = useServerHealth()
+  const health = useServerHealth(unreachable)
 
   // The server did not say who is signed in. Not the login screen: the
   // session may be fine, and a password typed into a server that cannot
@@ -272,28 +272,51 @@ function BottomNav({ destinations }: { destinations: Destination[] }) {
  * What the running server says about itself: its version, and whether it is
  * a demo.
  *
- * Empty until `/health` answers, and empty if it does not: a header that says
- * nothing is better than one that states a version nobody verified, and a
- * page that cannot reach the server has no business calling it a demo.
+ * Empty until `/health` answers, and empty while it cannot: a header that
+ * says nothing is better than one that states a version nobody verified, and
+ * a page that cannot reach the server has no business calling it a demo.
+ *
+ * Asked again until it has answered whole. A server whose database is down
+ * answers `503` without the demo flag, and a page opened at that moment used
+ * to keep the empty answer for good: once the session came back on its own,
+ * the demo's fictional team was shown without its label. So an unanswered
+ * question is asked again on the session's own interval, and at once when the
+ * session finds the server again - the moment the answer is likely to have
+ * changed.
  */
-function useServerHealth() {
-  const [health, setHealth] = useState<{ version: string; demo: boolean }>({ version: '', demo: false })
+function useServerHealth(sessionUnreachable: boolean) {
+  const [health, setHealth] = useState<{ version: string; demo: boolean; answered: boolean }>({
+    version: '',
+    demo: false,
+    answered: false,
+  })
+  // Bumped to ask again, by the timer below while there is no answer.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    // Nothing to ask while the session cannot reach the server: the timer
+    // keeps counting, and the session's recovery asks at once.
+    if (sessionUnreachable) return
     let cancelled = false
     api
       .health()
       .then((answer) => {
-        if (!cancelled) setHealth({ version: answer.version, demo: answer.demo === true })
+        if (!cancelled) setHealth({ version: answer.version, demo: answer.demo === true, answered: true })
       })
       .catch(() => {
-        // The page is already open, so the server was reachable a moment ago.
-        // Nothing here is worth interrupting the user for.
+        // Not worth interrupting anyone for: the page is open and working, or
+        // says it is not. The next attempt is already on the clock.
       })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [attempt, sessionUnreachable])
+
+  useEffect(() => {
+    if (health.answered) return
+    const timer = setTimeout(() => setAttempt((count) => count + 1), RETRY_MS)
+    return () => clearTimeout(timer)
+  }, [health.answered, attempt])
 
   return health
 }

@@ -2,7 +2,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
 import { api, isSignedOut, type Identity } from '@/lib/api'
 
 /** How long to wait before asking a server that did not answer again. */
-const RETRY_MS = 10_000
+export const RETRY_MS = 10_000
 
 interface Session {
   /**
