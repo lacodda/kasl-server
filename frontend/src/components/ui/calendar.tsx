@@ -32,12 +32,17 @@ import {
 export interface CalendarProps {
   /** The selected day, or `undefined` for none. */
   value?: IsoDate
+  /** Called with the day the reader chose. It fires on Enter and on a click,
+   * not on the arrows - those only move the cursor. */
   onValueChange?: (value: IsoDate) => void
   /** Which month is shown. Uncontrolled unless given. */
   month?: IsoDate
+  /** Called with the new month when the shown month changes: the paging
+   * buttons, or the cursor arrowing off the end of a month. */
   onMonthChange?: (month: IsoDate) => void
   /** Bounds, inclusive. A day outside them cannot be chosen. */
   min?: IsoDate
+  /** The latest day that can be chosen, inclusive. See `min`. */
   max?: IsoDate
   /** For a range: the other end, so the days between can be shaded. */
   rangeEnd?: IsoDate
@@ -53,6 +58,8 @@ export interface CalendarProps {
   /** Names the buttons that page the months. Required: they are icons, and an
    * icon with no name is a button that announces nothing. */
   previousMonthLabel: string
+  /** Names the button that pages to the next month. Required, for the same
+   * reason as `previousMonthLabel`. */
   nextMonthLabel: string
   className?: string
 }

@@ -128,28 +128,10 @@ export function firstDayOfWeek(locale: string): number {
  * without a special case. */
 export function monthGrid(month: IsoDate, locale: string): IsoDate[][] {
   const { year, month: monthNumber } = parts(month)
-  const first = format(year, monthNumber, 1)
-  const start = firstDayOfWeek(locale)
-
-  // How far back the grid starts: the distance from the first of the month
-  // back to the most recent week start.
-  const lead = (weekday(first) - start + 7) % 7
-  const origin = addDays(first, -lead)
-
-  const weeks: IsoDate[][] = []
-  let cursor = origin
-  // Six rows always, so the calendar does not change height between months -
-  // a popup that resizes as you page through it is one that moves under the
-  // pointer.
-  for (let week = 0; week < 6; week += 1) {
-    const row: IsoDate[] = []
-    for (let day = 0; day < 7; day += 1) {
-      row.push(cursor)
-      cursor = addDays(cursor, 1)
-    }
-    weeks.push(row)
-  }
-  return weeks
+  // Six rows always, from the week the first of the month is in, so the
+  // calendar does not change height between months - a popup that resizes
+  // as you page through it is one that moves under the pointer.
+  return weekRange(format(year, monthNumber, 1), 6, locale)
 }
 
 /** The weeks a month actually touches: the rows of `monthGrid` holding at
@@ -160,12 +142,24 @@ export function monthGrid(month: IsoDate, locale: string): IsoDate[][] {
  * a sixth row made entirely of the next month makes every month look six
  * weeks long, and takes a sixth of the height from the days that are in it. */
 export function monthWeeks(month: IsoDate, locale: string): IsoDate[][] {
-  const { year, month: monthNumber } = parts(month)
-  return monthGrid(month, locale).filter((week) =>
-    week.some((date) => {
-      const day = parts(date)
-      return day.year === year && day.month === monthNumber
-    }),
+  // The month's number alone decides it: six weeks reach at most into the
+  // months either side, never into the same month of another year.
+  const { month: monthNumber } = parts(month)
+  return monthGrid(month, locale).filter((week) => week.some((date) => parts(date).month === monthNumber))
+}
+
+/** Whole weeks from the one `date` falls in: `count` rows of seven, each
+ * starting on the locale's first day.
+ *
+ * A week view's grid, a fortnight's, and the month's six rows from the week
+ * its first day is in - one arithmetic, so a week view and a month view of the
+ * same locale agree about which day a column is. A count below one draws one
+ * week: a grid of no weeks is not a view of anything. */
+export function weekRange(date: IsoDate, count: number, locale: string): IsoDate[][] {
+  // Back from the date to the most recent week start.
+  const origin = addDays(date, -((weekday(date) - firstDayOfWeek(locale) + 7) % 7))
+  return Array.from({ length: Math.max(1, Math.floor(count)) }, (_, week) =>
+    Array.from({ length: 7 }, (_, day) => addDays(origin, week * 7 + day)),
   )
 }
 

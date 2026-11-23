@@ -58,25 +58,35 @@ export type DatePickerClearing =
 export type DatePickerProps = DatePickerClearing & {
   /** The chosen day, or `undefined` for none. */
   value?: IsoDate
-  /** Bounds, inclusive. */
+  /** The earliest day that can be chosen, inclusive. */
   min?: IsoDate
+  /** The latest day that can be chosen, inclusive. */
   max?: IsoDate
   /** What the trigger says when nothing is chosen. The product's word, since
    * a default here would be English inside a primitive. */
   placeholder: string
   /** Names the two month-paging buttons inside the calendar. */
   previousMonthLabel: string
+  /** Names the next-month paging button inside the calendar. */
   nextMonthLabel: string
   /** How the date is written and which day starts the week. The
    * application's language unless stated - see `useLocale`. */
   locale?: string
+  /** Stops the trigger opening the calendar. */
   disabled?: boolean
+  /** Puts the value in a form: a hidden input of this name carries the date,
+   * because the trigger is a button and a form would otherwise lose it. */
   name?: string
   /** Put on the trigger, so a `Field` label can point at it. */
   id?: string
+  /** The accessible name of the field, in place of a visible label. */
   'aria-label'?: string
+  /** Points at the element that names the field; a `Field` label hands this
+   * over. The date shown on the trigger is added to the name. */
   'aria-labelledby'?: string
+  /** Points at the hint or error text, put on the trigger. */
   'aria-describedby'?: string
+  /** Marks the trigger as holding an invalid value. */
   'aria-invalid'?: boolean | 'true' | 'false'
   className?: string
 }

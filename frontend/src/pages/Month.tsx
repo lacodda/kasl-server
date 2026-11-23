@@ -131,7 +131,7 @@ function TimesheetDownload({ month }: { month: string }) {
       )}
       {/* The phone's height for a finger, handed back at `sm`, as the
           month's arrows beside it do. */}
-      <Button size="sm" className="h-11 w-full sm:h-7 sm:w-auto" disabled={busy} onClick={download}>
+      <Button size="sm" className="h-11 w-full sm:h-control-sm sm:w-auto" disabled={busy} onClick={download}>
         <Download aria-hidden className="size-3.5" />
         {busy ? t('export.preparing') : t('month.download')}
       </Button>

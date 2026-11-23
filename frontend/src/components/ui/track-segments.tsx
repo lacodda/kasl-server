@@ -1,3 +1,21 @@
+export {}
+// Code first, so the description below survives `shadcn add`: the CLI writes
+// a file from its first token on and drops every comment above it.
+
+/*
+ * The arithmetic behind Track, with no React in it.
+ *
+ * Split out for the reason `table-sort` and `tree-rows` are: a product that
+ * needs the numbers - to label a segment, to test its own domain code, to draw
+ * the same shape somewhere that is not the DOM - should not import a component
+ * to get them.
+ *
+ * What lives here is only the geometry. Turning a day of work into segments,
+ * or a set of tiers into them, is the product's own arithmetic and stays with
+ * the product: this knows about spans and percentages and nothing else.
+ */
+
+/** A segment as the caller states it, in whatever units the caller counts in. */
 export interface SegmentInput {
   /** Where it starts. Same units as `end` and as the track's span. */
   start: number

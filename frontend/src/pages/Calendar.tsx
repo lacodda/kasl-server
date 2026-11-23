@@ -198,7 +198,6 @@ function FullDay({ hours, mayEdit, onSaved }: { hours: number; mayEdit: boolean;
       <span className="text-xs text-faint">{t('calendar.hoursUnit')}</span>
       {mayEdit && dirty && (
         <Button
-          size="sm"
           disabled={saving}
           onClick={() => {
             setSaving(true)
@@ -339,7 +338,7 @@ function DayRow({
           day.note && <span className="truncate text-sm text-dim">{day.note}</span>
         )}
         {mayEdit && (
-          <Button variant="ghost" size="sm" onClick={onRemove} aria-label={t('calendar.remove')} className="shrink-0">
+          <Button variant="ghost" onClick={onRemove} aria-label={t('calendar.remove')} className="shrink-0">
             <Trash2 className="size-4" />
           </Button>
         )}
@@ -380,7 +379,6 @@ function AddDay({ year, taken, onAdd }: { year: number; taken: string[]; onAdd: 
         className="w-56"
       />
       <Button
-        size="sm"
         disabled={!usable}
         onClick={() => {
           onAdd({ date, kind: 'holiday', note: null })

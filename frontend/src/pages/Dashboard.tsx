@@ -223,14 +223,11 @@ function TeamTotals({
             // accent is gold, and gold against the warning colour measures ΔE
             // 3.7 - one colour, to a reader glancing at a row where the
             // accented total sits three tiles away. The mark says which figure
-            // is the problem without depending on telling two golds apart.
-            value={
-              <span className="inline-flex items-center gap-1.5">
-                <TriangleAlert className="size-4 shrink-0" />
-                {silent}
-              </span>
-            }
+            // is the problem without depending on telling two golds apart; the
+            // tile's type requires it beside a judgement.
+            value={String(silent)}
             tone="warn"
+            icon={<TriangleAlert className="size-4" />}
           />
         )}
       </StatRow>

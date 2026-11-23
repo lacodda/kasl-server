@@ -21,8 +21,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       dowel-ui:
-        specifier: ^1.0.0
-        version: 1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^1.1.0
+        version: 1.1.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       i18next:
         specifier: ^27.1.1
         version: 27.1.1(typescript@6.0.3)
@@ -731,8 +731,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  dowel-ui@1.0.0:
-    resolution: {integrity: sha512-NYnUL8Yyjf7zK3x5dIp68/LO6QKwJRmVYgMDXSlSp/pOmDE8lUZOHQRKw+ljCVB59UzK2pRW9PZTvtGBU9lhGQ==}
+  dowel-ui@1.1.0:
+    resolution: {integrity: sha512-2OtVMj8bHX5alJKJ/xhkJ1hELif7tNarpgDhIkORLLnyEVHSwMBdMtKW6puwRrcHbCwShvC2gjunVHJSFmQBrA==}
     hasBin: true
     peerDependencies:
       react: ^19.0.0
@@ -1182,6 +1182,9 @@ packages:
 
   tailwind-merge@3.7.0:
     resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
+
+  tailwind-merge@3.7.1:
+    resolution: {integrity: sha512-v7y4BV4FUlO8exj/4M5UXKeoowDiuugVUg3tkMNIyOUCOHy5xp8+5aWQeXCtZ2491sUV1YPsVeM9EveZ6/xuZQ==}
 
   tailwindcss@4.3.5:
     resolution: {integrity: sha512-FcQk9BuffmEHJP2G0XmB2SplU1aLTI7j07Kunk+U74Ny+XiWOtzXz9aujFZ/avntw1e2cOv/3PkgzflQ7gX2vQ==}
@@ -1961,12 +1964,12 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  dowel-ui@1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  dowel-ui@1.1.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       clsx: 2.1.1
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
-      tailwind-merge: 3.7.0
+      tailwind-merge: 3.7.1
 
   electron-to-chromium@1.5.485: {}
 
@@ -2351,6 +2354,8 @@ snapshots:
   std-env@4.3.0: {}
 
   tailwind-merge@3.7.0: {}
+
+  tailwind-merge@3.7.1: {}
 
   tailwindcss@4.3.5: {}
 

@@ -83,6 +83,7 @@ export interface TrackSegment extends SegmentInput {
 export interface TrackProps
   extends Omit<HTMLAttributes<HTMLDivElement>, 'children'>,
     VariantProps<typeof trackVariants> {
+  /** The stretches to draw: each has a `key`, a `start` and an `end`, and optionally a `tone` and a `label`. */
   segments: TrackSegment[]
   /** The value the left edge stands for. Defaults to the earliest segment. */
   from?: number
@@ -166,7 +167,7 @@ export function Track({
          * as half a step further along than it is. */
         <span
           style={{ left: `${at}%` }}
-          className="absolute top-1/2 h-[10px] w-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg ring-2 ring-text"
+          className="absolute top-1/2 h-2.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bg ring-2 ring-text"
         />
       )}
     </div>
@@ -188,7 +189,7 @@ export interface TrackScaleProps extends HTMLAttributes<HTMLDivElement> {
 export function TrackScale({ className, ...props }: TrackScaleProps) {
   return (
     <div
-      className={cn('flex justify-between text-[10px] text-faint', className)}
+      className={cn('flex justify-between text-2xs text-faint', className)}
       {...props}
     />
   )

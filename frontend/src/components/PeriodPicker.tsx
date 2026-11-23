@@ -41,7 +41,7 @@ export function PeriodPicker({
       {/* Wide enough to be an easy target, not so wide that it becomes the
           screen's main action: stretched across the row it read as the thing
           to press, when the thing to press is usually an arrow. */}
-      <Button size="sm" className="h-11 px-6 sm:h-7 sm:px-2.5" onClick={onNow}>
+      <Button size="sm" className="h-11 px-6 sm:h-control-sm sm:px-2.5" onClick={onNow}>
         {children}
       </Button>
       <Button variant="icon" size="icon-md" className="size-11 sm:size-8" aria-label={nextLabel} onClick={onNext}>

@@ -14,7 +14,7 @@ import { cn } from 'dowel-ui'
  * It is `lg` here, and `SectionLabel` is included because a panel almost
  * always has one and every product wrote its own.
  */
-export const panelVariants = cva('bg-raise', {
+export const panelVariants = cva('bg-raise print:break-inside-avoid', {
   variants: {
     variant: {
       /* The default: a surface that sits on the page. */
@@ -47,7 +47,7 @@ export function SectionLabel({ className, ...props }: HTMLAttributes<HTMLDivElem
   return (
     <div
       className={cn(
-        'flex items-center gap-2 text-2xs font-medium uppercase tracking-caption text-faint',
+        'caption flex items-center gap-2',
         className,
       )}
       {...props}
