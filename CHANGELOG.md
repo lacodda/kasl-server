@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.33.1] - 2026-11-23
+
+### Bug Fixes
+- Ask for the server's health again until it answers
+- Print the month as a report on landscape sheets
+
+### Build
+- Take dowel-ui 1.1 and stand buttons on its control rows
+
+### CI
+- Let the ci job wait for the frontend job too
+
+### Dependencies
+- Take the week's updates, raise rusqlite to 0.43
+
+### Performance
+- Fetch each screen the first time it is opened
+
 ## [0.33.0] - 2026-11-14
 
 ### Bug Fixes
