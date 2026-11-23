@@ -164,6 +164,7 @@ jobs:
     needs:
       - check
       - database
+      - frontend
       - msrv
     runs-on: ubuntu-latest
     steps:
