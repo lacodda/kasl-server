@@ -26,6 +26,13 @@ export interface Total {
  * scrolls inside its own box rather than taking the page with it, with the
  * names frozen at the left; `overscroll-x-contain` stops a swipe that reaches
  * the end of the month from turning into the browser's back gesture.
+ *
+ * On paper there is nothing to scroll, so the month has to fit the sheet: the
+ * report prints landscape (styles.css), and the `print:` sizes below take the
+ * widths that were a finger's down to the figures' own - thirty-one dates,
+ * the names and the totals across about 1040px. A big team runs on over as
+ * many sheets as it takes, the header row repeating on each and no person's
+ * row cut across two.
  */
 export function MonthGrid({
   answer,
@@ -51,21 +58,23 @@ export function MonthGrid({
     )
   }
 
+  // A panel keeps to one sheet on paper; a month of a big team cannot, and
+  // holding it whole would push it past an empty first sheet.
   return (
-    <Panel className="p-3 sm:p-5">
-      <div className="overflow-x-auto overscroll-x-contain">
-        <table className="w-full border-separate border-spacing-0 text-sm">
+    <Panel className="p-3 sm:p-5 print:break-inside-auto print:p-2">
+      <div className="overflow-x-auto overscroll-x-contain print:overflow-visible">
+        <table className="w-full border-separate border-spacing-0 text-sm print:text-xs">
           <caption className="sr-only">{caption}</caption>
           <thead>
             <tr>
-              <th scope="col" className="sticky left-0 z-10 bg-raise pr-3 pb-2 text-left align-bottom text-xs font-medium text-dim">
+              <th scope="col" className="sticky left-0 z-10 bg-raise pr-3 pb-2 text-left align-bottom text-xs font-medium text-dim print:static print:pr-2">
                 {t('month.person')}
               </th>
               {answer.dates.map((column) => (
                 <DateHeader key={column.date} column={column} />
               ))}
               {totals.map((total) => (
-                <th key={total.key} scope="col" className="pb-2 pl-3 text-right align-bottom text-xs font-medium whitespace-nowrap text-dim">
+                <th key={total.key} scope="col" className="pb-2 pl-3 text-right align-bottom text-xs font-medium whitespace-nowrap text-dim print:pl-1.5 print:text-2xs print:whitespace-normal">
                   {total.label}
                 </th>
               ))}
@@ -74,11 +83,11 @@ export function MonthGrid({
           <tbody>
             {plan && (
               <tr>
-                <th scope="row" className="sticky left-0 z-10 bg-raise py-1 pr-3 text-left text-xs font-normal text-faint">
+                <th scope="row" className="sticky left-0 z-10 bg-raise py-1 pr-3 text-left text-xs font-normal text-faint print:static print:pr-2">
                   {t('month.plan', { hours: answer.standard_hours })}
                 </th>
                 {answer.dates.map((column) => (
-                  <td key={column.date} className={`py-1 text-center font-mono text-[11px] text-faint tabular ${restClass(column)}`}>
+                  <td key={column.date} className={`py-1 text-center font-mono text-[11px] text-faint tabular print:text-2xs ${restClass(column)}`}>
                     {isRest(column) ? '' : column.hours}
                   </td>
                 ))}
@@ -90,13 +99,13 @@ export function MonthGrid({
                 {/* Narrower on a phone: the frozen name column is taken out of
                     the dates' width, and at 320px a 176px column leaves room
                     for about six days of the month. */}
-                <th scope="row" className="sticky left-0 z-10 max-w-28 truncate bg-raise py-0.5 pr-2 text-left font-normal sm:max-w-44 sm:pr-3">
+                <th scope="row" className="sticky left-0 z-10 max-w-28 truncate bg-raise py-0.5 pr-2 text-left font-normal sm:max-w-44 sm:pr-3 print:static print:max-w-28 print:pr-2">
                   {/* The name is the whole way into a person from here, and it
                       opens on this month. `py-2` takes it from a 16px strip to
                       a target a thumb can hit. */}
                   <Link
                     to={`/team/${row.id}?${new URLSearchParams({ period: 'month', from: answer.from })}`}
-                    className="block truncate py-2 text-sm transition-colors hover:text-accent-2"
+                    className="block truncate py-2 text-sm transition-colors hover:text-accent-2 print:py-1 print:text-xs"
                   >
                     {row.display_name}
                   </Link>
@@ -112,7 +121,7 @@ export function MonthGrid({
                   )
                 })}
                 {totals.map((total) => (
-                  <td key={total.key} className="py-0.5 pl-3 text-right font-mono text-xs whitespace-nowrap tabular">
+                  <td key={total.key} className="py-0.5 pl-3 text-right font-mono text-xs whitespace-nowrap tabular print:pl-1.5 print:text-2xs">
                     {total.render(row)}
                   </td>
                 ))}
@@ -140,7 +149,7 @@ function DateHeader({ column }: { column: TimesheetColumn }) {
   const label = [column.date, special, column.note].filter(Boolean).join(' - ')
 
   return (
-    <th scope="col" title={label} className={`min-w-[30px] px-px pb-2 text-center align-bottom font-normal ${restClass(column)}`}>
+    <th scope="col" title={label} className={`min-w-[30px] px-px pb-2 text-center align-bottom font-normal print:min-w-0 ${restClass(column)}`}>
       <span className={`block font-mono text-[11px] tabular ${column.calendar ? 'font-semibold text-accent-2' : 'text-dim'}`}>
         {dayOfMonth(column.date)}
       </span>

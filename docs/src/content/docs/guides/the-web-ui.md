@@ -136,6 +136,22 @@ The sign-in fields are 16px on a phone. Anything smaller and iOS Safari zooms
 the page in on focus and does not zoom back out, which leaves someone signing
 in at 130% with the password field off the side of the screen.
 
+## On paper
+
+Any screen prints, and **the month prints as a report**: press your browser's
+print command (Ctrl+P, ⌘P) on **The month**, in whichever view is open. The
+month comes out on landscape A4 sheets - thirty-one dates beside the names and
+the totals do not fit across a portrait page - with the figures sized to fit
+the sheet and nothing to scroll. A big team runs on over as many sheets as it
+takes, the dates repeating at the top of each and no person's row cut in two.
+
+Whatever is on screen, paper gets the light theme on white with its fills
+printed, so a heatmap square or a `?` keeps its colour. What is for getting
+somewhere is left off: the header and its tabs, the phone's bottom bar, the
+period controls, the export and download buttons, the sort, and the approve
+and acknowledge buttons on the team screen. On a demo the line saying the team
+is fictional stays on the sheet, as it does on a screenshot.
+
 ## Loading a screen
 
 The page you land on - signing in, or **My day** - comes with the first load;

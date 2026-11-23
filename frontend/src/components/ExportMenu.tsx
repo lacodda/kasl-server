@@ -51,8 +51,9 @@ export function ExportMenu({ subject, period }: { subject: ExportSubject; period
     run(() => downloadExport(subject, file, from, to))
   }
 
+  // Off paper, like the period controls beside it: the sheet is the export.
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 print:hidden">
       {failed && (
         <span role="alert" className="text-xs text-bad">
           {t('export.failed')}

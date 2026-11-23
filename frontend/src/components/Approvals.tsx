@@ -92,7 +92,7 @@ export function Approvals() {
           <span className="text-2xs text-faint tabular">{t('reports.queue.count', { count: queue.waiting })}</span>
         </h2>
         {shown.length > 1 && (
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void approve(shown)}>
+          <Button size="sm" variant="primary" className="print:hidden" disabled={busy} onClick={() => void approve(shown)}>
             {t('reports.queue.approveAll', { count: shown.length })}
           </Button>
         )}
@@ -153,10 +153,11 @@ function WaitingRow({
         </span>
       </Link>
       {report.department && <span className="hidden shrink-0 text-[11px] text-faint sm:block">{report.department}</span>}
+      {/* Off paper, like every control: a printed queue says who waits. */}
       <Button
         variant="ghost"
         size="sm"
-        className="shrink-0"
+        className="shrink-0 print:hidden"
         disabled={busy}
         onClick={onApprove}
         // Five buttons reading "Approve" are five of the same to a screen

@@ -27,7 +27,7 @@ export function PeriodControls({ period, onChange }: { period: Period; onChange:
     // A column on a phone, the segment above the arrows: on one 320px row the
     // three words and three buttons leave the arrows no room to be thumbs'
     // targets. A row from `sm`.
-    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3 print:hidden">
       <SegmentedControl aria-label={t('period.label')} value={period.unit} onValueChange={switchUnit} className="self-center sm:self-auto">
         {PERIOD_UNITS.map((unit) => (
           <Segment key={unit} value={unit}>

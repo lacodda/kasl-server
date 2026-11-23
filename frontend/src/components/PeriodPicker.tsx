@@ -30,8 +30,9 @@ export function PeriodPicker({
   /** What the middle button says: the name of the period it returns to. */
   children: ReactNode
 }) {
+  // Off paper: a printed report is read, and nothing on a sheet can be pressed.
   return (
-    <div className="flex items-center justify-between gap-1.5 sm:justify-end">
+    <div className="flex items-center justify-between gap-1.5 sm:justify-end print:hidden">
       {/* `icon-md` is 32px, under the 44px a finger needs. The size is lifted
           on a phone and handed back at `sm`, where the pointer is a mouse and
           a row of three large buttons would shout. */}

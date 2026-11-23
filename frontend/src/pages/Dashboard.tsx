@@ -323,7 +323,7 @@ function MemberTable({
       {/* The orders the table offers, and none by hours: that order is a
           scoreboard, a full-timer always above somebody on half time
           (ADR 0016). Share and change put who to look at first. */}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 print:hidden">
         <span id="sort-label" className="text-xs text-faint">
           {t('team.sortLabel')}
         </span>

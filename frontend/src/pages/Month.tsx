@@ -61,8 +61,10 @@ export function Month() {
   const answer = current?.answer ?? null
   const failed = current !== null && current.answer === null
 
+  // `data-print-page` puts the report on landscape sheets (styles.css): the
+  // month is too wide for a portrait one.
   return (
-    <div className="mx-auto max-w-[96rem] space-y-5">
+    <div data-print-page="month" className="mx-auto max-w-[96rem] space-y-5">
       <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold">{t('month.title')}</h1>
@@ -73,7 +75,7 @@ export function Month() {
             aria-label={t('month.view.label')}
             value={view}
             onValueChange={(next) => go({ view: viewOf(next) })}
-            className="self-center sm:self-auto"
+            className="self-center sm:self-auto print:hidden"
           >
             {VIEWS.map((option) => (
               <Segment key={option} value={option}>
@@ -123,7 +125,7 @@ function TimesheetDownload({ month }: { month: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 print:hidden">
       {failed && (
         <span role="alert" className="text-xs text-bad">
           {t('export.failed')}
@@ -198,7 +200,10 @@ function count(value: number) {
  */
 function Entry({ cell }: { cell: TimesheetCell }) {
   const { t } = useTranslation()
-  const box = 'mx-auto flex h-7 min-w-[26px] items-center justify-center rounded-[5px] px-0.5 font-mono text-xs tabular'
+  // On paper the box is the figure's own width, and the figure is drawn a
+  // little tighter: a month of ten-hour days put "10.5" in every column of a
+  // landscape sheet, and at its natural spacing it ran into its neighbour.
+  const box = 'mx-auto flex h-7 min-w-[26px] items-center justify-center rounded-[5px] px-0.5 font-mono text-xs tabular print:h-6 print:min-w-0 print:px-0 print:text-2xs print:tracking-tighter'
 
   switch (cell.state) {
     case 'worked': {
@@ -324,7 +329,7 @@ function ReportMark({ cell, approval }: { cell: TimesheetCell; approval: boolean
       role="img"
       aria-label={label}
       title={label}
-      className={`mx-auto flex h-7 w-[26px] items-center justify-center rounded-[5px] text-sm font-semibold ${MARK_TONE[cell.filed]} ${fill}`}
+      className={`mx-auto flex h-7 w-[26px] items-center justify-center rounded-[5px] text-sm font-semibold print:h-6 print:w-5 print:text-xs ${MARK_TONE[cell.filed]} ${fill}`}
     >
       {GLYPH[cell.filed]}
     </span>

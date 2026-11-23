@@ -66,3 +66,42 @@ body {
 .fill-5 {
   background: var(--heat-5);
 }
+
+/*
+ * Paper.
+ *
+ * The theme turns any screen into the light theme on white with its fills
+ * printed; what is left is the page's own frame. A sheet is as tall as what is
+ * on it, so the window's height lets go.
+ */
+@media print {
+  html,
+  body,
+  #root {
+    height: auto;
+  }
+}
+
+/*
+ * The month report is a landscape sheet.
+ *
+ * A month is a column per date - thirty-one of them beside the names and the
+ * totals - and a portrait A4 is about 720px across: each date would get 16px,
+ * less than the figure in it. Landscape gives the grid about 1040px, which the
+ * grid's print sizes fit.
+ *
+ * The page is named on the body rather than on the month's own box. A named
+ * page on a box deep in the tree forces a break before it, which would leave
+ * whatever stands above it on paper - the demo's label - alone on a portrait
+ * first sheet. On the body every sheet of the report is the same page.
+ */
+@page month {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
+@media print {
+  body:has([data-print-page='month']) {
+    page: month;
+  }
+}

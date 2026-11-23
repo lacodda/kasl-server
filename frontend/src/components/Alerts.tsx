@@ -171,7 +171,7 @@ function AlertRow({
       <Button
         variant="ghost"
         size="sm"
-        className="shrink-0"
+        className="shrink-0 print:hidden"
         disabled={answering}
         onClick={() => onAcknowledge(alert.id)}
         title={t('alerts.acknowledgeHint')}

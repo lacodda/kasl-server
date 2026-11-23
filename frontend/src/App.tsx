@@ -78,7 +78,7 @@ export function App() {
           sits under the bar with no way to scroll out from under it. It is
           dropped at `sm`, where the bar is gone and the tabs are in the
           header. */}
-      <main className="flex-1 px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] sm:p-6">
+      <main className="flex-1 px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] sm:p-6 print:p-0">
         {/* Keyed by the path, so a screen that failed to load is forgotten
             on the way to another one rather than shown in its place. */}
         <ScreenBoundary key={pathname}>
@@ -157,8 +157,11 @@ function Header({ destinations, version }: { destinations: Destination[]; versio
   const { t } = useTranslation()
   const { user, signOut } = useSession()
 
+  // Off paper with the bottom bar: both are for getting somewhere, and a
+  // printed report is for reading. The demo's label stays - a printout of the
+  // fictional team must say so as plainly as a screenshot does.
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
+    <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6 print:hidden">
       <div className="flex min-w-0 items-baseline gap-3">
         <span className="shrink-0 font-mono text-sm font-semibold text-accent-2">{t('app.name')}</span>
         {/* The server's version, not this bundle's: the UI ships inside the
@@ -260,7 +263,7 @@ function BottomNav({ destinations }: { destinations: Destination[] }) {
   return (
     <nav
       aria-label={t('nav.sections')}
-      className="fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-raise pb-[env(safe-area-inset-bottom)] sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-raise pb-[env(safe-area-inset-bottom)] sm:hidden print:hidden"
     >
       {destinations.map(({ to, label, icon }) => {
         const Icon = ICON[icon]
