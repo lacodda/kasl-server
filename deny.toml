@@ -13,15 +13,12 @@ unmaintained = "workspace"
 yanked = "deny"
 # An advisory accepted on purpose goes here, with the reason next to it.
 ignore = [
-    # SQLite before 3.54 bundled by libsqlite3-sys 0.37, through rusqlite: a
-    # crafted database and `-wal` pair returns stale process memory. The import
-    # is the one place a SQLite file is opened, and it opens a copy of the
-    # database alone in a directory of its own, refusing a non-empty log beside
-    # the original, so no `-wal` is ever opened with it (src/import.rs,
-    # tests/import.rs). The fix is rusqlite 0.41, which sqlx 0.9 shuts out:
-    # its optional SQLite driver holds libsqlite3-sys below 0.38 through
-    # `links`. `cargo deny` says advisory-not-detected once a sqlx lets it in.
-    { id = "RUSTSEC-2026-0459", reason = "the import opens a lone copy of the database, never a -wal beside it; rusqlite 0.41 waits on sqlx" },
+    # chrono is declared unmaintained, with no release to move to - a status,
+    # not a flaw: no vulnerability is known in it. Every date here stands on
+    # it: the sqlx columns, the agent's database through rusqlite, the
+    # workbooks, the API's payloads through serde. The way out is jiff, and it
+    # is a stage of its own, as it is across the line, not a line in an audit.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, not vulnerable; the move to jiff is planned as a stage of its own" },
 ]
 
 [licenses]

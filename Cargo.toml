@@ -39,7 +39,7 @@ include = [
 ]
 
 [dependencies]
-anyhow = "1.0.104"
+anyhow = "1.0.105"
 # Passwords, unlike the agents' random tokens, are human-chosen and worth
 # guessing at scale - so they get a memory-hard hash rather than SHA-256.
 # Default features carry what this uses: `getrandom` for the salt and
@@ -48,7 +48,7 @@ anyhow = "1.0.104"
 argon2 = "0.6.0"
 axum = "0.8.9"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.9", features = ["derive"] }
 # The ISO 4217 list a rate's currency is checked against, with each currency's
 # minor unit - how a rate is written back, and how accruals will round. A list
 # copied into this crate would rot: the standard retires and adds codes every
@@ -59,17 +59,18 @@ iso_currency = "0.7.1"
 # with a label missing or misspelled does not compile.
 prometheus-client = "0.26.0"
 # Session tokens come from the OS entropy source, not from a counter.
-rand = "0.10.3"
+rand = "0.10.4"
 # Webhook deliveries. Without its default TLS, which brings aws-lc-rs and a C
 # toolchain to every build: the client is handed a rustls configuration on
 # `ring` and the Mozilla roots - the stack sqlx already links for the database.
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider"] }
 # Reads an agent's own database during import. Bundled rather than linked
 # against a system SQLite: the file is the employee's history, and the version
-# that reads it should not depend on what the host happens to ship. Held at
-# 0.39 while sqlx 0.9's optional SQLite driver pins libsqlite3-sys below 0.38
-# through `links`; the import never opens a `-wal` (deny.toml says why).
-rusqlite ={ version = "0.39.0", features = ["bundled", "chrono"] }
+# that reads it should not depend on what the host happens to ship. Its
+# libsqlite3-sys has to fall inside the range sqlx's optional SQLite driver
+# names, because Cargo checks `links` across the whole tree (sqlx 0.9.1: below
+# 0.41); the import still never opens a `-wal` (src/import.rs).
+rusqlite = { version = "0.43.0", features = ["bundled", "chrono"] }
 # Hours and shares of a day are exact decimals, not floats: a norm that
 # arrives at 7.999999 hours turns into an argument about a cent at the end
 # of the month (ADR 0017).
@@ -78,7 +79,7 @@ rust_decimal = { version = "1.43.0", features = ["serde-float"] }
 # shared-strings table, styles and a date system of its own; this writes all of
 # it and nothing else, and has no default features. `chrono` lets a date go in
 # as the date it is rather than as a serial number computed here.
-rust_xlsxwriter = { version = "0.102.0", features = ["chrono"] }
+rust_xlsxwriter = { version = "0.104.0", features = ["chrono"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -107,7 +108,7 @@ rust-embed = { version = "8.14.0", features = ["mime-guess"] }
 tower-http = { version = "0.7.1", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-uuid = { version = "1.29.2", features = ["v4", "serde"] }
+uuid = { version = "1.29.3", features = ["v4", "serde"] }
 webpki-roots = "1.0.12"
 
 # The clock tick rate the process's CPU time is counted in, for `/metrics`.
@@ -127,12 +128,12 @@ tower = { version = "0.5.3", features = ["util"] }
 # Integration tests are their own crates: the binary's dependencies do not
 # reach them, so the schema tests declare what they touch directly.
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-uuid = { version = "1.29.2", features = ["v4"] }
+uuid = { version = "1.29.3", features = ["v4"] }
 # The import tests build a fixture in the agent's own schema.
-rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 # The export tests open the workbook the server wrote. The features the
 # workbook writer already builds it with, so nothing new is compiled.
-zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+zip = { version = "9.8.2", default-features = false, features = ["deflate"] }
 # The brand gate decodes the icon's images and reads their pixels: the defect
 # it guards against - every entry cut from one master - leaves a container
 # that is perfectly well-formed. PNG is the only format read.

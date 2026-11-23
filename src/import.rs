@@ -85,7 +85,8 @@ pub struct ImportSummary {
 /// it is the less trusted party that advisory is about. kasl never writes a
 /// log: a non-empty one beside its database is refused by name rather than
 /// left out silently, and the copy keeps one that appears after that look from
-/// being read either.
+/// being read either. The bundled SQLite is past that release now; the copy
+/// stays, because a log nobody here wrote is not the employee's history.
 ///
 /// Opened read-only all the same: an import must not be able to change what it
 /// is copying from, and the copy is the employee's history too.
